@@ -1,0 +1,7 @@
+# build upon regular track-mjx
+POT
+umap-learn
+networkx
+ripser
+gudhi
+seaborn
