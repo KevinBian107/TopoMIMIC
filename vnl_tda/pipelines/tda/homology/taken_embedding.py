@@ -14,98 +14,103 @@ from scipy.spatial.distance import squareform
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
-from vnl_tda.pipelines.tda.topo_space.tda_general import (
-    compute_persistence_diagrams
-)
 
-
-def analyze_intention_structure_over_time(all_results):
+def compute_persistence_diagrams(embedded, max_dim=2):
     """
-    Analyze how the structure of the intention manifold changes over time,
-    including both H1 and H2 features.
+    Basic persistent calling function
     """
 
-    n_clusters = len(all_results["cluster_results"])
-    if n_clusters < 2:
-        print("Not enough clusters for temporal analysis")
-        return
+    if len(embedded) < 2:
+        empty_result = {
+            "diagrams": [np.array([]) for _ in range(max_dim + 1)],
+            "H0": np.array([]),
+            "H1": np.array([]),
+            "H2": np.array([]),
+            "H1_persistence": np.array([]),
+            "H1_sorted": np.array([]),
+            "H1_stats": {"mean": 0, "median": 0, "max": 0, "top_5": np.array([])},
+            "H2_persistence": np.array([]),
+            "H2_sorted": np.array([]),
+            "H2_stats": {"mean": 0, "median": 0, "max": 0, "top_5": np.array([])},
+        }
+        return empty_result
 
-    cluster_indices = [r["cluster_idx"] for r in all_results["cluster_results"]]
-    start_frames = [r["start_frame"] for r in all_results["cluster_results"]]
+    try:
+        diagrams = ripser.ripser(
+            embedded,
+            maxdim=max_dim,
+            thresh=np.inf,
+            coeff=2,
+            do_cocycles=False,
+        )["dgms"]
 
-    # Wasserstein distances between H1 diagrams
-    cluster_tda_h1_distances = []
-    cluster_tda_h2_distances = []
+        H0 = diagrams[0]
+        H1 = diagrams[1] if len(diagrams) > 1 else np.array([])
+        H2 = diagrams[2] if max_dim >= 2 and len(diagrams) > 2 else np.array([])
 
-    for i in range(1, n_clusters):
-        prev_cluster = all_results["cluster_results"][i - 1]
-        curr_cluster = all_results["cluster_results"][i]
+        # H1 stats
+        H1_persistence = H1[:, 1] - H1[:, 0] if len(H1) > 0 else np.array([])
+        H1_sorted_idx = np.argsort(-H1_persistence) if len(H1_persistence) > 0 else []
+        H1_sorted = H1[H1_sorted_idx] if len(H1_sorted_idx) > 0 else np.array([])
+        H1_sorted_persistence = (
+            H1_persistence[H1_sorted_idx] if len(H1_sorted_idx) > 0 else np.array([])
+        )
+        H1_stats = {
+            "mean": np.mean(H1_persistence) if len(H1_persistence) > 0 else 0,
+            "median": np.median(H1_persistence) if len(H1_persistence) > 0 else 0,
+            "max": np.max(H1_persistence) if len(H1_persistence) > 0 else 0,
+            "top_5": (
+                H1_sorted_persistence[:5]
+                if len(H1_sorted_persistence) >= 5
+                else H1_sorted_persistence
+            ),
+        }
 
-        prev_H1 = prev_cluster["diagrams"]["H1"]
-        curr_H1 = curr_cluster["diagrams"]["H1"]
-        prev_H2 = prev_cluster["diagrams"]["H2"]
-        curr_H2 = curr_cluster["diagrams"]["H2"]
+        # H2 stats
+        H2_persistence = H2[:, 1] - H2[:, 0] if len(H2) > 0 else np.array([])
+        H2_sorted_idx = np.argsort(-H2_persistence) if len(H2_persistence) > 0 else []
+        H2_sorted = H2[H2_sorted_idx] if len(H2_sorted_idx) > 0 else np.array([])
+        H2_sorted_persistence = (
+            H2_persistence[H2_sorted_idx] if len(H2_sorted_idx) > 0 else np.array([])
+        )
+        H2_stats = {
+            "mean": np.mean(H2_persistence) if len(H2_persistence) > 0 else 0,
+            "median": np.median(H2_persistence) if len(H2_persistence) > 0 else 0,
+            "max": np.max(H2_persistence) if len(H2_persistence) > 0 else 0,
+            "top_5": (
+                H2_sorted_persistence[:5]
+                if len(H2_sorted_persistence) >= 5
+                else H2_sorted_persistence
+            ),
+        }
 
-        # H1
-        if len(prev_H1) > 0 and len(curr_H1) > 0:
-            try:
-                wass_dist_h1 = wasserstein(prev_H1, curr_H1)
-            except:
-                wass_dist_h1 = 0.0
-        else:
-            wass_dist_h1 = 0.0
-        cluster_tda_h1_distances.append(wass_dist_h1)
+        return {
+            "diagrams": diagrams,
+            "H0": H0,
+            "H1": H1,
+            "H2": H2,
+            "H1_persistence": H1_persistence,
+            "H1_sorted": H1_sorted,
+            "H1_stats": H1_stats,
+            "H2_persistence": H2_persistence,
+            "H2_sorted": H2_sorted,
+            "H2_stats": H2_stats,
+        }
 
-        # H2
-        if len(prev_H2) > 0 and len(curr_H2) > 0:
-            try:
-                wass_dist_h2 = wasserstein(prev_H2, curr_H2)
-            except:
-                wass_dist_h2 = 0.0
-        else:
-            wass_dist_h2 = 0.0
-        cluster_tda_h2_distances.append(wass_dist_h2)
-
-    # Plot Wasserstein distances
-    plt.figure(figsize=(12, 6))
-    plt.plot(
-        cluster_indices[1:], cluster_tda_h1_distances, "o-", label="H1 Wasserstein"
-    )
-    plt.plot(
-        cluster_indices[1:], cluster_tda_h2_distances, "s-", label="H2 Wasserstein"
-    )
-    plt.title("Topological Distance Between Consecutive Clusters")
-    plt.xlabel("Cluster Index")
-    plt.ylabel("Wasserstein Distance")
-    plt.legend()
-    plt.grid(True, linestyle="--", alpha=0.7)
-    plt.tight_layout()
-    plt.show()
-
-    # Plot counts and mean persistence over time
-    plt.figure(figsize=(12, 8))
-
-    h1_counts = [len(r["diagrams"]["H1"]) for r in all_results["cluster_results"]]
-    h1_means = [
-        r["diagrams"]["H1_stats"]["mean"] for r in all_results["cluster_results"]
-    ]
-    h2_counts = [len(r["diagrams"]["H2"]) for r in all_results["cluster_results"]]
-    h2_means = [
-        r["diagrams"]["H2_stats"]["mean"] for r in all_results["cluster_results"]
-    ]
-
-    plt.plot(start_frames, h1_counts, "o-", label="H1 Count")
-    plt.plot(start_frames, h1_means, "o--", label="H1 Mean Persistence")
-    plt.plot(start_frames, h2_counts, "s-", label="H2 Count")
-    plt.plot(start_frames, h2_means, "s--", label="H2 Mean Persistence")
-
-    plt.title("Evolution of Topological Features Over Time")
-    plt.xlabel("Start Frame")
-    plt.ylabel("Value")
-    plt.legend()
-    plt.grid(True, linestyle="--", alpha=0.7)
-    plt.tight_layout()
-    plt.show()
+    except Exception as e:
+        print("Error in compute_persistence_diagrams:", e)
+        return {
+            "diagrams": [np.array([]) for _ in range(max_dim + 1)],
+            "H0": np.array([]),
+            "H1": np.array([]),
+            "H2": np.array([]),
+            "H1_persistence": np.array([]),
+            "H1_sorted": np.array([]),
+            "H1_stats": {"mean": 0, "median": 0, "max": 0, "top_5": np.array([])},
+            "H2_persistence": np.array([]),
+            "H2_sorted": np.array([]),
+            "H2_stats": {"mean": 0, "median": 0, "max": 0, "top_5": np.array([])},
+        }
 
 
 def compute_tda_per_clip_with_delayed_embedding(
@@ -225,53 +230,6 @@ def cluster_and_plot_wasserstein_matrix(
 
     return clip_clusters, linkage_matrix
 
-
-def plot_behavior_clustermap_from_wasserstein(
-    wass_matrix,
-    all_labels,
-    title="Clustering of Clip Topologies by Behavior (Wasserstein H1)",
-):
-    """
-    Plots a hierarchical clustering heatmap of a Wasserstein distance matrix, colored by behavior labels.
-    """
-    # subset labels to match matrix size
-    subset_labels = np.array(all_labels)[: wass_matrix.shape[0]]
-
-    # map labels to a colors
-    unique_labels = np.unique(subset_labels)
-    palette = sns.color_palette("tab10", len(unique_labels))
-    label_to_color = dict(zip(unique_labels, palette))
-    row_colors = pd.Series(subset_labels).map(label_to_color).to_numpy()
-
-    # linkage for clustering
-    linkage_matrix = linkage(squareform(wass_matrix), method="average")
-
-    g = sns.clustermap(
-        wass_matrix,
-        row_linkage=linkage_matrix,
-        col_linkage=linkage_matrix,
-        row_colors=row_colors,
-        col_colors=row_colors,
-        cmap="viridis",
-        xticklabels=False,
-        yticklabels=False,
-        figsize=(10, 10),
-    )
-
-    handles = [
-        mpatches.Patch(color=color, label=label)
-        for label, color in label_to_color.items()
-    ]
-    g.ax_heatmap.legend(
-        handles=handles,
-        title="Behavior",
-        bbox_to_anchor=(1.05, 1),
-        loc="upper left",
-        borderaxespad=0.0,
-    )
-
-    plt.title(title, pad=100)
-    plt.show()
 
 
 def delayed_embedding_tda_then_projection(

@@ -1,27 +1,17 @@
 '''Functions for post-processing, namely chunking and clustering'''
 
 import numpy as np
-import os
 import random
 import h5py
 
-import math
-from scipy.spatial.distance import cdist, squareform
 from scipy.stats import wasserstein_distance
 from scipy.cluster.hierarchy import linkage
 from sklearn.cluster import AgglomerativeClustering
 from collections import Counter, defaultdict
 
 import networkx as nx
-
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-from sklearn.decomposition import PCA
-from sklearn.manifold import TSNE
 from sklearn.cluster import KMeans
 from sklearn.manifold import MDS
-import umap
 import ot
 
 from vnl_tda.utils.rendering import render_from_saved_rollout

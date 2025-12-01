@@ -5,8 +5,6 @@ import numpy as np
 import networkx as nx
 import os
 
-import inspect
-import subprocess
 import tempfile
 
 from ripser import ripser
@@ -15,8 +13,6 @@ from sklearn.cluster import AgglomerativeClustering
 from sklearn.neighbors import NearestNeighbors
 from sklearn.metrics import pairwise_distances
 from typing import Union
-
-from vnl_tda.pipelines.tda.skeletonization.postprocess import drop_middle_nearby_loops
 
 
 def _knn_weights_for_persistence(pts, k=10):
