@@ -1,5 +1,6 @@
 '''Functions for post-processing, namely chunking and clustering'''
 
+from typing import Callable, Any
 import numpy as np
 import random
 import h5py
@@ -18,14 +19,22 @@ from vnl_tda.utils.rendering import render_from_saved_rollout
 from vnl_tda.utils.load_utils import load_from_h5py
 
 
-def _expand_frames_nonconsec(loop_frames, pad, clip_len):
+def _expand_frames_nonconsec(
+    loop_frames: np.ndarray | list[int],
+    pad: int,
+    clip_len: int,
+) -> np.ndarray:
     if pad <= 0:
         return np.unique(np.asarray(loop_frames, dtype=int))
     chunks = [np.arange(max(0, f - pad), min(clip_len, f + pad + 1)) for f in np.asarray(loop_frames, dtype=int)]
     return np.unique(np.concatenate(chunks))
 
 
-def _expand_indices(indices, pad, T):
+def _expand_indices(
+    indices: list[int],
+    pad: int,
+    T: int,
+) -> list[int]:
     idx = set()
     for i in indices:
         a = max(0, int(i) - pad)
@@ -34,7 +43,10 @@ def _expand_indices(indices, pad, T):
     return sorted(idx)
 
 
-def _uniform_downsample(frames, target_len):
+def _uniform_downsample(
+    frames: np.ndarray | list[int],
+    target_len: int,
+) -> np.ndarray | None:
     frames = np.unique(np.asarray(frames, dtype=int))
     if len(frames) < target_len:
         return None
@@ -43,7 +55,9 @@ def _uniform_downsample(frames, target_len):
     return frames[idx]
 
 
-def _normalize_dist_matrix(D):
+def _normalize_dist_matrix(
+    D: np.ndarray,
+) -> np.ndarray:
     d = D.astype(float).copy()
     np.fill_diagonal(d, np.nan)
     row_med = np.nanmedian(d, axis=1)
@@ -56,9 +70,17 @@ def _normalize_dist_matrix(D):
     return Dn
 
 
-def _compute_wasserstein_distances(X: np.ndarray):
+def _compute_wasserstein_distances(
+    X: np.ndarray,
+) -> np.ndarray:
     """
-    Computing wasserstein distances for intentions
+    Compute pairwise Wasserstein distances for intention vectors.
+
+    Args:
+        X: Array of shape (n_samples, dim)
+
+    Returns:
+        Symmetric distance matrix of shape (n_samples, n_samples)
     """
     n = X.shape[0]
     W = np.zeros((n, n), dtype=float)
@@ -69,26 +91,28 @@ def _compute_wasserstein_distances(X: np.ndarray):
     return W
 
 
-def _merge_overlapping_loops(loops):
+def _merge_overlapping_loops(
+    loops: list[np.ndarray | list[int]],
+) -> list[np.ndarray]:
     """
-    Given a list of loops (each a list/array of frame indices), 
-    merge loops that share any frame index.
-    
-    - Loops that intersect are merged (union of indices).
-    - Non-intersecting loops are kept separate.
+    Merge loops that share any frame index.
+
+    Args:
+        loops: List of loops, each a list/array of frame indices
+
+    Returns:
+        List of merged loops (union of overlapping indices)
     """
     import networkx as nx
 
     G = nx.Graph()
     G.add_nodes_from(range(len(loops)))
 
-    # edges between loops that share any frame index
     for i in range(len(loops)):
         for j in range(i + 1, len(loops)):
             if set(loops[i]).intersection(loops[j]):
                 G.add_edge(i, j)
 
-    # connected components = merged loops
     merged_loops = []
     for component in nx.connected_components(G):
         merged = set()
@@ -99,22 +123,19 @@ def _merge_overlapping_loops(loops):
     return merged_loops
 
 
-def _uniform_downsample(frames, target_len):
-    frames = np.unique(np.asarray(frames, dtype=int))
-    if len(frames) < target_len:
-        return None
-    idx = np.linspace(0, len(frames) - 1, target_len)
-    return frames[np.rint(idx).astype(int)]
-
-
 def drop_middle_nearby_loops(
-    loops_at_len,
-    frame_tol=5
-    ):
+    loops_at_len: list[np.ndarray],
+    frame_tol: int = 5,
+) -> list[np.ndarray]:
     """
-    Keep only loops whose first index is not within frame_tol frames of BOTH its immediate predecessor and successor when
-    loops are ordered by their first index. (i.e. if loop[0] has FI as 2, loop[1] should not have FI < 22 if fram_tol = 20)
+    Filter out loops that are sandwiched between nearby loops.
 
+    Args:
+        loops_at_len: List of loop arrays
+        frame_tol: Frame tolerance for considering loops as nearby
+
+    Returns:
+        Filtered list of loops
     """
     if not loops_at_len:
         return []
@@ -138,9 +159,19 @@ def drop_middle_nearby_loops(
     return [loop for loop, keep in zip(loops_sorted, keep_mask) if keep]
 
 
-def chunk_frames_by_loop(rodent_rollout_dir, loops_idx_cocycle):
+def chunk_frames_by_loop(
+    rodent_rollout_dir: str,
+    loops_idx_cocycle: list[list[int]],
+) -> tuple[dict[int, list], dict[int, list]]:
     """
-    Extract loop & non-loop index for stacking video rendering
+    Extract loop and non-loop frames for video rendering.
+
+    Args:
+        rodent_rollout_dir: Directory containing clip HDF5 files
+        loops_idx_cocycle: List of loop indices per clip
+
+    Returns:
+        Tuple of (loop_chunks, non_loop_chunks) dictionaries
     """
     loop_chunks = {}
     non_loop_chunks = {}
@@ -158,18 +189,24 @@ def chunk_frames_by_loop(rodent_rollout_dir, loops_idx_cocycle):
 
 
 def chunk_loops_by_clustered_vpath(
-    cluster_dict,
-    rodent_rollout_dir,
-    pad=25,
-    sample=None,
-    rng=None
-):
+    cluster_dict: dict[int, list[tuple[int, np.ndarray]]],
+    rodent_rollout_dir: str,
+    pad: int = 25,
+    sample: int | None = None,
+    rng: random.Random | None = None,
+) -> dict[int, list[list[np.ndarray]]]:
     """
-    Build video-frame chunks for every behaviour cluster identified by each vpath.
+    Build video-frame chunks for every behavior cluster.
 
-    Instead of taking the min/max span, this collects exactly the frames that
-    belong to the cluster (optionally expanded by +/- `pad` around each index),
-    in chronological order (non-consecutive indices allowed).
+    Args:
+        cluster_dict: Dict mapping cluster_id to list of (clip_id, frame_indices)
+        rodent_rollout_dir: Directory containing clip HDF5 files
+        pad: Padding around each frame index
+        sample: Maximum samples per cluster (None for all)
+        rng: Random number generator for sampling
+
+    Returns:
+        Dict mapping cluster_id to list of frame chunks
     """
     if rng is None:
         rng = random
@@ -200,26 +237,40 @@ def chunk_loops_by_clustered_vpath(
 
 
 def cluster_vpath_with_wasserstein2d_fixedlen_agg(
-    all_loops,
-    intention,
-    pad=0,
-    min_len=30,
-    max_len=50,
-    n_clusters=3,
-    n_clips=800,
-    drop_nearby_loop_num=20,
-    skip_clips=[37, 152, 163, 274, 281],
-    emd_fn=ot.emd2,
-    squared_cost=False,
-    only_max=False,
-    use_full_union=False,
-):
+    all_loops: list[list[np.ndarray]],
+    intention: np.ndarray,
+    pad: int = 0,
+    min_len: int = 30,
+    max_len: int = 50,
+    n_clusters: int = 3,
+    n_clips: int = 800,
+    drop_nearby_loop_num: int = 20,
+    skip_clips: list[int] = [37, 152, 163, 274, 281],
+    emd_fn: Callable = ot.emd2,
+    squared_cost: bool = False,
+    only_max: bool = False,
+    use_full_union: bool = False,
+) -> tuple[dict[int, list], list[list[np.ndarray]]]:
     """
-    Cluster each vpath by computing the full multi-dimensional
-    Wasserstein distance between their intention-path point clouds.
-    
-    - no longer need to aggregate intention vectors
-    - EMD naturally handles different path lengths.
+    Cluster loops via multi-dimensional Wasserstein distance (EMD).
+
+    Args:
+        all_loops: List of loops per clip
+        intention: Intention array of shape (n_clips, n_frames, D)
+        pad: Frame padding around loop indices
+        min_len: Minimum loop length to consider
+        max_len: Maximum loop length to consider
+        n_clusters: Number of clusters
+        n_clips: Number of clips to process
+        drop_nearby_loop_num: Frame tolerance for dropping nearby loops
+        skip_clips: Clip indices to skip
+        emd_fn: EMD computation function
+        squared_cost: Whether to square the cost matrix
+        only_max: Whether to keep only the longest loop per clip
+        use_full_union: Whether to merge overlapping loops
+
+    Returns:
+        Tuple of (clusters_dict, cleaned_loops)
     """
     windows = []
     all_cleaned_loops = []
@@ -284,22 +335,45 @@ def cluster_vpath_with_wasserstein2d_fixedlen_agg(
 
 
 def cluster_vpath_with_wasserstein2d_fixedlen_kmeans(
-    all_loops,
-    intention,
-    pad=0,
-    min_len=30,
-    max_len=200,
-    target_len=50,
-    n_clusters=3,
-    n_clips=800,
-    drop_nearby_loop_num=0,
-    skip_clips=(37, 152, 163, 274, 281),
-    squared_cost=False,
-    only_max=False,
-    use_full_union=False,
-    random_state=0,
-    return_mats=False,
-):
+    all_loops: list[list[np.ndarray]],
+    intention: np.ndarray,
+    pad: int = 0,
+    min_len: int = 30,
+    max_len: int = 200,
+    target_len: int = 50,
+    n_clusters: int = 3,
+    n_clips: int = 800,
+    drop_nearby_loop_num: int = 0,
+    skip_clips: tuple[int, ...] = (37, 152, 163, 274, 281),
+    squared_cost: bool = False,
+    only_max: bool = False,
+    use_full_union: bool = False,
+    random_state: int = 0,
+    return_mats: bool = False,
+) -> tuple[dict[int, list], list[np.ndarray]] | tuple[dict, list, np.ndarray, np.ndarray, list, np.ndarray]:
+    """
+    Cluster loops via Wasserstein distance with KMeans in MDS-embedded space.
+
+    Args:
+        all_loops: List of loops per clip
+        intention: Intention array of shape (n_clips, n_frames, D)
+        pad: Frame padding around loop indices
+        min_len: Minimum loop length to consider
+        max_len: Maximum loop length to consider
+        target_len: Target length for uniform downsampling
+        n_clusters: Number of clusters for KMeans
+        n_clips: Number of clips to process
+        drop_nearby_loop_num: Frame tolerance for dropping nearby loops
+        skip_clips: Clip indices to skip
+        squared_cost: Whether to square the cost matrix
+        only_max: Whether to keep only the longest loop per clip
+        use_full_union: Whether to merge overlapping loops
+        random_state: Random seed for reproducibility
+        return_mats: Whether to return distance matrices
+
+    Returns:
+        Tuple of (clusters_dict, cleaned_loops) or extended tuple with matrices
+    """
     windows = []
     cleaned_loops = []
     for clip_id in range(n_clips):
@@ -365,7 +439,24 @@ def cluster_vpath_with_wasserstein2d_fixedlen_kmeans(
     return clusters, cleaned_loops
 
 
-def build_cluster_prototypes_from_dict(cluster_dict, int_rodent, target_len=50, agg="mean"):
+def build_cluster_prototypes_from_dict(
+    cluster_dict: dict[int, list[tuple[int, np.ndarray]]],
+    int_rodent: np.ndarray,
+    target_len: int = 50,
+    agg: str = "mean",
+) -> dict[int, np.ndarray]:
+    """
+    Build prototype sequences for each cluster.
+
+    Args:
+        cluster_dict: Dict mapping cluster_id to list of (clip_id, frame_indices)
+        int_rodent: Intention array of shape (n_clips, n_frames, D)
+        target_len: Target length for uniform downsampling
+        agg: Aggregation method ("mean" or "medoid")
+
+    Returns:
+        Dict mapping cluster_id to prototype array
+    """
     protos = {}
     for cid, entries in cluster_dict.items():
         seqs = []
@@ -391,7 +482,20 @@ def build_cluster_prototypes_from_dict(cluster_dict, int_rodent, target_len=50, 
     return protos
 
 
-def cluster_distance_matrix(protos, metric="emd"):
+def cluster_distance_matrix(
+    protos: dict[int, np.ndarray],
+    metric: str = "emd",
+) -> tuple[np.ndarray, list[int]]:
+    """
+    Compute pairwise distance matrix between cluster prototypes.
+
+    Args:
+        protos: Dict mapping cluster_id to prototype array
+        metric: Distance metric ("emd" or "euclid")
+
+    Returns:
+        Tuple of (distance_matrix, cluster_ids)
+    """
     ids = sorted(protos.keys())
     m = len(ids)
     C = np.zeros((m, m), dtype=float)
@@ -413,7 +517,26 @@ def cluster_distance_matrix(protos, metric="emd"):
     return C, ids
 
 
-def cluster_knn_graph(C, ids, cluster_labels, k=2, threshold=None):
+def cluster_knn_graph(
+    C: np.ndarray,
+    ids: list[int],
+    cluster_labels: dict[int, str],
+    k: int = 2,
+    threshold: float | None = None,
+) -> nx.Graph:
+    """
+    Build a k-NN graph from cluster distance matrix.
+
+    Args:
+        C: Distance matrix of shape (n_clusters, n_clusters)
+        ids: List of cluster IDs
+        cluster_labels: Dict mapping cluster_id to label string
+        k: Number of nearest neighbors
+        threshold: Optional distance threshold for additional edges
+
+    Returns:
+        NetworkX graph with clusters as nodes
+    """
     G = nx.Graph()
     for cid in ids:
         G.add_node(cid, label=cluster_labels[cid])

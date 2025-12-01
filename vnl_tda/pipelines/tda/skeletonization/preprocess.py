@@ -1,16 +1,18 @@
 """Functions for pre-processing"""
 
+from typing import Callable, Any
 import os, functools, multiprocessing as mp
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
+
 def estimate_delay_embedding_params(
     rodent_rollout_dir: str,
-    get_aggregate_data_fn,
+    get_aggregate_data_fn: Callable,
     num_clips: int,
     intention_key: str = "/intention",
-    clip_indices=None,
+    clip_indices: list[int] | None = None,
     max_tau: int = 200,
     bins: int = 64,
     m_max: int = 15,
@@ -22,14 +24,32 @@ def estimate_delay_embedding_params(
     rng_seed: int = 0,
     processes: int | None = None,
     plot: bool = True,
-    figsize=(12, 4.5),
-):
+    figsize: tuple[float, float] = (12, 4.5),
+) -> tuple[int, int, dict]:
     """
-    End-to-end: 
-      1) loads per-clip data (multiprocessing),
-      2) computes AMI curves on PC1 to pick τ* (median first local minimum),
-      3) computes FNN curves at τ* to pick m* (first m with mean FNN <= fnn_thr),
-      4) optionally plots compact AMI+FNN figures.
+    Estimate optimal delay embedding parameters (tau, m) via AMI and FNN.
+
+    Args:
+        rodent_rollout_dir: Directory containing clip HDF5 files
+        get_aggregate_data_fn: Function to load clip data
+        num_clips: Number of clips to process
+        intention_key: HDF5 key for intention data
+        clip_indices: Specific clip indices to use (None for 0..num_clips-1)
+        max_tau: Maximum delay to consider for AMI
+        bins: Number of bins for entropy estimation
+        m_max: Maximum embedding dimension for FNN
+        R_tol: Distance ratio tolerance for FNN
+        A_tol: Absolute distance tolerance for FNN
+        fnn_thr: FNN fraction threshold for m selection
+        theiler: Theiler window for FNN ("auto", int, or None)
+        max_points: Maximum points for FNN computation
+        rng_seed: Random seed for reproducibility
+        processes: Number of parallel processes (None for cpu_count)
+        plot: Whether to display diagnostic plots
+        figsize: Figure size for plots
+
+    Returns:
+        Tuple of (tau_star, m_star, diagnostics_dict)
     """
 
     # ----------------- helpers (scoped) -----------------
@@ -261,3 +281,26 @@ def estimate_delay_embedding_params(
         theiler_used=theiler_val,
     )
     return tau_star, m_star, diagnostics
+
+
+def takens_points(
+    X: np.ndarray,
+    m: int,
+    tau: int,
+) -> np.ndarray:
+    """
+    Construct Takens' delay embedding from time series.
+
+    Args:
+        X: Time series array of shape (n_frames, D)
+        m: Embedding dimension
+        tau: Time delay
+
+    Returns:
+        Delay embedded array of shape (n_valid_points, m * D)
+    """
+    n_frames, D = X.shape
+    start = (m - 1) * tau
+    idxs = np.arange(start, n_frames)
+    pts = np.stack([X[[j - a * tau for a in range(m)]].reshape(-1) for j in idxs], axis=0)
+    return pts

@@ -4,15 +4,28 @@ import numpy as np
 import umap
 import matplotlib.pyplot as plt
 
+from scipy.stats import gaussian_kde
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 from matplotlib.colors import hsv_to_rgb
 
 
-def create_time_windows(intentions, windows_size=31, stride=1):
+def create_time_windows(
+    intentions: np.ndarray,
+    windows_size: int = 31,
+    stride: int = 1,
+) -> tuple[np.ndarray, np.ndarray]:
     """
-    Create Taken's delayed embedding / time windows by stakcing vectors
+    Create Takens' delay embedding windows by stacking vectors.
+
+    Args:
+        intentions: Time series array of shape (n_timesteps, n_features)
+        windows_size: Size of sliding window
+        stride: Step size between windows
+
+    Returns:
+        Tuple of (windows, center_frames) arrays
     """
     n_timesteps, n_features = intentions.shape
     n_windows = (n_timesteps - windows_size) // stride + 1
@@ -30,9 +43,17 @@ def create_time_windows(intentions, windows_size=31, stride=1):
     return windows, center_frames
 
 
-def create_color_by_phase(phases):
+def create_color_by_phase(
+    phases: np.ndarray,
+) -> np.ndarray:
     """
-    Convert phases to colors using HSV colormap with robust error handling
+    Convert phases to colors using HSV colormap.
+
+    Args:
+        phases: Array of phase values in radians
+
+    Returns:
+        RGB color array of shape (len(phases), 3)
     """
 
     # normalize phases to range [0, 1] for hue
@@ -56,9 +77,19 @@ def create_color_by_phase(phases):
         return plt.cm.hsv(hues)
 
 
-def apply_umap_to_intention_clusters(clusters, n_components=3):
+def apply_umap_to_intention_clusters(
+    clusters: np.ndarray,
+    n_components: int = 3,
+) -> np.ndarray:
     """
-    Apply UMAP to intention space clusters
+    Apply UMAP dimensionality reduction to intention clusters.
+
+    Args:
+        clusters: Window array of shape (n_samples, window_dim)
+        n_components: Number of UMAP components
+
+    Returns:
+        Embedded array of shape (n_samples, n_components)
     """
     scaler = StandardScaler()
     clusters_scaled = scaler.fit_transform(clusters)
@@ -75,9 +106,21 @@ def apply_umap_to_intention_clusters(clusters, n_components=3):
     return embedded
 
 
-def sample_diverse_windows(windows, n_samples=10000, n_windows=10):
+def sample_diverse_windows(
+    windows: np.ndarray,
+    n_samples: int = 10000,
+    n_windows: int = 10,
+) -> tuple[np.ndarray, np.ndarray]:
     """
-    Randomly sample diverse windows based on their Eucledian PCA clusters.
+    Sample diverse windows based on PCA clustering.
+
+    Args:
+        windows: Window array of shape (n_total, window_dim)
+        n_samples: Target number of samples
+        n_windows: Number of PCA clusters for stratified sampling
+
+    Returns:
+        Tuple of (sampled_windows, sample_indices)
     """
     
     print(
@@ -148,9 +191,21 @@ def sample_diverse_windows(windows, n_samples=10000, n_windows=10):
     return windows[sampled_indices], sampled_indices
 
 
-def cluster_gait_distribution(embedded, gait_metrics, n_clusters=4):
+def cluster_gait_distribution(
+    embedded: np.ndarray,
+    gait_metrics: dict,
+    n_clusters: int = 4,
+) -> np.ndarray:
     """
-    Analyze how different gait patterns are distributed on the manifold
+    Cluster points by gait pattern distribution on the manifold.
+
+    Args:
+        embedded: UMAP embedding of shape (n_samples, n_components)
+        gait_metrics: Dict with 'phases', 'frequencies', etc.
+        n_clusters: Number of KMeans clusters
+
+    Returns:
+        Cluster label array of shape (n_samples,)
     """
     min_size = min(len(embedded), len(gait_metrics["phases"]))
     embedded = embedded[:min_size]
@@ -174,9 +229,16 @@ def cluster_gait_distribution(embedded, gait_metrics, n_clusters=4):
     return cluster_labels
 
 
-def visualize_gait_manifold(embedded, gait_metrics):
+def visualize_gait_manifold(
+    embedded: np.ndarray,
+    gait_metrics: dict,
+) -> None:
     """
-    Create visualizations for gait manifold
+    Create 3D visualizations of gait manifold colored by different metrics.
+
+    Args:
+        embedded: UMAP embedding of shape (n_samples, 3)
+        gait_metrics: Dict with 'phases', 'frequencies', 'feet_in_stance', etc.
     """
     phases = gait_metrics["phases"]
     frequencies = gait_metrics["frequencies"]

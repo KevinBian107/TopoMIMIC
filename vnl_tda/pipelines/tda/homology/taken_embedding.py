@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import umap
+import ripser
 
 from sklearn.cluster import KMeans, AgglomerativeClustering
 from persim import wasserstein
@@ -15,9 +16,19 @@ from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
 
-def compute_persistence_diagrams(embedded, max_dim=2):
+def compute_persistence_diagrams(
+    embedded: np.ndarray,
+    max_dim: int = 2,
+) -> dict:
     """
-    Basic persistent calling function
+    Compute persistence diagrams using Ripser.
+
+    Args:
+        embedded: Point cloud array of shape (N, D)
+        max_dim: Maximum homology dimension to compute
+
+    Returns:
+        Dictionary containing diagrams, H0/H1/H2 arrays, and statistics
     """
 
     if len(embedded) < 2:
@@ -114,10 +125,24 @@ def compute_persistence_diagrams(embedded, max_dim=2):
 
 
 def compute_tda_per_clip_with_delayed_embedding(
-    intentions, m=5, frames_per_clip=600, max_dim=2, max_points=500
-):
+    intentions: np.ndarray,
+    m: int = 5,
+    frames_per_clip: int = 600,
+    max_dim: int = 2,
+    max_points: int = 500,
+) -> list[dict]:
     """
-    Perform TDA for each clip independently, using Takens embeddings.
+    Perform TDA for each clip independently using Takens embeddings.
+
+    Args:
+        intentions: Intention array of shape (n_total, dim)
+        m: Half-window size for Takens embedding
+        frames_per_clip: Number of frames per clip
+        max_dim: Maximum homology dimension
+        max_points: Maximum points for computation
+
+    Returns:
+        List of dicts with clip_idx, frame ranges, and diagrams
     """
     n_total, dim = intentions.shape
     n_clips = n_total // frames_per_clip
@@ -156,13 +181,23 @@ def compute_tda_per_clip_with_delayed_embedding(
     return tda_results
 
 
-def visualize_wasserstein_distance_matrix(tda_results,
-                                          max_clips=None,
-                                          diag_type="H1",
-                                          skip_clips=[37, 152, 163, 274, 281]):
+def visualize_wasserstein_distance_matrix(
+    tda_results: list[dict],
+    max_clips: int | None = None,
+    diag_type: str = "H1",
+    skip_clips: list[int] = [37, 152, 163, 274, 281],
+) -> np.ndarray:
     """
-    Computes and visualizes a Wasserstein distance matrix between clip-level persistence
-    diagrams of type `diag_type`, omitting any clips listed in `skip_clips`.
+    Compute and visualize Wasserstein distance matrix between clip persistence diagrams.
+
+    Args:
+        tda_results: List of TDA result dicts from compute_tda_per_clip_with_delayed_embedding
+        max_clips: Maximum number of clips to consider
+        diag_type: Diagram type to compare ("H0", "H1", or "H2")
+        skip_clips: Clip indices to omit
+
+    Returns:
+        Wasserstein distance matrix of shape (n_kept, n_kept)
     """
     if max_clips is None:
         max_clips = len(tda_results)
@@ -198,13 +233,20 @@ def visualize_wasserstein_distance_matrix(tda_results,
 
 
 def cluster_and_plot_wasserstein_matrix(
-    wass_matrix,
-    n_clusters=4,
-    title="Hierarchical Clustering of Clip Topologies (Wasserstein H1)",
-):
+    wass_matrix: np.ndarray,
+    n_clusters: int = 4,
+    title: str = "Hierarchical Clustering of Clip Topologies (Wasserstein H1)",
+) -> tuple[np.ndarray, np.ndarray]:
     """
-    Performs hierarchical clustering and visualizes the clustermap from a Wasserstein distance matrix,
-    with clip number labels shown.
+    Perform hierarchical clustering and visualize clustermap from Wasserstein distance matrix.
+
+    Args:
+        wass_matrix: Square distance matrix
+        n_clusters: Number of clusters for agglomerative clustering
+        title: Plot title
+
+    Returns:
+        Tuple of (cluster_labels, linkage_matrix)
     """
     # Agglomerative clustering on precomputed distance
     clip_clusters = AgglomerativeClustering(
@@ -233,15 +275,23 @@ def cluster_and_plot_wasserstein_matrix(
 
 
 def delayed_embedding_tda_then_projection(
-    tda_results,
-    reduction="pca",
-    n_components=2,
-    n_clusters=None,
-    show_variance=True,
-    random_state=42,
-):
+    tda_results: list[dict],
+    reduction: str = "pca",
+    n_components: int = 2,
+    n_clusters: int | None = None,
+    show_variance: bool = True,
+    random_state: int = 42,
+) -> None:
     """
     Summarize and visualize topological signatures using dimensionality reduction.
+
+    Args:
+        tda_results: List of TDA result dicts
+        reduction: Reduction method ("pca", "tsne", or "umap")
+        n_components: Number of components for projection (2 or 3)
+        n_clusters: Number of KMeans clusters (None for no clustering)
+        show_variance: Whether to print variance explained (PCA only)
+        random_state: Random seed for reproducibility
     """
 
     def summarize_topology(result):

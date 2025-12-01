@@ -17,18 +17,18 @@ import matplotlib.animation as animation
 
 
 def render_from_saved_rollout(
-    rollout: dict,  # Changed back to dict
+    rollout: dict,
     camera_name: str = "close_profile",
-) -> list:
+) -> list[np.ndarray]:
     """
     Render a rollout from saved qposes.
 
     Args:
-        rollout (dict): Dictionary containing trajectory data (must have 'qposes' key)
-        camera_name (str): Camera to use for rendering
+        rollout: Dictionary containing trajectory data (must have 'qpos' key)
+        camera_name: Camera to use for rendering
 
     Returns:
-        list: list of frames of the rendering
+        List of rendered frames as numpy arrays
     """
     qposes = rollout["qpos"]
     
@@ -68,11 +68,19 @@ def render_from_saved_rollout(
     return frames
 
 
-def display_video(frames, framerate=30):
+def display_video(
+    frames: list[np.ndarray],
+    framerate: int = 30,
+) -> HTML:
     """
+    Display a video from a list of frames in a Jupyter notebook.
+
     Args:
-        frames (array): (n_frames, height, width, 3)
-        framerate (int): the framerate of the video
+        frames: List of frames, each of shape (height, width, 3)
+        framerate: Framerate of the video
+
+    Returns:
+        HTML object containing the video
     """
     height, width, _ = frames[0].shape
     dpi = 70
@@ -97,9 +105,21 @@ def display_video(frames, framerate=30):
     return HTML(anim.to_html5_video())
 
 
-def display_loops_grid(loops_dict, framerate=20, loops_per_row=5):
+def display_loops_grid(
+    loops_dict: dict[int, dict],
+    framerate: int = 20,
+    loops_per_row: int = 5,
+) -> HTML:
     """
     Display multiple loops side by side in a grid layout.
+
+    Args:
+        loops_dict: Dictionary mapping loop_id to dict with 'frames' key
+        framerate: Framerate of the video
+        loops_per_row: Number of loops to display per row
+
+    Returns:
+        HTML object containing the grid video
     """
     num_loops = len(loops_dict)
     num_rows = int(np.ceil(num_loops / loops_per_row))

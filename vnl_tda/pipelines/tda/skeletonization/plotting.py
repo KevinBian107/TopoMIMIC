@@ -1,5 +1,6 @@
 """Functions for plotting the skeletons and post-processed clusters"""
 
+from typing import Any
 import numpy as np
 import os
 import random
@@ -16,6 +17,8 @@ from collections import Counter, defaultdict
 import networkx as nx
 
 import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
+from matplotlib.axes import Axes
 from mpl_toolkits.mplot3d.art3d import Line3DCollection
 from matplotlib.lines import Line2D
 import matplotlib.lines as mlines
@@ -33,7 +36,8 @@ from vnl_tda.utils.load_utils import (
     extract_clip_info,
 )
 
-def _load_dimo_edges(path):
+
+def _load_dimo_edges(path: str) -> np.ndarray:
     out = []
     with open(path, "r") as f:
         for line in f:
@@ -174,8 +178,26 @@ def _frame_label_vote(cluster_dict):
     return frame_labels
 
 
-def plot_dimo(edge_file, feature_dir, figsize=(10,10), node_size=8, tsne_kwargs=None):
-    """Plot the persistent edges on the tsne surface"""
+def plot_dimo(
+    edge_file: str,
+    feature_dir: str,
+    figsize: tuple[int, int] = (10, 10),
+    node_size: int = 8,
+    tsne_kwargs: dict | None = None,
+) -> tuple[nx.DiGraph, dict[int, np.ndarray], np.ndarray]:
+    """
+    Plot discrete Morse edges on a t-SNE surface.
+
+    Args:
+        edge_file: Path to the edge file from DM computation
+        feature_dir: Directory containing feature/point files
+        figsize: Figure size
+        node_size: Size of scatter points
+        tsne_kwargs: Additional kwargs for t-SNE embedding
+
+    Returns:
+        Tuple of (graph, coords_dict, coords3d_array)
+    """
     
     edges = _load_dimo_edges(edge_file)
     feat_path = _find_feature_file(feature_dir)
@@ -248,8 +270,28 @@ def plot_dimo(edge_file, feature_dir, figsize=(10,10), node_size=8, tsne_kwargs=
     return G, coords, coords3d
 
 
-def plot_dimo_longest_cycle(edge_file, feature_dir, figsize=(10,10), node_size=8, tsne_kwargs=None, top_k=5):
-    """Plot the persistent edges on the tsne surface with cycle"""
+def plot_dimo_longest_cycle(
+    edge_file: str,
+    feature_dir: str,
+    figsize: tuple[int, int] = (10, 10),
+    node_size: int = 8,
+    tsne_kwargs: dict | None = None,
+    top_k: int = 5,
+) -> tuple[list[list[int]], nx.Graph, dict[int, np.ndarray], np.ndarray]:
+    """
+    Plot discrete Morse edges with highlighted longest cycles.
+
+    Args:
+        edge_file: Path to the edge file from DM computation
+        feature_dir: Directory containing feature/point files
+        figsize: Figure size
+        node_size: Size of scatter points
+        tsne_kwargs: Additional kwargs for t-SNE embedding
+        top_k: Number of longest cycles to highlight
+
+    Returns:
+        Tuple of (cycles_sorted, graph, coords_dict, coords3d_array)
+    """
     
     edges = _load_dimo_edges(edge_file)
     feat_path = _find_feature_file(feature_dir)
@@ -337,8 +379,23 @@ def plot_dimo_longest_cycle(edge_file, feature_dir, figsize=(10,10), node_size=8
     return cycles_sorted, UG, coords, coords3d
 
 
-def plot_desc_flow(edge_path, coords3d, show_cycle_edges=True, cycle_alpha=0.15, top_k=None):
-    """Plot the descending path"""
+def plot_desc_flow(
+    edge_path: str,
+    coords3d: np.ndarray | dict[int, np.ndarray],
+    show_cycle_edges: bool = True,
+    cycle_alpha: float = 0.15,
+    top_k: int | None = None,
+) -> None:
+    """
+    Plot the descending flow paths from discrete Morse graph.
+
+    Args:
+        edge_path: Path to the edge file
+        coords3d: 3D coordinates as array or dict
+        show_cycle_edges: Whether to show cycle edges in background
+        cycle_alpha: Alpha for cycle edges
+        top_k: Number of top minima to show (None for all)
+    """
     
     E = load_dimo_edges(edge_path)
     if E.size == 0: return
@@ -423,18 +480,32 @@ def plot_desc_flow(edge_path, coords3d, show_cycle_edges=True, cycle_alpha=0.15,
 
 
 def plot_cycle_projections(
-        windows, 
-        cycle_idx, 
-        clip_index,
-        m_marker=10,
-        loop_marker=20,
-        random_state=42,
-        tsne_perplexity=10,
-        umap_neighbors=15,
-        figsize=(12, 4)
-):
+    windows: np.ndarray,
+    cycle_idx: np.ndarray | list[int],
+    clip_index: int,
+    m_marker: int = 10,
+    loop_marker: int = 20,
+    random_state: int = 42,
+    tsne_perplexity: int = 10,
+    umap_neighbors: int = 15,
+    figsize: tuple[int, int] = (12, 4),
+) -> tuple[Figure, list[Axes]]:
     """
-    Plot one representative cycle in a reduced dimension (i.e. PCA, TSNE and UMAP)
+    Plot a representative cycle in reduced dimensions (PCA, t-SNE, UMAP).
+
+    Args:
+        windows: Point cloud array of shape (N, D)
+        cycle_idx: Indices of points in the cycle
+        clip_index: Clip ID for labeling
+        m_marker: Marker size for non-cycle points
+        loop_marker: Marker size for cycle points
+        random_state: Random seed for reproducibility
+        tsne_perplexity: Perplexity for t-SNE
+        umap_neighbors: Number of neighbors for UMAP
+        figsize: Figure size
+
+    Returns:
+        Tuple of (figure, list_of_axes)
     """
     windows   = np.asarray(windows)
     cycle_idx = np.asarray(cycle_idx, dtype=int)
@@ -488,9 +559,20 @@ def plot_cycle_projections(
 
 
 
-def plot_vpath_cluster(cluster_dict, embeds3d, clip_frame_to_global, alpha_bg=0.02):
+def plot_vpath_cluster(
+    cluster_dict: dict[int, list[tuple[int, np.ndarray]]],
+    embeds3d: list[tuple[np.ndarray, str]],
+    clip_frame_to_global: dict[int, dict[int, int]],
+    alpha_bg: float = 0.02,
+) -> None:
     """
-    Plot clustered windows per vpath for multiple 3D embedding projections
+    Plot clustered windows in multiple 3D embedding projections.
+
+    Args:
+        cluster_dict: Dict mapping cluster_id to list of (clip_id, frame_indices)
+        embeds3d: List of (embedding_array, title) tuples
+        clip_frame_to_global: Mapping from (clip, frame) to global index
+        alpha_bg: Alpha for background points
     """
     assert len(embeds3d) == 3, "This function expects exactly 3 embeddings for now."
 
@@ -539,7 +621,31 @@ def plot_vpath_cluster(cluster_dict, embeds3d, clip_frame_to_global, alpha_bg=0.
     print(f"Saved combined plot to {output_path}")
 
 
-def plot_eigenbase_compression_loss(clip_ids, all_cycle_dm, rodent_rollout_dir, k_cycles=1, k_eig=10, pad=0, Kshow=30, state_key="qpos", plot=True):
+def plot_eigenbase_compression_loss(
+    clip_ids: int | list[int],
+    all_cycle_dm: list[list[np.ndarray]],
+    rodent_rollout_dir: str,
+    k_cycles: int = 1,
+    k_eig: int = 10,
+    pad: int = 0,
+    Kshow: int = 30,
+    state_key: str = "qpos",
+    plot: bool = True,
+) -> None:
+    """
+    Plot eigenbase compression loss between full and cycle subspaces.
+
+    Args:
+        clip_ids: Single clip ID or list of clip IDs
+        all_cycle_dm: List of cycle arrays per clip
+        rodent_rollout_dir: Directory containing clip HDF5 files
+        k_cycles: Number of top cycles per clip to use
+        k_eig: Number of eigenvectors for subspace angle computation
+        pad: Frame padding around cycles
+        Kshow: Number of PCs to show in plots
+        state_key: Key for state data in HDF5
+        plot: Whether to display the plot
+    """
     if isinstance(clip_ids, int):
         clip_ids = [clip_ids]
     full_list, cyc_list = [], []
@@ -644,7 +750,32 @@ def plot_eigenbase_compression_loss(clip_ids, all_cycle_dm, rodent_rollout_dir, 
         plt.show()
         
 
-def plot_eigenbase_cross_reconstruction(clip_ids, all_cycle_dm, rodent_rollout_dir, k_cycles=1, pad=0, Kmax=None, state_key="qpos", plot=True):
+def plot_eigenbase_cross_reconstruction(
+    clip_ids: list[int],
+    all_cycle_dm: list[list[np.ndarray]],
+    rodent_rollout_dir: str,
+    k_cycles: int = 1,
+    pad: int = 0,
+    Kmax: int | None = None,
+    state_key: str = "qpos",
+    plot: bool = True,
+) -> tuple[np.ndarray, list[int], np.ndarray]:
+    """
+    Compute and plot cross-reconstruction errors between clip eigenspaces.
+
+    Args:
+        clip_ids: List of clip IDs to analyze
+        all_cycle_dm: List of cycle arrays per clip
+        rodent_rollout_dir: Directory containing clip HDF5 files
+        k_cycles: Number of top cycles per clip
+        pad: Frame padding around cycles
+        Kmax: Maximum number of eigenvectors (None for adaptive)
+        state_key: Key for state data in HDF5
+        plot: Whether to display heatmap
+
+    Returns:
+        Tuple of (error_matrix, clip_ids, eigenbases)
+    """
     if isinstance(clip_ids, int):
         clip_ids = [clip_ids]
 
@@ -760,20 +891,38 @@ def plot_eigenbase_cross_reconstruction(clip_ids, all_cycle_dm, rodent_rollout_d
 
 
 def plot_cluster_eigenbase_cross_reconstruction(
-    cluster_cycles_by_id,
-    cluster_labels,
-    target_clusters,
-    csv_path,
-    rodent_rollout_dir,
-    k_cycles_per_clip=1,
-    pad=0,
-    Kmax=30,
-    state_key="qpos",
-    plot_error=True,
-    n_cycles_sample=None,
-    sample_strategy="longest",
-    seed=0
-):
+    cluster_cycles_by_id: dict[int, list[tuple[int, np.ndarray]]],
+    cluster_labels: dict[int, str],
+    target_clusters: list[int | str],
+    csv_path: str,
+    rodent_rollout_dir: str,
+    k_cycles_per_clip: int = 1,
+    pad: int = 0,
+    Kmax: int = 30,
+    state_key: str = "qpos",
+    plot_error: bool = True,
+    n_cycles_sample: int | None = None,
+    sample_strategy: str = "longest",
+    seed: int = 0,
+) -> None:
+    """
+    Compute and plot cross-reconstruction errors between cluster eigenspaces.
+
+    Args:
+        cluster_cycles_by_id: Dict mapping cluster_id to list of (clip_id, frame_indices)
+        cluster_labels: Dict mapping cluster_id to label string
+        target_clusters: List of cluster IDs or names to analyze
+        csv_path: Path to behavior labels CSV
+        rodent_rollout_dir: Directory containing clip HDF5 files
+        k_cycles_per_clip: Number of top cycles per clip
+        pad: Frame padding around cycles
+        Kmax: Maximum number of eigenvectors
+        state_key: Key for state data in HDF5
+        plot_error: Whether to display error plots
+        n_cycles_sample: Number of cycles to sample per cluster
+        sample_strategy: Sampling strategy ("longest" or "random")
+        seed: Random seed for reproducibility
+    """
     rng = np.random.default_rng(seed)
     df = pd.read_csv(csv_path)
 
@@ -942,22 +1091,42 @@ def plot_cluster_eigenbase_cross_reconstruction(
 
 
 def plot_cluster_principal_angles_to_target_union(
-    cluster_cycles_by_id,
-    cluster_labels,
-    target_clusters,
-    csv_path,
-    rodent_rollout_dir,
-    target_union="groom",
-    k_cycles=5,
-    s_top=10,
-    pad=0,
-    state_key="qpos",
-    sample_strategy="random",
-    repeats=1,
-    seed=0,
-    Kmax_plot=None,
-    plot=True,
-):
+    cluster_cycles_by_id: dict[int, list[tuple[int, np.ndarray]]],
+    cluster_labels: dict[int, str],
+    target_clusters: list[int | str],
+    csv_path: str,
+    rodent_rollout_dir: str,
+    target_union: str = "groom",
+    k_cycles: int = 5,
+    s_top: int = 10,
+    pad: int = 0,
+    state_key: str = "qpos",
+    sample_strategy: str = "random",
+    repeats: int = 1,
+    seed: int = 0,
+    Kmax_plot: int | None = None,
+    plot: bool = True,
+) -> None:
+    """
+    Compute and plot principal angles between cluster subspaces and target union.
+
+    Args:
+        cluster_cycles_by_id: Dict mapping cluster_id to list of (clip_id, frame_indices)
+        cluster_labels: Dict mapping cluster_id to label string
+        target_clusters: List of cluster IDs or names
+        csv_path: Path to behavior labels CSV
+        rodent_rollout_dir: Directory containing clip HDF5 files
+        target_union: Target union behavior type
+        k_cycles: Number of cycles per cluster
+        s_top: Number of top eigenvectors
+        pad: Frame padding around cycles
+        state_key: Key for state data in HDF5
+        sample_strategy: Sampling strategy ("random" or "longest")
+        repeats: Number of repetitions
+        seed: Random seed
+        Kmax_plot: Maximum K for plotting
+        plot: Whether to display plots
+    """
     rng = np.random.default_rng(seed)
     df = pd.read_csv(csv_path)
 
@@ -1142,10 +1311,54 @@ def plot_cluster_principal_angles_to_target_union(
     
 
 def compare_clusters_axis_motion_with_union(
-    cluster_dict,
-    cluster_labels,
-    target_cluster_names,
-    rodent_rollout_dir,
+    cluster_cycles_by_id: dict[int, list[tuple[int, np.ndarray]]],
+    cluster_labels: dict[int, str],
+    target_clusters: list[int | str],
+    csv_path: str,
+    rodent_rollout_dir: str,
+    target_union: str = "groom",
+    k_cycles: int = 5,
+    s_top: int = 10,
+    pad: int = 0,
+    state_key: str = "qpos",
+    sample_strategy: str = "random",
+    repeats: int = 1,
+    seed: int = 0,
+    Kmax_plot: int | None = None,
+    plot: bool = True,
+) -> None:
+    """
+    Compare axis motion across clusters vs target union.
+
+    Args:
+        cluster_cycles_by_id: Dict mapping cluster_id to list of (clip_id, frame_indices)
+        cluster_labels: Dict mapping cluster_id to label string
+        target_clusters: List of cluster IDs or names
+        csv_path: Path to behavior labels CSV
+        rodent_rollout_dir: Directory containing clip HDF5 files
+        target_union: Target union behavior type
+        k_cycles: Number of cycles per cluster
+        s_top: Number of top eigenvectors
+        pad: Frame padding around cycles
+        state_key: Key for state data in HDF5
+        sample_strategy: Sampling strategy
+        repeats: Number of repetitions
+        seed: Random seed
+        Kmax_plot: Maximum K for plotting
+        plot: Whether to display plots
+    """
+    _compare_clusters_axis_motion_with_union(
+        cluster_cycles_by_id, cluster_labels, target_clusters, rodent_rollout_dir,
+        target_union, k_cycles, s_top, pad, state_key, sample_strategy,
+        repeats, seed, Kmax_plot, plot
+    )
+
+
+def _compare_clusters_axis_motion_with_union(
+    cluster_dict: dict,
+    cluster_labels: dict,
+    target_cluster_names: list,
+    rodent_rollout_dir: str,
     max_loops=None,
     figsize=(12,7),
     out_pdf=None,

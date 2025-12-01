@@ -1,7 +1,7 @@
 """Functions for creating nice video rendering"""
 
 import os, h5py, numpy as np
-from typing import List
+import networkx as nx
 from PIL import Image, ImageDraw, ImageFont
 import imageio_ffmpeg
 import math
@@ -17,7 +17,7 @@ from vnl_tda.utils.rendering import (
 )
 
 
-def _ensure_rgb_uint8(frame):
+def _ensure_rgb_uint8(frame: np.ndarray) -> np.ndarray:
     arr = np.asarray(frame)
     if arr.ndim == 2: arr = np.repeat(arr[..., None], 3, axis=2)
     if arr.ndim == 3 and arr.shape[2] == 1: arr = np.repeat(arr, 3, axis=2)
@@ -156,23 +156,37 @@ def render_clip_grid(
     out_path: str = "dm_videos/clip_grid.mp4",
     camera_name: str = "close_profile",
     fps: int = 60,
-    target_size: tuple[int,int] = (320, 240),
-    pad_bg=(255,255,255),
+    target_size: tuple[int, int] = (320, 240),
+    pad_bg: tuple[int, int, int] = (255, 255, 255),
     gutter: int = 10,
     pad_x: int = 24,
     pad_y: int = 24,
     title: str | None = None,
     per_tile_labels: bool = True,
-    label_fmt = "Clip {id}",
-):
+    label_fmt: str = "Clip {id}",
+) -> str:
     """
-    Render k raw clips side-by-side in a rows x cols grid.
-    If a clip is shorter, its last frame is held.
-    Extra grid cells (if any) are left blank.
+    Render raw clips side-by-side in a rows x cols grid.
 
-    Requires:
-      - ensure_rgb_uint8(frame)
-      - load_full_clip_frames(rodent_rollout_dir, clip_id, camera_name)
+    Args:
+        rodent_rollout_dir: Directory containing clip HDF5 files
+        clip_ids: List of clip IDs to render
+        rows: Number of rows in grid
+        cols: Number of columns in grid
+        out_path: Output video path
+        camera_name: Camera name for rendering
+        fps: Frames per second
+        target_size: (width, height) per tile
+        pad_bg: Background color RGB
+        gutter: Gap between tiles in pixels
+        pad_x: Horizontal padding
+        pad_y: Vertical padding
+        title: Optional title string
+        per_tile_labels: Whether to show clip labels
+        label_fmt: Format string for labels
+
+    Returns:
+        Path to output video
     """
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
@@ -268,15 +282,37 @@ def render_crossclip_paths_to_minima(
     out_path: str = "dm_videos/crossclip_paths.mp4",
     camera_name: str = "close_profile",
     fps: int = 60,
-    target_size: tuple[int,int] = (320, 240),
-    pad_bg=(255,255,255),
+    target_size: tuple[int, int] = (320, 240),
+    pad_bg: tuple[int, int, int] = (255, 255, 255),
     gutter: int = 10,
     pad_x: int = 24,
     pad_y: int = 24,
     title: str | None = None,
     per_tile_labels: bool = True,
-    num_paths: int = 4
-):
+    num_paths: int = 4,
+) -> str:
+    """
+    Render descending paths from sources to minima across clips.
+
+    Args:
+        rodent_rollout_dir: Directory containing clip HDF5 files
+        clip_ids: List of clip IDs
+        edge_path: Path to edge file from DM computation
+        out_path: Output video path
+        camera_name: Camera name for rendering
+        fps: Frames per second
+        target_size: (width, height) per tile
+        pad_bg: Background color RGB
+        gutter: Gap between tiles
+        pad_x: Horizontal padding
+        pad_y: Vertical padding
+        title: Optional title string
+        per_tile_labels: Whether to show path labels
+        num_paths: Number of paths to render
+
+    Returns:
+        Path to output video
+    """
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     concat = []
     clip_offsets = []
@@ -341,17 +377,37 @@ def render_crossclip_paths_to_minima(
 def render_original_plus_top2_cycles(
     rodent_rollout_dir: str,
     clip_id: int,
-    cycles: List[List[int]],
+    cycles: list[list[int]],
     out_path: str = "dm_videos/cycles_with_original.mp4",
     camera_name: str = "close_profile",
     fps: int = 60,
-    target_size=(320, 240),
+    target_size: tuple[int, int] = (320, 240),
     title: str | None = None,
     col_labels: bool = True,
-    pad_bg=(255,255,255),
-    sep_color=(0,0,0),
+    pad_bg: tuple[int, int, int] = (255, 255, 255),
+    sep_color: tuple[int, int, int] = (0, 0, 0),
     sep_w: int = 6,
-):
+) -> str:
+    """
+    Render original clip alongside top cycles.
+
+    Args:
+        rodent_rollout_dir: Directory containing clip HDF5 files
+        clip_id: Clip ID to render
+        cycles: List of cycle index lists
+        out_path: Output video path
+        camera_name: Camera name for rendering
+        fps: Frames per second
+        target_size: (width, height) per tile
+        title: Optional title string
+        col_labels: Whether to show column labels
+        pad_bg: Background color RGB
+        sep_color: Separator line color RGB
+        sep_w: Separator width in pixels
+
+    Returns:
+        Path to output video
+    """
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     frames_full = _load_full_clip_frames(rodent_rollout_dir, clip_id, camera_name=camera_name)
     T = len(frames_full)
@@ -432,15 +488,37 @@ def render_crossclip_cycles_side_by_side(
     out_path: str = "dm_videos/crossclip_cycles.mp4",
     camera_name: str = "close_profile",
     fps: int = 60,
-    target_size: tuple[int,int] = (320, 240),
-    pad_bg=(255,255,255),
+    target_size: tuple[int, int] = (320, 240),
+    pad_bg: tuple[int, int, int] = (255, 255, 255),
     gutter: int = 10,
     pad_x: int = 24,
     pad_y: int = 24,
     title: str | None = None,
     per_tile_labels: bool = True,
     cycle_labels: list[str] | None = None,
-):
+) -> str:
+    """
+    Render cycles side by side across concatenated clips.
+
+    Args:
+        rodent_rollout_dir: Directory containing clip HDF5 files
+        clip_ids: List of clip IDs
+        cycles: List of cycle index lists
+        out_path: Output video path
+        camera_name: Camera name for rendering
+        fps: Frames per second
+        target_size: (width, height) per tile
+        pad_bg: Background color RGB
+        gutter: Gap between tiles
+        pad_x: Horizontal padding
+        pad_y: Vertical padding
+        title: Optional title string
+        per_tile_labels: Whether to show labels
+        cycle_labels: Custom labels for each cycle
+
+    Returns:
+        Path to output video
+    """
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
     concat = []
@@ -508,21 +586,40 @@ def render_crossclip_cycles_side_by_side(
 
 
 def render_grid_clusters_side_by_side(
-    cluster_chunks,
-    out_path="dm_videos/cluster_side_by_side.mp4",
-    framerate=30,
-    max_samples_per_cluster=None,
-    target_size=(320,240),
-    pad_bg=(255,255,255),
-    gutter=10,
-    pad_x=24,
-    pad_y=24,
-    title=None,
-    per_tile_labels=True,
-    n_cols=None,
-    selected_clusters=None,
-    cluster_labels=None
-):
+    cluster_chunks: dict[int, list[list[np.ndarray]]],
+    out_path: str = "dm_videos/cluster_side_by_side.mp4",
+    framerate: int = 30,
+    max_samples_per_cluster: int | None = None,
+    target_size: tuple[int, int] = (320, 240),
+    pad_bg: tuple[int, int, int] = (255, 255, 255),
+    gutter: int = 10,
+    pad_x: int = 24,
+    pad_y: int = 24,
+    title: str | None = None,
+    per_tile_labels: bool = True,
+    n_cols: int | None = None,
+    selected_clusters: list[int] | None = None,
+    cluster_labels: dict[int, str] | None = None,
+) -> None:
+    """
+    Render cluster samples in a grid layout.
+
+    Args:
+        cluster_chunks: Dict mapping cluster_id to list of frame lists
+        out_path: Output video path
+        framerate: Frames per second
+        max_samples_per_cluster: Max samples to show per cluster
+        target_size: (width, height) per tile
+        pad_bg: Background color RGB
+        gutter: Gap between tiles
+        pad_x: Horizontal padding
+        pad_y: Vertical padding
+        title: Optional title string
+        per_tile_labels: Whether to show labels
+        n_cols: Number of columns (None for auto)
+        selected_clusters: Specific clusters to render
+        cluster_labels: Dict mapping cluster_id to label string
+    """
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
     if selected_clusters is None:

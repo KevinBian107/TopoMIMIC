@@ -1,4 +1,4 @@
-"""Mujoco rendering help, particularly for rendering all kinds of dimensionality reduction projectionwith mujoco clip rendering"""
+"""Mujoco rendering help, particularly for rendering all kinds of dimensionality reduction projection with mujoco clip rendering"""
 
 import os
 
@@ -9,7 +9,6 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-import matplotlib.pyplot as plt
 
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 import matplotlib.animation as animation
@@ -28,12 +27,27 @@ import h5py
 from vnl_tda.utils.rendering import render_from_saved_rollout
 from vnl_tda.utils.load_utils import load_from_h5py, get_aggregate_data
 from vnl_tda.utils.rendering import display_video
-from PIL import Image
 
 
-def render_pca_with_clips(int_array, rollout_dir, clip_id=1, clip_length=599, walker_name="fly",):
+def render_pca_with_clips(
+    int_array: np.ndarray,
+    rollout_dir: str,
+    clip_id: int = 1,
+    clip_length: int = 599,
+    walker_name: str = "fly",
+) -> list[np.ndarray]:
     """
-    Main entry for rendering clips with PCA rendering on the side.
+    Render clips with PCA projection visualization.
+
+    Args:
+        int_array: Intention array of shape (n_total, dim)
+        rollout_dir: Directory containing clip HDF5 files
+        clip_id: Clip ID to render
+        clip_length: Number of frames per clip
+        walker_name: Walker model name
+
+    Returns:
+        List of concatenated frames (MuJoCo + PCA)
     """
     start = clip_id * clip_length 
     end = start + clip_length
@@ -82,10 +96,23 @@ def render_with_global_and_local_pca_progression(
     cluster_local: np.ndarray,
     var_lcoal: np.ndarray,
     var_global: np.ndarray,
-):
+) -> list[np.ndarray]:
     """
-    Render the MuJoCo frames side-by-side with a figure showing
-    BOTH global PCA + local PCA for each frame.
+    Render MuJoCo frames side-by-side with global and local PCA progression.
+
+    Args:
+        rollout: Rollout data dict with 'qpos', 'info', etc.
+        walker_name: Walker model name
+        pca_global: Global PCA embedding of shape (N, 2)
+        cluster_global: Global cluster labels
+        global_subset_indices: Indices mapping clip frames to global
+        pca_local: Local PCA embedding of shape (T, 2)
+        cluster_local: Local cluster labels
+        var_lcoal: Local PCA variance ratios
+        var_global: Global PCA variance ratios
+
+    Returns:
+        List of concatenated (MuJoCo + PCA) frames
     """
     
     frames_mujoco = render_from_saved_rollout(rollout, walker_name)[1:]
@@ -132,8 +159,8 @@ def render_with_global_and_local_pca_progression(
 
 
 def plot_pca_intention(
-    idx,
-    episode_start,
+    idx: int,
+    episode_start: int,
     pca: PCA,
     pca_projections: np.ndarray,
     clip_idx: int,
@@ -143,7 +170,21 @@ def plot_pca_intention(
     window_size: int = 530,
 ) -> np.ndarray:
     """
-    plot pca intention progression of the episode
+    Plot PCA intention progression for a single frame.
+
+    Args:
+        idx: Current frame index
+        episode_start: Starting frame of episode
+        pca: Fitted PCA object for variance ratios
+        pca_projections: PCA projected data of shape (T, n_components)
+        clip_idx: Clip ID for title
+        feature_name: Feature name for title
+        n_components: Number of PCA components to plot
+        terminated: Whether episode has terminated
+        window_size: X-axis window size
+
+    Returns:
+        RGB image array of the plot
     """
     max_y = np.max(list(pca_projections[:, :n_components]))
     min_y = np.min(list(pca_projections[:, :n_components]))
@@ -193,9 +234,18 @@ def render_with_pca_progression(
     pca_projections: np.ndarray,
     n_components: int = 4,
     feature_name: str = "ctrl",
-) -> list:
+) -> list[np.ndarray]:
     """
-    render with the rewards progression graph concat alongside with the rendering.
+    Render MuJoCo frames with PCA progression graph alongside.
+
+    Args:
+        rollout: Rollout data dict with 'qpos', 'info', etc.
+        pca_projections: PCA projected data of shape (T, n_components)
+        n_components: Number of PCA components to plot
+        feature_name: Feature name for plot title
+
+    Returns:
+        List of concatenated (MuJoCo + PCA plot) frames
     """
     frames_mujoco = render_from_saved_rollout(rollout)[1:]
     # skip the first frame, since we don't have intention for the first frame
@@ -247,7 +297,22 @@ def global_local_pca_worker(
     var_global: np.ndarray,
 ) -> np.ndarray:
     """
-    The picklable worker function called by Pool.
+    Picklable worker function for parallel PCA plot rendering.
+
+    Args:
+        frame_idx: Current frame index
+        pca_global: Global PCA embedding of shape (N, 2)
+        cluster_global: Global cluster labels
+        global_subset_indices: Indices mapping clip to global
+        pca_local: Local PCA embedding of shape (T, 2)
+        cluster_local: Local cluster labels
+        T: Total number of frames
+        clip_idx: Clip ID
+        var_lcoal: Local variance ratios
+        var_global: Global variance ratios
+
+    Returns:
+        RGB image array of the plot
     """
     is_terminated = (frame_idx == T - 1)
     return plot_global_and_local_pca_intention_with_clusters(
@@ -266,20 +331,33 @@ def global_local_pca_worker(
 
 def plot_global_and_local_pca_intention_with_clusters(
     pca_global: np.ndarray,
-    cluster_global: np.ndarray, 
-    global_subset_indices: np.ndarray, 
-    pca_local: np.ndarray, 
+    cluster_global: np.ndarray,
+    global_subset_indices: np.ndarray,
+    pca_local: np.ndarray,
     cluster_local: np.ndarray,
     frame_idx_local: int,
     clip_idx: int,
     var_lcoal: np.ndarray,
     var_global: np.ndarray,
-    terminated: bool = False
-):
+    terminated: bool = False,
+) -> np.ndarray:
     """
-    Plot side-by-side:
-    1) Global PCA (left subplot): entire dataset in gray, this clip in color, highlight current frame.
-    2) Local PCA (right subplot): just this clip, highlight current frame.
+    Plot global and local PCA side-by-side with cluster coloring.
+
+    Args:
+        pca_global: Global PCA embedding of shape (N, 2)
+        cluster_global: Global cluster labels
+        global_subset_indices: Indices mapping clip to global
+        pca_local: Local PCA embedding of shape (T, 2)
+        cluster_local: Local cluster labels
+        frame_idx_local: Current frame index in local clip
+        clip_idx: Clip ID for title
+        var_lcoal: Local variance ratios
+        var_global: Global variance ratios
+        terminated: Whether episode has terminated
+
+    Returns:
+        RGB image array of the plot
     """
 
     # assume the local embedding is T points and we have T frames. frame_idx_local in [0..T).
@@ -370,9 +448,29 @@ def plot_global_and_local_pca_intention_with_clusters(
     return img
 
 
-def render_umap_with_clips(int_array, rollout_dir, clip_id=1, clip_length=599, walker_name="fly", window_size=50, stride=1):
+def render_umap_with_clips(
+    int_array: np.ndarray,
+    rollout_dir: str,
+    clip_id: int = 1,
+    clip_length: int = 599,
+    walker_name: str = "fly",
+    window_size: int = 50,
+    stride: int = 1,
+) -> list[np.ndarray]:
     """
-    Main entry function of rendering UMAP with clips.
+    Render clips with UMAP projection visualization.
+
+    Args:
+        int_array: Intention array of shape (n_total, dim)
+        rollout_dir: Directory containing clip HDF5 files
+        clip_id: Clip ID to render
+        clip_length: Number of frames per clip
+        walker_name: Walker model name
+        window_size: Size of sliding window for UMAP
+        stride: Step size between windows
+
+    Returns:
+        List of concatenated (MuJoCo + UMAP) frames
     """
 
     def sliding_window_umap(int_array, window_size=30, stride=10, n_components=3):
@@ -432,7 +530,21 @@ def global_local_umap_worker(
     terminated: bool = False,
 ) -> np.ndarray:
     """
-    Worker function for UMAP rendering
+    Picklable worker function for parallel UMAP plot rendering.
+
+    Args:
+        frame_idx: Current frame index
+        umap_global: Global UMAP embedding of shape (N, 3)
+        cluster_global: Global cluster labels
+        global_subset_indices: Indices mapping clip to global
+        umap_local: Local UMAP embedding of shape (T, 3)
+        cluster_local: Local cluster labels
+        T: Total number of frames
+        clip_idx: Clip ID
+        terminated: Whether episode has terminated
+
+    Returns:
+        RGB image array of the plot
     """
     return plot_global_and_local_umap_intention_with_clusters(
         umap_global=umap_global,
@@ -454,12 +566,23 @@ def plot_global_and_local_umap_intention_with_clusters(
     cluster_local: np.ndarray,
     frame_idx_local: int,
     clip_idx: int,
-    terminated: bool = False
+    terminated: bool = False,
 ) -> np.ndarray:
     """
-    Plot side-by-side:
-    1) Global UMAP (3D): entire dataset in gray, this clip in color, highlight current frame.
-    2) Local UMAP (3D): just this clip, highlight current frame.
+    Plot global and local 3D UMAP side-by-side with cluster coloring.
+
+    Args:
+        umap_global: Global UMAP embedding of shape (N, 3)
+        cluster_global: Global cluster labels
+        global_subset_indices: Indices mapping clip to global
+        umap_local: Local UMAP embedding of shape (T, 3)
+        cluster_local: Local cluster labels
+        frame_idx_local: Current frame index in local clip
+        clip_idx: Clip ID for title
+        terminated: Whether episode has terminated
+
+    Returns:
+        RGB image array of the plot
     """
 
     T = len(umap_local)
@@ -587,9 +710,19 @@ def plot_global_and_local_umap_intention_with_clusters(
     return image
 
 
-def resize_img_to_match_height(base_img: np.ndarray, img_to_resize: np.ndarray) -> np.ndarray:
+def resize_img_to_match_height(
+    base_img: np.ndarray,
+    img_to_resize: np.ndarray,
+) -> np.ndarray:
     """
-    Resize img_to_resize to have the same height as base_img, preserving aspect ratio using PIL.
+    Resize image to match height of base image, preserving aspect ratio.
+
+    Args:
+        base_img: Reference image for target height
+        img_to_resize: Image to resize
+
+    Returns:
+        Resized image with same height as base_img
     """
     target_height = base_img.shape[0]
     orig_height, orig_width = img_to_resize.shape[:2]
@@ -600,10 +733,31 @@ def resize_img_to_match_height(base_img: np.ndarray, img_to_resize: np.ndarray) 
     return np.array(resized_pil_img)
 
 
-def render_with_global_and_local_umap_progression(rollout, walker_name, umap_global, 
-                                                  cluster_global, cluster_local, global_subset_indices, umap_local, clip_idx):
+def render_with_global_and_local_umap_progression(
+    rollout: dict,
+    walker_name: str,
+    umap_global: np.ndarray,
+    cluster_global: np.ndarray,
+    cluster_local: np.ndarray,
+    global_subset_indices: np.ndarray,
+    umap_local: np.ndarray,
+    clip_idx: int,
+) -> list[np.ndarray]:
     """
-    Render both locla and global trajectories for UMAP + Mujoco clips
+    Render global and local UMAP trajectories alongside MuJoCo clips.
+
+    Args:
+        rollout: Rollout data dict
+        walker_name: Walker model name
+        umap_global: Global UMAP embedding of shape (N, 3)
+        cluster_global: Global cluster labels
+        cluster_local: Local cluster labels
+        global_subset_indices: Indices mapping clip frames to global
+        umap_local: Local UMAP embedding of shape (T, 3)
+        clip_idx: Clip ID for labeling
+
+    Returns:
+        List of concatenated (MuJoCo + UMAP) frames
     """
     
     frames_mujoco = render_from_saved_rollout(rollout, walker_name)[1:]

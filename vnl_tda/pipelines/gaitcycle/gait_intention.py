@@ -21,11 +21,24 @@ from vnl_tda.pipelines.gaitcycle.utils import (
 
 
 def sampled_umap_with_gait(
-    int_data, jf_array, window_size=31, stride=1, n_samples=10000
-):
+    int_data: np.ndarray,
+    jf_array: np.ndarray,
+    window_size: int = 31,
+    stride: int = 1,
+    n_samples: int = 10000,
+) -> dict:
     """
-    UMAP upon sampled windows, this helps the speed greatly,
-    additional gait analysis & correlations with intention is also performed
+    UMAP on sampled windows with gait analysis and intention correlations.
+
+    Args:
+        int_data: Intention data array
+        jf_array: Joint force array of shape (n_clips, n_frames, n_joints)
+        window_size: Size of sliding window
+        stride: Step size between windows
+        n_samples: Number of samples for UMAP
+
+    Returns:
+        Dict with 'embedded', 'clusters', 'gait_metrics', 'cluster_labels'
     """
 
     print(f"Processing data with paper methods, window_size={window_size}")
@@ -82,9 +95,23 @@ def sampled_umap_with_gait(
     }
 
 
-def estimate_gait_metrics(cfrc, center_frames, window_size=31, fps=30):
+def estimate_gait_metrics(
+    cfrc: np.ndarray,
+    center_frames: np.ndarray,
+    window_size: int = 31,
+    fps: int = 30,
+) -> dict:
     """
-    Extract gait metrics from force data using methods from the paper
+    Extract gait metrics from force data.
+
+    Args:
+        cfrc: Contact force array of shape (n_clips, n_frames, n_feet)
+        center_frames: Array of center frame indices
+        window_size: Size of analysis window
+        fps: Frames per second for frequency computation
+
+    Returns:
+        Dict with 'phases', 'frequencies', 'feet_in_stance', etc.
     """
     frame_mapping = {}
     global_idx = 0
@@ -270,9 +297,19 @@ def estimate_gait_metrics(cfrc, center_frames, window_size=31, fps=30):
     return metrics
 
 
-def compute_phase_using_hilbert(intentions, fps=30):
+def compute_phase_using_hilbert(
+    intentions: np.ndarray,
+    fps: int = 30,
+) -> dict:
     """
-    Compute phases using the discrete-time analytic signal method from the paper
+    Compute instantaneous phases using Hilbert transform.
+
+    Args:
+        intentions: Time series array of shape (n_timesteps, n_features)
+        fps: Sampling rate for frequency computation
+
+    Returns:
+        Dict with 'phases' and 'frequencies' arrays
     """
     n_timesteps, n_features = intentions.shape
 
@@ -325,9 +362,16 @@ def compute_phase_using_hilbert(intentions, fps=30):
     return {"phases": all_phases, "frequencies": all_frequencies}
 
 
-def analyze_cyclic_structure(embedded, gait_metrics):
+def analyze_cyclic_structure(
+    embedded: np.ndarray,
+    gait_metrics: dict,
+) -> None:
     """
-    Analyze the cyclic structure of the manifold
+    Analyze and visualize cyclic structure of the gait manifold.
+
+    Args:
+        embedded: UMAP embedding of shape (n_samples, 3)
+        gait_metrics: Dict with 'phases', 'frequencies', 'feet_in_stance', 'duty_factor'
     """
     min_size = min(len(embedded), len(gait_metrics["phases"]))
     phases = gait_metrics["phases"][:min_size]

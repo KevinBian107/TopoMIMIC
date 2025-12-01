@@ -1,4 +1,4 @@
-'''Functions for doing skeletonization of the intention space; 
+'''Functions for doing skeletonization of the intention space;
 persistent homology + discrete Morse graph'''
 
 import numpy as np
@@ -12,14 +12,21 @@ from scipy.spatial.distance import cdist, pdist, squareform
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.neighbors import NearestNeighbors
 from sklearn.metrics import pairwise_distances
-from typing import Union
 
 
-def _knn_weights_for_persistence(pts, k=10):
+def _knn_weights_for_persistence(
+    pts: np.ndarray,
+    k: int = 10,
+) -> np.ndarray:
     """
-    For cocycle use: w_p  = sqrt( (1/k) Σ_{q∈kNN(p)} d(p,q)^2 )
-    
-    returns the weighted distance of distance to measure
+    Compute k-NN based weights for persistence computation.
+
+    Args:
+        pts: Point cloud array of shape (N, D)
+        k: Number of nearest neighbors
+
+    Returns:
+        Weight array of shape (N,) with distance-to-measure values
     """
     k = min(k, pts.shape[0] - 1) 
     D = pairwise_distances(pts) 
@@ -28,20 +35,38 @@ def _knn_weights_for_persistence(pts, k=10):
     return np.sqrt(w2)
 
 
-def _weighted_distance_matrix(pts, w):
+def _weighted_distance_matrix(
+    pts: np.ndarray,
+    w: np.ndarray,
+) -> np.ndarray:
     """
-    For cocycle use, return full power-distance matrix 
-        - D_pow[i,j] = sqrt(||p_i-p_j||^2 + w_i^2 + w_j^2)
+    Compute power-distance matrix for weighted Rips filtration.
+
+    Args:
+        pts: Point cloud array of shape (N, D)
+        w: Weight array of shape (N,)
+
+    Returns:
+        Power-distance matrix of shape (N, N)
     """
     d2 = squareform(pdist(pts, metric='sqeuclidean'))
     W2 = w[:, None] ** 2 + w[None, :] ** 2
     return np.sqrt(d2 + W2)
 
 
-def _weighted_rips_cocycle_ripser(pts, k=10):
+def _weighted_rips_cocycle_ripser(
+    pts: np.ndarray,
+    k: int = 10,
+) -> list[int]:
     """
-    For cocycle use, most persistent H1 generator as a set of point indices, via ripser on
-    the power-distance matrix.
+    Find the most persistent H1 generator via weighted Rips filtration.
+
+    Args:
+        pts: Point cloud array of shape (N, D)
+        k: Number of neighbors for weight computation
+
+    Returns:
+        List of vertex indices participating in the most persistent cycle
     """
     w      = _knn_weights_for_persistence(pts, k=k)
     D_pow  = _weighted_distance_matrix(pts, w)
@@ -64,10 +89,19 @@ def _weighted_rips_cocycle_ripser(pts, k=10):
     return verts
 
 
-def _get_representative_cycle_ripser(points, maxdim=1):
+def _get_representative_cycle_ripser(
+    points: np.ndarray,
+    maxdim: int = 1,
+) -> list[int]:
     """
-    For cocycle use, finds the single most persistent H1 cycle in points via Ripser's cocycles.
-    Returns the set of point-indices that participate in that cycle.
+    Find the most persistent H1 cycle via Ripser's cocycles.
+
+    Args:
+        points: Point cloud array of shape (N, D)
+        maxdim: Maximum homology dimension to compute
+
+    Returns:
+        List of point indices that participate in the most persistent cycle
     """
     r = ripser(points, maxdim=maxdim, do_cocycles=True)
     dgm1 = r['dgms'][1]
@@ -90,10 +124,23 @@ def _get_representative_cycle_ripser(points, maxdim=1):
     return list(verts)
 
 
-def _unstack_and_average(points, cycle_inds, m, D):
+def _unstack_and_average(
+    points: np.ndarray,
+    cycle_inds: list[int],
+    m: int,
+    D: int,
+) -> np.ndarray:
     """
-    For cocycle use, given flattened windows points and indices cycle_inds,
-    reshape back to (2m+1, D) and average over the temporal axis.
+    Reshape flattened windows and average over the temporal axis.
+
+    Args:
+        points: Flattened window array of shape (N, (2m+1)*D)
+        cycle_inds: Indices of cycle points
+        m: Half-window size
+        D: Feature dimension
+
+    Returns:
+        Averaged sequence array of shape (len(cycle_inds), D)
     """
     expected = (2*m+1)*D
     seqs = []
@@ -106,9 +153,18 @@ def _unstack_and_average(points, cycle_inds, m, D):
     return np.vstack(seqs) if seqs else np.zeros((0, D))
 
 
-def _reorder_via_tsp(sequence):
-    """For cocycle use,
-    solve a TSP on the averaged cycle points to make a smooth loop."""
+def _reorder_via_tsp(
+    sequence: np.ndarray,
+) -> np.ndarray:
+    """
+    Reorder cycle points via TSP to form a smooth loop.
+
+    Args:
+        sequence: Array of points to reorder, shape (N, D)
+
+    Returns:
+        Reordered sequence array
+    """
     if len(sequence) <= 1:
         return sequence
     Dmat = cdist(sequence, sequence)
@@ -119,10 +175,19 @@ def _reorder_via_tsp(sequence):
     return sequence[tour]
 
 
-def extract_cycles_from_dm_graph(G, points):
+def extract_cycles_from_dm_graph(
+    G: nx.Graph,
+    points: np.ndarray,
+) -> list[np.ndarray]:
     """
-    For DM Graph, extract cycles from the DM graph by constructing an MST and
-    finding the edges on the graph that does not lay in the MST
+    Extract cycles from DM graph by finding non-tree edges.
+
+    Args:
+        G: NetworkX graph from discrete Morse reconstruction
+        points: Point cloud array of shape (N, D)
+
+    Returns:
+        List of cycle arrays, each containing vertex indices
     """
     cycles = []
     
@@ -148,19 +213,27 @@ def extract_cycles_from_dm_graph(G, points):
 
 
 def extract_skeleton_pcd_dm(
-    points,
-    k=10,
-    pers_delta=0.25,
-    epsilon=0.99,
-    output_dir=None,
-    cleanup=True
-):
+    points: np.ndarray,
+    k: int = 10,
+    pers_delta: float = 0.25,
+    epsilon: float = 0.99,
+    output_dir: str | None = None,
+    cleanup: bool = True,
+) -> tuple[list[np.ndarray], nx.Graph]:
     """
-    For DM graph, PCD DM graph reconstruction API:
-        - Build sparse weighted rips filtraion
-        - Calculate persistence
-        - Order weights
-        - Construct the DM graph and save out
+    Reconstruct discrete Morse graph from point cloud data.
+
+    Args:
+        points: Point cloud array of shape (N, D)
+        k: Number of neighbors for graph construction
+        pers_delta: Persistence threshold for filtering
+        epsilon: Sparse Rips approximation parameter
+        output_dir: Directory for intermediate files (temp dir if None)
+        cleanup: Whether to remove intermediate files
+
+    Returns:
+        Tuple of (cycle_indices, DM_graph) where cycle_indices is a list of
+        arrays containing vertex indices for each cycle
     """
     
     repo_path = "/root/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM"
@@ -236,11 +309,23 @@ def extract_skeleton_pcd_dm(
             shutil.rmtree(temp_dir, ignore_errors=True)
 
 
-def extract_generative_loops_cocycles_based(intentions, m=5, max_clips=None):
+def extract_generative_loops_cocycles_based(
+    intentions: np.ndarray,
+    m: int = 5,
+    max_clips: int | None = None,
+) -> tuple[list[np.ndarray | None], list[list[int]], list[np.ndarray]]:
     """
-    we extracts a representative H1 loop and find its coordinate in the original intention space.
-    Then we unstack the stacked intention vector to a matrix and average them.
-    We return these loop significant intention coordinates when walking one complete tour with TSP
+    Extract representative H1 loops from intention trajectories via cocycles.
+
+    Args:
+        intentions: Intention array of shape (n_clips, n_frames, D)
+        m: Half-window size for Takens embedding
+        max_clips: Maximum number of clips to process (None for all)
+
+    Returns:
+        Tuple of (loops, loops_idx, all_pts) where loops contains TSP-ordered
+        cycle coordinates, loops_idx contains raw cycle indices, and all_pts
+        contains the windowed point clouds
     """
     D = intentions.shape[2]
     n_clips = len(intentions) if max_clips is None else min(len(intentions), max_clips)
@@ -280,11 +365,23 @@ def extract_generative_loops_cocycles_based(intentions, m=5, max_clips=None):
     return loops, loops_idx, all_pts
 
 
-def extract_generative_loops_cocycles_power_based(intentions, m=5, max_clips=None, k=10):
+def extract_generative_loops_cocycles_power_based(
+    intentions: np.ndarray,
+    m: int = 5,
+    max_clips: int | None = None,
+    k: int = 10,
+) -> tuple[list, list[list[int]], list[np.ndarray]]:
     """
-    we extracts a representative H1 loop and find its coordinate in the original intention space.
-        - examined via power approximations with KNN density metric
-        - rest the same with no KNN weighting
+    Extract H1 loops using power-weighted Rips filtration.
+
+    Args:
+        intentions: Intention array of shape (n_clips, n_frames, D)
+        m: Half-window size for Takens embedding
+        max_clips: Maximum number of clips to process (None for all)
+        k: Number of neighbors for density weighting
+
+    Returns:
+        Tuple of (loops, loops_idx, all_pts) containing cycle data
     """
     D  = intentions.shape[2]
     n  = len(intentions) if max_clips is None else min(len(intentions), max_clips)
