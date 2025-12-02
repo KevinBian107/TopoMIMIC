@@ -1,4 +1,5 @@
-# Topology-Driven Insights into Naturalistic Behavior from Neuromechanical Agent Modeling
+# Topological Clustering of Neuromechanical Agent's Naturalistic Behavior
+
 ***The value of the data itself is equivalence to the spatial organization. Hence, by understanding the spatial organziation, we will be understanding the data directly. If the shape of the data is the same, any transformation of it will just be linear in space.***
 
 This code base is designed to be looking at such latent space of [Mimic-mjx](https://github.com/talmolab/Mimic-mjx) package via a topological perspective using optimized TDA pacakegs, hoping to find the `basis` of behaviors and controls.
