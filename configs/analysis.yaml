@@ -1,0 +1,48 @@
+# Analysis Pipeline Configuration
+# Runs MDS subspace analysis, axis motion comparison, and spectral analysis
+
+# Data paths
+rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
+behavior_csv: "/home/jovyan/vast/kaiwen/TopoVNL/behavior_book.csv"
+output_dir: "analysis_output"
+
+# Cluster configuration
+cluster:
+  results_dir: "out_subspace_dunn"
+  n_clusters: 13
+  cluster_labels:
+    0: "turn"
+    1: "walk_stay"
+    2: "rear_turn_walk"
+    3: "groom_up_turn"
+    4: "rear"
+    5: "groom_up_walk"
+    6: "walk_turn"
+    7: "walk_turn_stay"
+    8: "rear_fast_walk"
+    9: "rear_groom"
+    10: "groom"
+    11: "groom_turn"
+    12: "rear_turn_walk"
+
+# MDS subspace analysis parameters
+mds_k_cycles: 50
+mds_s_top: 10
+mds_label_unions:
+  - "walk"
+  - "rear"
+  - "groom"
+  - "turn"
+  - "stay"
+
+# Axis motion analysis parameters
+axis_motion_max_loops: 200
+
+# Pose variance analysis parameters
+pose_variance_body_parts:
+  - "upper_leg_R"
+  - "lower_leg_R"
+  - "upper_arm_R"
+  - "skull"
+  - "torso"
+  - "pelvis"

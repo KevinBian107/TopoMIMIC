@@ -38,6 +38,6 @@ auto_cluster:
 # Rendering parameters
 rendering:
   pad: 0
-  max_samples: 5
+  max_samples: 10
   framerate: 30
   target_size: [320, 240]

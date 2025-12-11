@@ -16,5 +16,6 @@ out_fullspace/
 out_subspace_auto/
 out_subspace_silhouette/
 out_subspace_dunn/
+analysis_output
 
 __pycache__
