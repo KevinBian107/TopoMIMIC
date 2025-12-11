@@ -293,6 +293,278 @@ def run_pose_variance_analysis(
     )
 
 
+def group_clusters_by_behavior(
+    cluster_labels: dict[int, str],
+    behavior_categories: list[str] = None,
+) -> dict[str, list[int]]:
+    """
+    Group cluster IDs by behavioral category based on keyword matching.
+
+    Args:
+        cluster_labels: Dict mapping cluster_id to label string
+        behavior_categories: List of behavior keywords to group by
+
+    Returns:
+        Dict mapping behavior category to list of cluster IDs
+    """
+    if behavior_categories is None:
+        behavior_categories = ["walk", "rear", "groom"]
+
+    grouped = {cat: [] for cat in behavior_categories}
+
+    for cid, label in cluster_labels.items():
+        label_lower = label.lower()
+        for cat in behavior_categories:
+            if cat in label_lower:
+                grouped[cat].append(cid)
+                break
+
+    return grouped
+
+
+def load_behavior_labels(behavior_csv: str) -> dict[str, list[int]]:
+    """
+    Load behavior labels from CSV file.
+
+    Returns:
+        Dict mapping behavior name to list of clip IDs with that behavior.
+    """
+    import pandas as pd
+    df = pd.read_csv(behavior_csv)
+
+    behavior_to_clips = {
+        "walk": df[df["walk"] == 1]["clip_idx"].tolist(),
+        "rear": df[df["rear"] == 1]["clip_idx"].tolist(),
+        "groom": df[(df["groom_down"] == 1) | (df["groom_up"] == 1)]["clip_idx"].tolist(),
+    }
+
+    return behavior_to_clips
+
+
+def compute_variance_for_clips(
+    clip_ids: list[int],
+    rodent_rollout_dir: str,
+    body_indices: list[int],
+    valid_body_parts: list[str],
+) -> np.ndarray:
+    """Compute variance per body part for a set of clips (full clip, all frames)."""
+    n_bodies = len(valid_body_parts)
+    all_qpos_by_body = {bp: [] for bp in valid_body_parts}
+
+    for clip_id in clip_ids:
+        try:
+            qpos = load_qpos(clip_id, rodent_rollout_dir)
+        except:
+            continue
+
+        for col_idx, (bp, body_idx) in enumerate(zip(valid_body_parts, body_indices)):
+            if body_idx < qpos.shape[1]:
+                all_qpos_by_body[bp].append(qpos[:, body_idx])
+
+    variances = np.zeros(n_bodies)
+    for col_idx, bp in enumerate(valid_body_parts):
+        if all_qpos_by_body[bp]:
+            combined = np.concatenate(all_qpos_by_body[bp])
+            variances[col_idx] = np.var(combined)
+
+    return variances
+
+
+def compute_variance_for_cluster_group(
+    cluster_ids: list[int],
+    cluster_dict: dict,
+    rodent_rollout_dir: str,
+    body_indices: list[int],
+    valid_body_parts: list[str],
+    max_loops: int = 200,
+) -> np.ndarray:
+    """Compute variance per body part for clusters (cycle frames only)."""
+    n_bodies = len(valid_body_parts)
+    all_qpos_by_body = {bp: [] for bp in valid_body_parts}
+
+    for cid in cluster_ids:
+        if cid not in cluster_dict:
+            continue
+
+        entries = cluster_dict[cid]
+
+        for i, (clip_id, frames) in enumerate(entries):
+            if i >= max_loops:
+                break
+
+            try:
+                qpos = load_qpos(clip_id, rodent_rollout_dir)
+            except:
+                continue
+
+            frames = np.asarray(frames, dtype=int)
+            frames = frames[frames < len(qpos)]
+
+            if len(frames) < 2:
+                continue
+
+            for col_idx, (bp, body_idx) in enumerate(zip(valid_body_parts, body_indices)):
+                if body_idx < qpos.shape[1]:
+                    all_qpos_by_body[bp].append(qpos[frames, body_idx])
+
+    variances = np.zeros(n_bodies)
+    for col_idx, bp in enumerate(valid_body_parts):
+        if all_qpos_by_body[bp]:
+            combined = np.concatenate(all_qpos_by_body[bp])
+            variances[col_idx] = np.var(combined)
+
+    return variances
+
+
+def plot_labeled_vs_cluster_variance(
+    cluster_dict: dict,
+    cluster_labels: dict[int, str],
+    behavior_csv: str,
+    rodent_rollout_dir: str,
+    output_dir: str,
+    behavior_categories: list[str] = None,
+    body_parts: list[str] = None,
+    max_loops: int = 200,
+    figsize: tuple[int, int] = (16, 10),
+) -> None:
+    """
+    Plot comparison of labeled clip variance vs cluster group variance.
+
+    Shows:
+    - Row 1: Labeled data variance (from behavior_book.csv)
+    - Row 2: Cluster group variance (grouped by keyword)
+    - Row 3: Normalized difference (cluster - labeled) / labeled
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    if behavior_categories is None:
+        behavior_categories = ["walk", "rear", "groom"]
+
+    if body_parts is None:
+        body_parts = [
+            "torso", "pelvis",
+            "upper_leg_L", "lower_leg_L", "foot_L",
+            "upper_leg_R", "lower_leg_R", "foot_R",
+            "skull", "jaw",
+            "upper_arm_L", "lower_arm_L",
+            "upper_arm_R", "lower_arm_R",
+        ]
+
+    body_indices = []
+    valid_body_parts = []
+    for bp in body_parts:
+        if bp in QPOS_BODY_NAMES:
+            body_indices.append(QPOS_BODY_NAMES.index(bp))
+            valid_body_parts.append(bp)
+
+    labeled_clips = load_behavior_labels(behavior_csv)
+    cluster_groups = group_clusters_by_behavior(cluster_labels, behavior_categories)
+
+    print(f"Labeled clips:")
+    for cat, clips in labeled_clips.items():
+        print(f"  {cat}: {len(clips)} clips")
+
+    print(f"Cluster groups:")
+    for cat, cids in cluster_groups.items():
+        labels = [cluster_labels.get(cid, f"cluster_{cid}") for cid in cids]
+        print(f"  {cat}: {cids} -> {labels}")
+
+    n_categories = len(behavior_categories)
+    n_bodies = len(valid_body_parts)
+
+    labeled_variance = np.zeros((n_categories, n_bodies))
+    cluster_variance = np.zeros((n_categories, n_bodies))
+
+    for row_idx, cat in enumerate(tqdm(behavior_categories, desc="Computing labeled variance")):
+        clip_ids = labeled_clips.get(cat, [])
+        if clip_ids:
+            labeled_variance[row_idx] = compute_variance_for_clips(
+                clip_ids, rodent_rollout_dir, body_indices, valid_body_parts
+            )
+
+    for row_idx, cat in enumerate(tqdm(behavior_categories, desc="Computing cluster variance")):
+        cluster_ids = cluster_groups.get(cat, [])
+        if cluster_ids:
+            cluster_variance[row_idx] = compute_variance_for_cluster_group(
+                cluster_ids, cluster_dict, rodent_rollout_dir,
+                body_indices, valid_body_parts, max_loops
+            )
+
+    with np.errstate(divide='ignore', invalid='ignore'):
+        diff_matrix = (cluster_variance - labeled_variance) / np.where(labeled_variance > 1e-10, labeled_variance, 1.0)
+        diff_matrix = np.nan_to_num(diff_matrix, nan=0.0, posinf=0.0, neginf=0.0)
+
+    body_labels = [bp.replace("_", " ") for bp in valid_body_parts]
+    category_labels = [cat.capitalize() for cat in behavior_categories]
+
+    fig, axes = plt.subplots(1, 3, figsize=figsize)
+
+    im1 = axes[0].imshow(labeled_variance, aspect="auto", cmap="plasma")
+    axes[0].set_xticks(np.arange(n_bodies))
+    axes[0].set_xticklabels(body_labels, rotation=45, ha="right", fontsize=10)
+    axes[0].set_yticks(np.arange(n_categories))
+    axes[0].set_yticklabels(category_labels, fontsize=11)
+    axes[0].set_xlabel("Body Part", fontsize=12)
+    axes[0].set_ylabel("Behavior", fontsize=12)
+    axes[0].set_title("Labeled Data Variance", fontsize=14, fontweight="bold")
+    cbar1 = plt.colorbar(im1, ax=axes[0], shrink=0.8)
+    cbar1.set_label("Variance", fontsize=11)
+
+    im2 = axes[1].imshow(cluster_variance, aspect="auto", cmap="plasma")
+    axes[1].set_xticks(np.arange(n_bodies))
+    axes[1].set_xticklabels(body_labels, rotation=45, ha="right", fontsize=10)
+    axes[1].set_yticks(np.arange(n_categories))
+    axes[1].set_yticklabels(category_labels, fontsize=11)
+    axes[1].set_xlabel("Body Part", fontsize=12)
+    axes[1].set_ylabel("Behavior", fontsize=12)
+    axes[1].set_title("Cluster Group Variance", fontsize=14, fontweight="bold")
+    cbar2 = plt.colorbar(im2, ax=axes[1], shrink=0.8)
+    cbar2.set_label("Variance", fontsize=11)
+
+    vmax = np.abs(diff_matrix).max()
+    vmax = min(vmax, 2.0)
+    im3 = axes[2].imshow(diff_matrix, aspect="auto", cmap="RdBu_r", vmin=-vmax, vmax=vmax)
+    axes[2].set_xticks(np.arange(n_bodies))
+    axes[2].set_xticklabels(body_labels, rotation=45, ha="right", fontsize=10)
+    axes[2].set_yticks(np.arange(n_categories))
+    axes[2].set_yticklabels(category_labels, fontsize=11)
+    axes[2].set_xlabel("Body Part", fontsize=12)
+    axes[2].set_ylabel("Behavior", fontsize=12)
+    axes[2].set_title("Normalized Difference\n(Cluster - Labeled) / Labeled", fontsize=14, fontweight="bold")
+    cbar3 = plt.colorbar(im3, ax=axes[2], shrink=0.8)
+    cbar3.set_label("Relative Diff", fontsize=11)
+
+    plt.tight_layout()
+
+    save_path = os.path.join(output_dir, "labeled_vs_cluster_variance.pdf")
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
+    plt.savefig(save_path.replace(".pdf", ".png"), dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"Saved labeled vs cluster variance to {save_path}")
+
+
+def run_grouped_behavior_analysis(
+    cluster_dict: dict,
+    cluster_labels: dict[int, str],
+    cfg: AnalysisConfig,
+) -> None:
+    print("\n=== Running Labeled vs Cluster Variance Analysis ===")
+
+    behavior_categories = ["walk", "rear", "groom"]
+
+    plot_labeled_vs_cluster_variance(
+        cluster_dict=cluster_dict,
+        cluster_labels=cluster_labels,
+        behavior_csv=cfg.behavior_csv,
+        rodent_rollout_dir=cfg.rodent_rollout_dir,
+        output_dir=cfg.output_dir,
+        behavior_categories=behavior_categories,
+        body_parts=cfg.pose_variance_body_parts,
+        max_loops=200,
+        figsize=(16, 5),
+    )
+
+
 def main(config_path: str = "configs/analysis.yaml"):
     cfg = load_config(config_path)
     os.makedirs(cfg.output_dir, exist_ok=True)
@@ -311,6 +583,7 @@ def main(config_path: str = "configs/analysis.yaml"):
     run_mds_analysis(cluster_dict, cfg.cluster.cluster_labels, cfg)
     run_axis_motion_analysis(cluster_dict, cfg.cluster.cluster_labels, cfg)
     run_pose_variance_analysis(cluster_dict, cfg.cluster.cluster_labels, cfg)
+    run_grouped_behavior_analysis(cluster_dict, cfg.cluster.cluster_labels, cfg)
 
     print("\n=== Analysis complete! ===")
     print(f"Results saved to {cfg.output_dir}")
