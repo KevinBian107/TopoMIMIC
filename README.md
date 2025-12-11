@@ -52,8 +52,9 @@ We provide 2 notebooks each with targetting an different part of the analysis:
 To run scripts for batched processing on all clips:
 
 ```python
-python -m scripts.dm_clip
-python -m scripts.dm_pool
+python -m scripts.dm_latent_subspace
+python -m scripts.dm_latent_subspace_auto_wcdi
+python -m scripts.dm_latent_fullspace
 ```
 
 ## Acknowledgements

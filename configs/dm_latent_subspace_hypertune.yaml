@@ -1,0 +1,37 @@
+# DM Latent Subspace Hyperparameter Tuning Configuration
+
+# Data paths
+rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
+output_dir: "dm_tuning_takens_m3_tau6"
+
+# Data loading
+num_clips_total: 800
+num_clips_eval: 10
+
+# Fixed Takens parameters
+takens:
+  m: 3
+  tau: 6
+
+# DM parameters to tune
+dm:
+  epsilon: 0.99
+
+# Parameter grid for tuning
+param_grid:
+  k_neighbors: [3, 5, 7]
+  pers_delta: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.75]
+
+# Scoring weights for composite metric
+scoring:
+  cycle_coverage_weight: 0.3
+  num_cycles_weight: 0.2
+  connectivity_weight: 0.2
+  mean_cycle_length_weight: 0.15
+  cycle_length_std_weight: 0.15
+
+# Visualization settings
+visualization:
+  save_plots: true
+  plot_by_k: true
+  plot_by_clip: true

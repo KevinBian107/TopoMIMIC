@@ -10,4 +10,11 @@ checkpoints/
 PCD-Graph-Recon-DM/
 dm_results/
 dm_videos/
+
+out_subspace/
+out_fullspace/
+out_subspace_auto/
+out_subspace_silhouette/
+out_subspace_dunn/
+
 __pycache__

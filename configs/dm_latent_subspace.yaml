@@ -1,0 +1,33 @@
+# DM Latent Subspace Pipeline Configuration
+
+# Data paths
+rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
+output_dir: "out_subspace"
+
+# Data loading
+num_clips: 500
+
+# Discrete Morse parameters
+dm:
+  pers_delta: 0.75
+  k_neighbors: 5
+  epsilon: 0.99
+  skip: true # load in if true
+  results_dir: "/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM/dm_results_m3_tau6_p0.75"
+
+# Clustering parameters
+clustering:
+  n_clusters: 10
+  min_len: 0
+  max_len: 500
+  target_len: 50
+  only_max: true
+  only_min: false
+  skip_clips: [37, 152, 163, 274, 281]
+
+# Rendering parameters
+rendering:
+  pad: 0
+  max_samples: 5
+  framerate: 30
+  target_size: [320, 240]

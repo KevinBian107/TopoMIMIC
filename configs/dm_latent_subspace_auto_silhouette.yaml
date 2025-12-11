@@ -1,0 +1,42 @@
+# DM Latent Subspace Pipeline Configuration with Auto Cluster Selection
+
+# Data paths
+rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
+output_dir: "out_subspace_silhouette"
+
+# Data loading
+num_clips: 500
+
+# Discrete Morse parameters
+dm:
+  pers_delta: 0.75
+  k_neighbors: 5
+  epsilon: 0.99
+  skip: true
+  results_dir: "/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM/dm_results_m3_tau6_p0.75"
+
+# Clustering parameters
+clustering:
+  min_len: 0
+  max_len: 500
+  target_len: 70
+  only_max: true
+  only_min: false
+  skip_clips: [37, 152, 163, 274, 281]
+
+# Auto cluster selection parameters
+auto_cluster:
+  enabled: true
+  k_min: 2
+  k_max: 100
+  metric: "joint"  # "intention", "joint", or "both"
+  joint_state_key: "qpos"  # key in h5 file for joint space
+  plot_silhouette: true
+  render_all_k: false  # render video for each k value evaluated
+
+# Rendering parameters
+rendering:
+  pad: 0
+  max_samples: 5
+  framerate: 30
+  target_size: [320, 240]

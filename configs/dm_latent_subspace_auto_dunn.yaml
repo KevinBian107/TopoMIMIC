@@ -1,0 +1,43 @@
+# DM Latent Subspace Pipeline with Dunn Index Cluster Selection
+# Higher Dunn = min(inter-cluster dist) / max(intra-cluster diameter)
+# Maximizes distinct, well-separated clusters
+
+# Data paths
+rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
+output_dir: "out_subspace_dunn"
+
+# Data loading
+num_clips: 500
+
+# Discrete Morse parameters
+dm:
+  pers_delta: 0.75
+  k_neighbors: 5
+  epsilon: 0.99
+  skip: true
+  results_dir: "/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM/dm_results_m3_tau6_p0.75"
+
+# Clustering parameters
+clustering:
+  min_len: 0
+  max_len: 500
+  target_len: 70
+  only_max: true
+  only_min: false
+  skip_clips: [37, 152, 163, 274, 281]
+
+# Dunn Index cluster selection
+auto_cluster:
+  enabled: true
+  k_min: 5
+  k_max: 20
+  joint_state_key: "qpos"  # key in h5 file for joint space (used for clustering)
+  plot_dunn: true  # save Dunn Index analysis plots
+  render_all_k: false  # render video for each k value evaluated
+
+# Rendering parameters
+rendering:
+  pad: 0
+  max_samples: 5
+  framerate: 30
+  target_size: [320, 240]
