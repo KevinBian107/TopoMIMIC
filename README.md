@@ -49,13 +49,31 @@ We provide 2 notebooks each with targetting an different part of the analysis:
 - [persistent-homology](/notebooks/persistent_homology.ipynb) is the alternative approach using persistent homology cocycles.
 - [projection](/notebooks/projection.ipynb) uses traditional dimensionality reduction techniques to render the projection space with mujoco rendering.
 
-To run scripts for batched processing on all clips:
+## Running the Codebase
+To run our standard clustering scripts for batched processing on all clips for the sub-space topology, run
 
 ```python
 python -m scripts.dm_latent_subspace
-python -m scripts.dm_latent_subspace_auto_wcdi
+python -m scripts.dm_latent_subspace_auto_dunn
+```
+
+For hyper-tunning the sub-space topology, run
+
+```python
+python -m scripts.dm_latent_subspace_hypertune
+```
+
+For running the full-space topology, run
+
+```python
 python -m scripts.dm_latent_fullspace
 ```
 
+For running our analysis code to get the same figure, run
+
+```python
+python -m scripts.analysis
+```
+
 ## Acknowledgements
-This codebase is an supplementary repository for the [Mimic-mjx](https://github.com/talmolab/Mimic-mjx) package, particularly for manifold & topological analysis. The TDA analysis and DM graph was consructed using packages such as [Ripser](https://ripser.scikit-tda.org/en/latest/) and [PCD-Graph-Recon-DM](https://github.com/lucasjmagee/PCD-Graph-Recon-DM/tree/main).
+This codebase is adapted from the [MIMIC-MJX](https://mimic-mjx.talmolab.org/) package, particularly for manifold & topological analysis. The TDA analysis and DM graph was consructed using packages such as [Ripser](https://ripser.scikit-tda.org/en/latest/) and [PCD-Graph-Recon-DM](https://github.com/lucasjmagee/PCD-Graph-Recon-DM/tree/main).
