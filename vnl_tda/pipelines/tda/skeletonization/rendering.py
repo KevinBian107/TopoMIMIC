@@ -600,6 +600,7 @@ def render_grid_clusters_side_by_side(
     n_cols: int | None = None,
     selected_clusters: list[int] | None = None,
     cluster_labels: dict[int, str] | None = None,
+    cluster_clip_ids: dict[int, list[int]] | None = None,
 ) -> None:
     """
     Render cluster samples in a grid layout.
@@ -619,6 +620,7 @@ def render_grid_clusters_side_by_side(
         n_cols: Number of columns (None for auto)
         selected_clusters: Specific clusters to render
         cluster_labels: Dict mapping cluster_id to label string
+        cluster_clip_ids: Dict mapping cluster_id to list of clip_ids for each sample
     """
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
@@ -646,12 +648,16 @@ def render_grid_clusters_side_by_side(
     title_h = 34 if title else 0
 
     samples_by_cluster = {}
+    clip_ids_by_cluster = {}
     max_cols = 0
     for cid in order:
         samples = list(cluster_chunks[cid])
+        clip_ids = list(cluster_clip_ids[cid]) if cluster_clip_ids and cid in cluster_clip_ids else [None] * len(samples)
         if max_samples_per_cluster is not None:
             samples = samples[:max_samples_per_cluster]
+            clip_ids = clip_ids[:max_samples_per_cluster]
         samples_by_cluster[cid] = samples
+        clip_ids_by_cluster[cid] = clip_ids
         max_cols = max(max_cols, len(samples))
 
     if n_cols is None:
@@ -699,6 +705,7 @@ def render_grid_clusters_side_by_side(
                 x = pad_x + col*(cell_w + gutter)
                 y = y0 + row*(cell_h + gutter)
                 samples = samples_by_cluster[cid]
+                clip_ids = clip_ids_by_cluster[cid]
                 if col >= len(samples):
                     continue
                 seq = samples[col]
@@ -707,7 +714,12 @@ def render_grid_clusters_side_by_side(
                 fr = seq[t % len(seq)]
                 img = Image.fromarray(_ensure_rgb_uint8(fr)).resize((Wc, Hc))
                 if per_tile_labels:
-                    draw_centered(draw, f"{cname} · Sample {col+1}", x + cell_w//2, y + label_h//2, font_label)
+                    clip_id = clip_ids[col] if col < len(clip_ids) else None
+                    if clip_id is not None:
+                        label_text = f"{cname} (clip {clip_id})"
+                    else:
+                        label_text = f"{cname} · Sample {col+1}"
+                    draw_centered(draw, label_text, x + cell_w//2, y + label_h//2, font_label)
                 canvas.paste(img, (x, y + label_h))
         writer.send(np.asarray(canvas, dtype=np.uint8))
 

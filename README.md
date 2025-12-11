@@ -75,5 +75,12 @@ For running our analysis code to get the same figure, run
 python -m scripts.analysis
 ```
 
+To extract the clips with "filled space", representing only single behavior mode within it, run
+
+```python
+python -m scripts.extract_filled_space
+```
+
+
 ## Acknowledgements
 This codebase is adapted from the [MIMIC-MJX](https://mimic-mjx.talmolab.org/) package, particularly for manifold & topological analysis. The TDA analysis and DM graph was consructed using packages such as [Ripser](https://ripser.scikit-tda.org/en/latest/) and [PCD-Graph-Recon-DM](https://github.com/lucasjmagee/PCD-Graph-Recon-DM/tree/main).

@@ -194,7 +194,8 @@ def chunk_loops_by_clustered_vpath(
     pad: int = 25,
     sample: int | None = None,
     rng: random.Random | None = None,
-) -> dict[int, list[list[np.ndarray]]]:
+    return_clip_ids: bool = False,
+) -> dict[int, list[list[np.ndarray]]] | tuple[dict[int, list[list[np.ndarray]]], dict[int, list[int]]]:
     """
     Build video-frame chunks for every behavior cluster.
 
@@ -204,35 +205,38 @@ def chunk_loops_by_clustered_vpath(
         pad: Padding around each frame index
         sample: Maximum samples per cluster (None for all)
         rng: Random number generator for sampling
+        return_clip_ids: Whether to also return clip IDs for each chunk
 
     Returns:
-        Dict mapping cluster_id to list of frame chunks
+        Dict mapping cluster_id to list of frame chunks.
+        If return_clip_ids=True, also returns dict mapping cluster_id to list of clip_ids.
     """
     if rng is None:
         rng = random
 
     cluster_chunks = {}
+    cluster_clip_ids = {}
+
     for cid, items in cluster_dict.items():
         if sample is not None and len(items) > sample:
             items = rng.sample(items, sample)
 
         cluster_chunks[cid] = []
+        cluster_clip_ids[cid] = []
 
-        by_clip = {}
         for clip_id, frames in items:
-            by_clip.setdefault(clip_id, []).append(frames)
-
-        for clip_id, frame_lists in by_clip.items():
             with h5py.File(f"{rodent_rollout_dir}/clip_{clip_id}.h5", "r") as h5file:
                 rollout = load_from_h5py(h5file)
             full_frames = render_from_saved_rollout(rollout)
             T = len(full_frames)
 
-            for frames in frame_lists:
-                ordered = _expand_indices(frames, pad=pad, T=T) if pad and pad > 0 else sorted(int(f) for f in frames)
-                chunk = [full_frames[i] for i in ordered]
-                cluster_chunks[cid].append(chunk)
+            ordered = _expand_indices(frames, pad=pad, T=T) if pad and pad > 0 else sorted(int(f) for f in frames)
+            chunk = [full_frames[i] for i in ordered]
+            cluster_chunks[cid].append(chunk)
+            cluster_clip_ids[cid].append(clip_id)
 
+    if return_clip_ids:
+        return cluster_chunks, cluster_clip_ids
     return cluster_chunks
 
 

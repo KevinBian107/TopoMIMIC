@@ -17,17 +17,17 @@ dm:
 
 # Clustering parameters
 clustering:
-  n_clusters: 10
+  n_clusters: 7
   min_len: 0
   max_len: 500
-  target_len: 50
+  target_len: 70
   only_max: true
   only_min: false
-  skip_clips: [37, 152, 163, 274, 281]
+  skip_clips: [37, 80, 152, 163, 187, 267, 281, 475, 491]
 
 # Rendering parameters
 rendering:
   pad: 0
-  max_samples: 5
+  max_samples: 10
   framerate: 30
   target_size: [320, 240]

@@ -9,21 +9,22 @@ import functools
 import multiprocessing as mp
 import pickle as pkl
 import yaml
+import ot
 from dataclasses import dataclass
 from tqdm import tqdm
 
 import matplotlib.pyplot as plt
+from scipy.spatial.distance import pdist, cdist
+from sklearn.manifold import MDS
 from sklearn.cluster import KMeans
-from scipy.spatial.distance import pdist, squareform
 
-from vnl_tda.utils.load_utils import get_aggregate_data, load_from_h5py
+from vnl_tda.utils.load_utils import get_aggregate_data
 from vnl_tda.pipelines.tda.skeletonization.skeletonization import extract_skeleton_pcd_dm
 from vnl_tda.pipelines.tda.skeletonization.postprocess import (
     chunk_loops_by_clustered_vpath,
     _expand_frames_nonconsec,
     _uniform_downsample,
     _normalize_dist_matrix,
-    drop_middle_nearby_loops,
 )
 from vnl_tda.pipelines.tda.skeletonization.rendering import render_grid_clusters_side_by_side
 
@@ -170,10 +171,21 @@ def prepare_windows_for_clustering(
     all_cycle_dm: list,
     intention: np.ndarray,
     clustering_cfg: ClusteringConfig,
-    n_clips: int,
 ) -> tuple[list[tuple[int, np.ndarray]], list[np.ndarray]]:
+    """
+    Prepare windows from cycles for clustering.
+
+    Args:
+        all_cycle_dm: List of cycles per clip
+        intention: Intention array (n_clips, n_frames, D)
+        clustering_cfg: Clustering configuration
+
+    Returns:
+        Tuple of (windows, cleaned_loops)
+    """
     windows = []
     cleaned_loops = []
+    n_clips = len(intention)
 
     for clip_id in range(n_clips):
         if clip_id in clustering_cfg.skip_clips:
@@ -206,80 +218,150 @@ def prepare_windows_for_clustering(
     return windows, cleaned_loops
 
 
-def cluster_windows_kmeans(
+def compute_w2_distance_matrix(
     windows: list[tuple[int, np.ndarray]],
-    data: np.ndarray,
-    k: int,
-    random_state: int = 0,
-) -> np.ndarray:
-    trajectories = []
-    for clip_id, frames in windows:
-        traj = data[clip_id, frames].flatten()
-        trajectories.append(traj)
-    X = np.array(trajectories)
-
-    kmeans = KMeans(n_clusters=k, random_state=random_state, n_init='auto')
-    labels = kmeans.fit_predict(X)
-    return labels
-
-
-def compute_dunn_index(
-    windows: list[tuple[int, np.ndarray]],
-    data: np.ndarray,
-    labels: np.ndarray,
-) -> tuple[float, float, float]:
+    intention: np.ndarray,
+    target_len: int,
+    squared_cost: bool = False,
+) -> tuple[np.ndarray, np.ndarray]:
     """
-    Compute Dunn Index for a clustering.
-
-    Dunn = min(inter-cluster distance) / max(intra-cluster diameter)
-
-    Higher Dunn = more distinct, well-separated clusters.
+    Compute pairwise Wasserstein-2 distance matrix (computed once, reused for all k).
 
     Args:
         windows: List of (clip_id, sampled_frames) tuples
-        data: Joint space array (n_clips, n_frames, D)
-        labels: Cluster labels for each window
+        intention: Intention array (n_clips, n_frames, D)
+        target_len: Target length for uniform downsampling
+        squared_cost: Whether to square the cost matrix
+
+    Returns:
+        Tuple of (raw_distance_matrix, normalized_distance_matrix)
+    """
+    M = len(windows)
+    D = np.zeros((M, M), dtype=float)
+
+    print(f"Computing W2 distance matrix for {M} windows...")
+    for i in tqdm(range(M), desc="W2 distances"):
+        ci, fi = windows[i]
+        Xi = intention[ci, fi]
+        wi = np.full(target_len, 1.0 / target_len)
+
+        for j in range(i + 1, M):
+            cj, fj = windows[j]
+            Xj = intention[cj, fj]
+            vj = np.full(target_len, 1.0 / target_len)
+
+            C = ot.dist(Xi, Xj)
+            if squared_cost:
+                C = C ** 2
+
+            val = ot.emd2(wi, vj, C)
+            if squared_cost:
+                val = np.sqrt(val)
+
+            D[i, j] = D[j, i] = val
+
+    Dn = _normalize_dist_matrix(D)
+    return D, Dn
+
+
+def cluster_from_distance_matrix(
+    Dn: np.ndarray,
+    n_clusters: int,
+    random_state: int = 0,
+) -> np.ndarray:
+    """
+    Cluster using precomputed distance matrix via MDS + KMeans.
+
+    Args:
+        Dn: Normalized distance matrix
+        n_clusters: Number of clusters
+        random_state: Random seed
+
+    Returns:
+        Cluster labels array
+    """
+    mds = MDS(n_components=3, dissimilarity='precomputed', random_state=random_state, normalized_stress='auto')
+    X_embedded = mds.fit_transform(Dn)
+    labels = KMeans(n_clusters=n_clusters, random_state=random_state, n_init='auto').fit_predict(X_embedded)
+    return labels
+
+
+def build_cluster_dict(
+    labels: np.ndarray,
+    windows: list[tuple[int, np.ndarray]],
+) -> dict[int, list[tuple[int, np.ndarray]]]:
+    """
+    Build cluster dictionary from labels and windows.
+
+    Args:
+        labels: Cluster labels array
+        windows: List of (clip_id, sampled_frames) tuples
+
+    Returns:
+        Dict mapping cluster_id to list of (clip_id, frame_indices)
+    """
+    clusters = {}
+    for lbl, win in zip(labels, windows):
+        clusters.setdefault(int(lbl), []).append(win)
+    return clusters
+
+
+def compute_dunn_index_from_cluster_dict(
+    cluster_dict: dict[int, list[tuple[int, np.ndarray]]],
+    joint_data: np.ndarray,
+    target_len: int,
+) -> tuple[float, float, float]:
+    """
+    Compute Dunn Index for a clustering in joint space.
+
+    Dunn = min(inter-cluster distance) / max(intra-cluster diameter)
+
+    Args:
+        cluster_dict: Dict mapping cluster_id to list of (clip_id, frame_indices)
+        joint_data: Joint space array (n_clips, n_frames, D)
+        target_len: Target length for uniform downsampling
 
     Returns:
         Tuple of (dunn_index, min_inter_dist, max_intra_diam)
     """
-    trajectories = []
-    for clip_id, frames in windows:
-        traj = data[clip_id, frames].flatten()
-        trajectories.append(traj)
-    X = np.array(trajectories)
-
-    unique_labels = np.unique(labels)
-    n_clusters = len(unique_labels)
+    cluster_ids = sorted(cluster_dict.keys())
+    n_clusters = len(cluster_ids)
 
     if n_clusters < 2:
         return 0.0, 0.0, 0.0
 
-    cluster_diameters = []
-    for lbl in unique_labels:
-        cluster_mask = labels == lbl
-        cluster_points = X[cluster_mask]
+    cluster_trajectories = {}
+    for cid in cluster_ids:
+        trajs = []
+        for clip_id, frames in cluster_dict[cid]:
+            frames = np.asarray(frames, dtype=int)
+            sampled = _uniform_downsample(frames, target_len)
+            if sampled is None:
+                sampled = frames[:target_len] if len(frames) >= target_len else frames
+            traj = joint_data[clip_id, sampled].flatten()
+            trajs.append(traj)
+        cluster_trajectories[cid] = np.array(trajs)
 
-        if len(cluster_points) < 2:
+    cluster_diameters = []
+    for cid in cluster_ids:
+        X = cluster_trajectories[cid]
+        if len(X) < 2:
             cluster_diameters.append(0.0)
         else:
-            pairwise = pdist(cluster_points, metric='euclidean')
+            pairwise = pdist(X, metric='euclidean')
             diameter = pairwise.max() if len(pairwise) > 0 else 0.0
             cluster_diameters.append(diameter)
 
     max_intra_diameter = max(cluster_diameters) if cluster_diameters else 0.0
 
     min_inter_distance = np.inf
-    for i, lbl_i in enumerate(unique_labels):
-        for j, lbl_j in enumerate(unique_labels):
+    for i, cid_i in enumerate(cluster_ids):
+        for j, cid_j in enumerate(cluster_ids):
             if i >= j:
                 continue
-
-            points_i = X[labels == lbl_i]
-            points_j = X[labels == lbl_j]
-
-            from scipy.spatial.distance import cdist
-            inter_dists = cdist(points_i, points_j, metric='euclidean')
+            X_i = cluster_trajectories[cid_i]
+            X_j = cluster_trajectories[cid_j]
+            inter_dists = cdist(X_i, X_j, metric='euclidean')
             min_dist = inter_dists.min()
             min_inter_distance = min(min_inter_distance, min_dist)
 
@@ -292,32 +374,34 @@ def compute_dunn_index(
 
 
 def compute_per_cluster_stats(
-    windows: list[tuple[int, np.ndarray]],
-    data: np.ndarray,
-    labels: np.ndarray,
+    cluster_dict: dict[int, list[tuple[int, np.ndarray]]],
+    joint_data: np.ndarray,
+    target_len: int,
 ) -> dict:
-    """Compute per-cluster statistics (diameter, size)."""
-    trajectories = []
-    for clip_id, frames in windows:
-        traj = data[clip_id, frames].flatten()
-        trajectories.append(traj)
-    X = np.array(trajectories)
-
-    unique_labels = np.unique(labels)
+    """Compute per-cluster statistics (diameter, size) in joint space."""
+    cluster_ids = sorted(cluster_dict.keys())
     stats = {}
 
-    for lbl in unique_labels:
-        cluster_mask = labels == lbl
-        cluster_points = X[cluster_mask]
-        n_points = len(cluster_points)
+    for cid in cluster_ids:
+        trajs = []
+        for clip_id, frames in cluster_dict[cid]:
+            frames = np.asarray(frames, dtype=int)
+            sampled = _uniform_downsample(frames, target_len)
+            if sampled is None:
+                sampled = frames[:target_len] if len(frames) >= target_len else frames
+            traj = joint_data[clip_id, sampled].flatten()
+            trajs.append(traj)
+
+        X = np.array(trajs)
+        n_points = len(X)
 
         if n_points < 2:
             diameter = 0.0
         else:
-            pairwise = pdist(cluster_points, metric='euclidean')
+            pairwise = pdist(X, metric='euclidean')
             diameter = pairwise.max() if len(pairwise) > 0 else 0.0
 
-        stats[int(lbl)] = {
+        stats[int(cid)] = {
             "size": n_points,
             "diameter": diameter,
         }
@@ -327,33 +411,32 @@ def compute_per_cluster_stats(
 
 def auto_select_clusters(
     windows: list[tuple[int, np.ndarray]],
-    intention: np.ndarray,
-    joint_data: np.ndarray | None,
+    Dn: np.ndarray,
+    joint_data: np.ndarray,
     clustering_cfg: ClusteringConfig,
     auto_cfg: AutoClusterConfig,
     output_dir: str,
-) -> tuple[int, dict, np.ndarray, dict[int, dict]]:
+) -> tuple[int, dict, dict[int, dict]]:
     """
     Automatically select optimal number of clusters using Dunn Index.
 
-    Dunn = min(inter-cluster distance) / max(intra-cluster diameter)
-    Higher Dunn = more distinct clusters with tight groupings.
+    Clustering is done via MDS + KMeans on precomputed W2 distance matrix.
+    Dunn Index is computed on joint space.
 
     Args:
         windows: List of (clip_id, sampled_frames) tuples
-        intention: Intention array (n_clips, n_frames, D)
-        joint_data: Joint space array (n_clips, n_frames, J) or None
+        Dn: Normalized W2 distance matrix (precomputed)
+        joint_data: Joint space array (n_clips, n_frames, J)
         clustering_cfg: Clustering configuration
         auto_cfg: Auto cluster selection configuration
         output_dir: Output directory for plots
 
     Returns:
-        Tuple of (optimal_k, cluster_dict, labels, all_cluster_dicts)
+        Tuple of (optimal_k, cluster_dict, all_cluster_dicts)
     """
     print(f"\n=== Dunn Index Cluster Selection (k={auto_cfg.k_min} to {auto_cfg.k_max}) ===")
-
-    cluster_data = joint_data if joint_data is not None else intention
-    print(f"Using {'joint' if joint_data is not None else 'intention'} space for clustering")
+    print("Clustering: MDS + KMeans on precomputed W2 distance matrix")
+    print("Scoring: Dunn Index on joint space")
 
     k_range = range(auto_cfg.k_min, auto_cfg.k_max + 1)
     results = {
@@ -361,28 +444,32 @@ def auto_select_clusters(
         "min_inter_dist": [],
         "max_intra_diam": [],
         "per_cluster_stats": {},
-        "labels": {},
     }
+    all_cluster_dicts = {}
 
     for k in tqdm(k_range, desc="Evaluating k values"):
-        labels_k = cluster_windows_kmeans(windows, cluster_data, k)
-        dunn, min_inter, max_intra = compute_dunn_index(windows, cluster_data, labels_k)
-        per_cluster = compute_per_cluster_stats(windows, cluster_data, labels_k)
+        labels = cluster_from_distance_matrix(Dn, n_clusters=k)
+        cluster_dict_k = build_cluster_dict(labels, windows)
+
+        dunn, min_inter, max_intra = compute_dunn_index_from_cluster_dict(
+            cluster_dict_k, joint_data, clustering_cfg.target_len
+        )
+        per_cluster = compute_per_cluster_stats(
+            cluster_dict_k, joint_data, clustering_cfg.target_len
+        )
 
         results["dunn_index"].append(dunn)
         results["min_inter_dist"].append(min_inter)
         results["max_intra_diam"].append(max_intra)
         results["per_cluster_stats"][k] = per_cluster
-        results["labels"][k] = labels_k
+        all_cluster_dicts[k] = cluster_dict_k
 
     dunn_arr = np.array(results["dunn_index"])
-
     optimal_idx = np.argmax(dunn_arr)
     optimal_k = list(k_range)[optimal_idx]
     optimal_dunn = results["dunn_index"][optimal_idx]
     optimal_min_inter = results["min_inter_dist"][optimal_idx]
     optimal_max_intra = results["max_intra_diam"][optimal_idx]
-    optimal_labels = results["labels"][optimal_k]
 
     print(f"\nMetrics by k (Dunn | min_inter | max_intra):")
     for i, k in enumerate(k_range):
@@ -397,17 +484,9 @@ def auto_select_clusters(
     if auto_cfg.plot_dunn:
         plot_dunn_analysis(k_range, results, optimal_k, output_dir)
 
-    all_cluster_dicts = {}
-    for k in k_range:
-        k_labels = results["labels"][k]
-        k_cluster_dict = {}
-        for lbl, win in zip(k_labels, windows):
-            k_cluster_dict.setdefault(int(lbl), []).append(win)
-        all_cluster_dicts[k] = k_cluster_dict
-
     cluster_dict = all_cluster_dicts[optimal_k]
 
-    return optimal_k, cluster_dict, optimal_labels, all_cluster_dicts
+    return optimal_k, cluster_dict, all_cluster_dicts
 
 
 def plot_dunn_analysis(
@@ -481,11 +560,12 @@ def run_rendering(
     output_filename: str = "cluster_side_by_side.mp4",
     title: str = "DM Cluster Samples (Dunn-selected)",
 ) -> None:
-    cluster_chunks = chunk_loops_by_clustered_vpath(
+    cluster_chunks, cluster_clip_ids = chunk_loops_by_clustered_vpath(
         cluster_dict,
         rodent_rollout_dir,
         pad=rendering_cfg.pad,
         sample=rendering_cfg.max_samples,
+        return_clip_ids=True,
     )
 
     os.makedirs(output_dir, exist_ok=True)
@@ -501,6 +581,7 @@ def run_rendering(
         per_tile_labels=True,
         selected_clusters=sorted(cluster_dict.keys()),
         cluster_labels=cluster_labels,
+        cluster_clip_ids=cluster_clip_ids,
     )
     print(f"Video saved to: {out_path}")
 
@@ -564,19 +645,28 @@ def main(config_path: str = "configs/dm_latent_subspace_auto_dunn.yaml"):
             base_output_dir=base_output_dir,
         )
 
-    print("\n=== Stage 3: Preparing windows for clustering ===")
+    print("\n=== Stage 3: Preparing windows and computing W2 distance matrix ===")
     windows, cleaned_loops = prepare_windows_for_clustering(
-        all_cycle_dm, int_rodent, cfg.clustering, cfg.num_clips
+        all_cycle_dm, int_rodent, cfg.clustering
     )
     print(f"Prepared {len(windows)} windows for clustering")
 
     if len(windows) == 0:
         raise RuntimeError("No valid windows for clustering")
 
-    print("\n=== Stage 4: Dunn Index cluster selection ===")
-    optimal_k, cluster_dict, labels, all_cluster_dicts = auto_select_clusters(
+    D, Dn = compute_w2_distance_matrix(
+        windows, int_rodent, cfg.clustering.target_len, squared_cost=False
+    )
+
+    w2_cache_path = os.path.join(cfg.output_dir, "w2_distance_matrix.pkl")
+    with open(w2_cache_path, "wb") as f:
+        pkl.dump({"D": D, "Dn": Dn, "windows": windows}, f)
+    print(f"Cached W2 distance matrix to {w2_cache_path}")
+
+    print("\n=== Stage 4: Dunn Index cluster selection (W2 clustering, joint-space scoring) ===")
+    optimal_k, cluster_dict, all_cluster_dicts = auto_select_clusters(
         windows=windows,
-        intention=int_rodent,
+        Dn=Dn,
         joint_data=joint_data,
         clustering_cfg=cfg.clustering,
         auto_cfg=cfg.auto_cluster,
@@ -591,8 +681,6 @@ def main(config_path: str = "configs/dm_latent_subspace_auto_dunn.yaml"):
         pkl.dump(cluster_dict, f)
     with open(os.path.join(cluster_output_dir, "all_cluster_dicts.pkl"), "wb") as f:
         pkl.dump(all_cluster_dicts, f)
-    with open(os.path.join(cluster_output_dir, "cleaned_loops.pkl"), "wb") as f:
-        pkl.dump(cleaned_loops, f)
     with open(os.path.join(cluster_output_dir, "optimal_k.txt"), "w") as f:
         f.write(f"optimal_k={optimal_k}\n")
 

@@ -24,7 +24,7 @@ clustering:
   target_len: 70
   only_max: true
   only_min: false
-  skip_clips: [37, 152, 163, 274, 281]
+  skip_clips: [37, 80, 152, 163, 187, 267, 281, 475, 491]
 
 # Dunn Index cluster selection
 auto_cluster:
