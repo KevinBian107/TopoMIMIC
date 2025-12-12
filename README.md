@@ -1,6 +1,4 @@
-# Topological Clustering of Neuromechanical Agent's Naturalistic Behavior
-
-***The value of the data itself is equivalence to the spatial organization. Hence, by understanding the spatial organziation, we will be understanding the data directly. If the shape of the data is the same, any transformation of it will just be linear in space.***
+# Seeing What's Possible: Topological Clustering of Behavioral Primitives and Transitions
 
 This code base is designed to be looking at such latent space of [Mimic-mjx](https://github.com/talmolab/Mimic-mjx) package via a topological perspective using optimized TDA pacakegs, hoping to find the `basis` of behaviors and controls.
 
@@ -79,6 +77,20 @@ To extract the clips with "filled space", representing only single behavior mode
 
 ```python
 python -m scripts.extract_filled_space
+```
+
+## Running Benchmark
+To run our benchmark comparison, which include clustering method like KMeans, DBSCAN and Spectral Clustering, and state space models like SLDS and AR-HMM, run
+
+```python
+python -m benchmark.benchmark_cluster
+python -m benchmark.benchmark_kpms
+```
+
+And run the corresponding benchmark analysis to get our figure, run
+
+```python
+python -m benchmark.benchmark_analysis
 ```
 
 

@@ -5,3 +5,4 @@ networkx
 ripser
 gudhi
 seaborn
+keypoint-moseq[cuda]

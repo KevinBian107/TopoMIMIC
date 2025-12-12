@@ -1,22 +1,25 @@
+# claude
 .claude
 node_modules/
 package-lock.json
 package.json
 
+# logging, data, ckpts
 wandb/
 videos/
 data/
 checkpoints/
 PCD-Graph-Recon-DM/
-dm_results/
-dm_videos/
 
+# out figures
 out_subspace/
 out_fullspace/
 out_subspace_dunn/
 out_no_cycle_clips/
 out_benchmark/
+out_kpms_benchmark/
 out_benchmark_analysis/
 out_analysis/
+figures/
 
 __pycache__
