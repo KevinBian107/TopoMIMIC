@@ -1,7 +1,6 @@
 # Analysis Pipeline Configuration
 # Runs MDS subspace analysis, axis motion comparison, and spectral analysis
 
-# Data paths
 rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
 behavior_csv: "/home/jovyan/vast/kaiwen/TopoVNL/behavior_book.csv"
 output_dir: "out_analysis"
@@ -13,7 +12,7 @@ cluster:
   cluster_labels:
     0: "walk_stay"
     1: "rear_left_turn"
-    2: "walk_turn"
+    2: "walk_turn_left"
     3: "rear_left_turn_walk"
     4: "groom"
     5: "groom_right_turn"

@@ -1,10 +1,8 @@
 # DM Latent Subspace Pipeline Configuration
 
-# Data paths
 rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
 output_dir: "out_subspace"
 
-# Data loading
 num_clips: 500
 
 # Discrete Morse parameters
@@ -25,7 +23,7 @@ clustering:
   only_min: false
   skip_clips: [37, 80, 152, 163, 187, 267, 281, 475, 491]
 
-# Rendering parameters
+# Rendering settings
 rendering:
   pad: 0
   max_samples: 10

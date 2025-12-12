@@ -1,7 +1,6 @@
 # DM Latent Fullspace Pipeline Configuration
 # Performs DM graph on pooled loop intentions from per-clip DM analysis
 
-# Data paths
 rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
 output_dir: "out_fullspace"
 
@@ -24,7 +23,7 @@ pooled_dm:
   k_neighbors: 5
   epsilon: 0.99
 
-# Rendering parameters
+# Rendering settings
 rendering:
   framerate: 30
   target_size: [640, 480]

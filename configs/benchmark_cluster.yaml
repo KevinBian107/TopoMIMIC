@@ -1,14 +1,11 @@
 # Benchmark Clustering Pipeline Configuration
 # Compares multiple clustering methods with Dunn-based k selection
 
-# Data paths
 rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
 output_dir: "out_benchmark"
-
-# Number of clips to use
 num_clips: 500
 
-# DM results (precomputed cycles)
+# DM results
 dm:
   results_dir: "/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM/dm_results_m3_tau6_p0.75"
 
@@ -64,7 +61,7 @@ methods:
       n_neighbors: 10
       affinity: "nearest_neighbors"
 
-# Rendering parameters
+# Rendering settings
 rendering:
   pad: 0
   max_samples: 5

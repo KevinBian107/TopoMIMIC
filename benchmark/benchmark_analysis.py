@@ -28,6 +28,8 @@ from matplotlib.collections import PatchCollection
 from scipy.spatial import ConvexHull
 from sklearn.decomposition import PCA
 import pandas as pd
+import ripser
+from persim import wasserstein
 
 from vnl_tda.utils.load_utils import load_from_h5py
 
@@ -103,6 +105,32 @@ def load_config(config_path: str) -> BenchmarkAnalysisConfig:
     )
 
 
+def kpms_labels_to_cluster_dict(labels_list: list[np.ndarray]) -> dict[int, list[tuple[int, np.ndarray]]]:
+    """
+    Convert KPMS syllable labels to cluster_dict format.
+
+    Args:
+        labels_list: List of syllable arrays per clip (n_clips x n_frames)
+
+    Returns:
+        cluster_dict[syllable_id] = [(clip_id, frame_indices), ...]
+    """
+    cluster_dict = {}
+    for clip_idx, syllables in enumerate(labels_list):
+        syllables = np.asarray(syllables)
+        unique_sylls = np.unique(syllables)
+
+        for syll in unique_sylls:
+            syll = int(syll)
+            frame_indices = np.where(syllables == syll)[0]
+
+            if syll not in cluster_dict:
+                cluster_dict[syll] = []
+            cluster_dict[syll].append((clip_idx, frame_indices))
+
+    return cluster_dict
+
+
 def load_cluster_dict(results_dir: str, method_name: str = None) -> dict | None:
     """Load cluster dictionary from results directory or benchmark results file."""
     possible_paths = [
@@ -145,6 +173,36 @@ def load_cluster_dict(results_dir: str, method_name: str = None) -> dict | None:
                 if name_mappings[dir_basename] in key.lower().replace(" ", "_").replace("+", "_"):
                     if "cluster_dict" in result:
                         return result["cluster_dict"]
+
+    # Try loading from KPMS benchmark results
+    kpms_results_path = os.path.join(results_dir, "kpms_benchmark_results_full.pkl")
+    if os.path.exists(kpms_results_path) and method_name:
+        with open(kpms_results_path, "rb") as f:
+            kpms_results = pkl.load(f)
+
+        method_key = method_name.lower().replace("-", "").replace(" ", "")
+        for key in ["arhmm", "slds"]:
+            if key in method_key and key in kpms_results:
+                optimal_k = kpms_results[key].get("optimal_k")
+                if optimal_k and "all_labels" in kpms_results[key]:
+                    labels_list = kpms_results[key]["all_labels"].get(optimal_k)
+                    if labels_list is not None:
+                        return kpms_labels_to_cluster_dict(labels_list)
+
+    # Try loading from parent directory KPMS results
+    parent_kpms_path = os.path.join(parent_dir, "kpms_benchmark_results_full.pkl")
+    if os.path.exists(parent_kpms_path) and method_name:
+        with open(parent_kpms_path, "rb") as f:
+            kpms_results = pkl.load(f)
+
+        method_key = method_name.lower().replace("-", "").replace(" ", "")
+        for key in ["arhmm", "slds"]:
+            if key in method_key and key in kpms_results:
+                optimal_k = kpms_results[key].get("optimal_k")
+                if optimal_k and "all_labels" in kpms_results[key]:
+                    labels_list = kpms_results[key]["all_labels"].get(optimal_k)
+                    if labels_list is not None:
+                        return kpms_labels_to_cluster_dict(labels_list)
 
     print(f"  Warning: No cluster_dict found for {results_dir}")
     return None
@@ -508,6 +566,455 @@ def collect_cluster_points_by_behavior(
     return behavior_clusters
 
 
+def collect_labeled_qpos_for_behavior(
+    clip_ids: list[int],
+    rodent_rollout_dir: str,
+    body_indices: list[int],
+    max_frames: int = 5000,
+) -> np.ndarray:
+    """
+    Collect qpos point cloud from labeled clips for a behavior category.
+
+    Args:
+        clip_ids: List of clip IDs for this behavior
+        rodent_rollout_dir: Path to rollout data
+        body_indices: Indices of body parts to include
+        max_frames: Maximum total frames to collect
+
+    Returns:
+        Point cloud array of shape (N, len(body_indices))
+    """
+    all_points = []
+    total_frames = 0
+
+    for clip_id in clip_ids:
+        if total_frames >= max_frames:
+            break
+
+        try:
+            qpos = load_qpos(clip_id, rodent_rollout_dir)
+        except:
+            continue
+
+        selected_qpos = qpos[:, body_indices]
+        all_points.append(selected_qpos)
+        total_frames += len(qpos)
+
+    if not all_points:
+        return np.array([])
+
+    combined = np.vstack(all_points)
+    if len(combined) > max_frames:
+        indices = np.random.choice(len(combined), max_frames, replace=False)
+        combined = combined[indices]
+
+    return combined
+
+
+def collect_cluster_qpos_for_behavior(
+    cluster_ids: list[int],
+    cluster_dict: dict,
+    rodent_rollout_dir: str,
+    body_indices: list[int],
+    max_frames: int = 5000,
+    max_loops: int = 200,
+) -> np.ndarray:
+    """
+    Collect qpos point cloud from clusters for a behavior category.
+
+    Args:
+        cluster_ids: List of cluster IDs matching this behavior
+        cluster_dict: Cluster dictionary mapping cluster_id -> [(clip_id, frames), ...]
+        rodent_rollout_dir: Path to rollout data
+        body_indices: Indices of body parts to include
+        max_frames: Maximum total frames to collect
+        max_loops: Maximum entries per cluster
+
+    Returns:
+        Point cloud array of shape (N, len(body_indices))
+    """
+    all_points = []
+    total_frames = 0
+
+    for cid in cluster_ids:
+        if cid not in cluster_dict:
+            continue
+
+        entries = cluster_dict[cid]
+
+        for i, (clip_id, frames) in enumerate(entries):
+            if i >= max_loops or total_frames >= max_frames:
+                break
+
+            try:
+                qpos = load_qpos(clip_id, rodent_rollout_dir)
+            except:
+                continue
+
+            frames = np.asarray(frames, dtype=int)
+            frames = frames[frames < len(qpos)]
+
+            if len(frames) < 2:
+                continue
+
+            selected_qpos = qpos[frames][:, body_indices]
+            all_points.append(selected_qpos)
+            total_frames += len(frames)
+
+    if not all_points:
+        return np.array([])
+
+    combined = np.vstack(all_points)
+    if len(combined) > max_frames:
+        indices = np.random.choice(len(combined), max_frames, replace=False)
+        combined = combined[indices]
+
+    return combined
+
+
+def compute_persistence_diagrams(
+    point_cloud: np.ndarray,
+    max_dim: int = 1,
+    max_points: int = 2000,
+) -> dict:
+    """
+    Compute persistence diagrams using Ripser.
+
+    Args:
+        point_cloud: Point cloud array of shape (N, D)
+        max_dim: Maximum homology dimension to compute
+        max_points: Maximum points for computation (subsampled if exceeded)
+
+    Returns:
+        Dictionary containing diagrams and Betti statistics
+    """
+    if len(point_cloud) < 3:
+        return {
+            "diagrams": [np.array([]) for _ in range(max_dim + 1)],
+            "betti": np.zeros(max_dim + 1, dtype=int),
+            "total_persistence": np.zeros(max_dim + 1),
+        }
+
+    if len(point_cloud) > max_points:
+        indices = np.random.choice(len(point_cloud), max_points, replace=False)
+        point_cloud = point_cloud[indices]
+
+    try:
+        result = ripser.ripser(
+            point_cloud,
+            maxdim=max_dim,
+            thresh=np.inf,
+            coeff=2,
+            do_cocycles=False,
+        )
+        diagrams = result["dgms"]
+
+        betti = np.zeros(max_dim + 1, dtype=int)
+        total_persistence = np.zeros(max_dim + 1)
+
+        for dim, dgm in enumerate(diagrams):
+            if len(dgm) == 0:
+                continue
+
+            finite_mask = np.isfinite(dgm[:, 1])
+            finite_dgm = dgm[finite_mask]
+
+            if len(finite_dgm) > 0:
+                persistence = finite_dgm[:, 1] - finite_dgm[:, 0]
+                threshold = np.percentile(persistence, 75) if len(persistence) > 4 else 0
+                betti[dim] = np.sum(persistence > threshold)
+                total_persistence[dim] = np.sum(persistence)
+
+        return {
+            "diagrams": diagrams,
+            "betti": betti,
+            "total_persistence": total_persistence,
+        }
+
+    except Exception as e:
+        print(f"  Warning: PH computation failed: {e}")
+        return {
+            "diagrams": [np.array([]) for _ in range(max_dim + 1)],
+            "betti": np.zeros(max_dim + 1, dtype=int),
+            "total_persistence": np.zeros(max_dim + 1),
+        }
+
+
+def compute_betti_similarity(betti_labeled: np.ndarray, betti_cluster: np.ndarray) -> float:
+    """
+    Compute similarity between Betti vectors using cosine similarity.
+
+    Args:
+        betti_labeled: Betti vector for labeled data
+        betti_cluster: Betti vector for cluster data
+
+    Returns:
+        Cosine similarity score (0 to 1, higher is more similar)
+    """
+    norm_l = np.linalg.norm(betti_labeled)
+    norm_c = np.linalg.norm(betti_cluster)
+
+    if norm_l < 1e-10 or norm_c < 1e-10:
+        return 0.0
+
+    return float(np.dot(betti_labeled, betti_cluster) / (norm_l * norm_c))
+
+
+def compute_wasserstein_distance(
+    dgm_labeled: np.ndarray,
+    dgm_cluster: np.ndarray,
+) -> float:
+    """
+    Compute Wasserstein distance between persistence diagrams.
+
+    Args:
+        dgm_labeled: Persistence diagram for labeled data
+        dgm_cluster: Persistence diagram for cluster data
+
+    Returns:
+        Wasserstein distance (lower is more similar)
+    """
+    if len(dgm_labeled) == 0 and len(dgm_cluster) == 0:
+        return 0.0
+
+    if len(dgm_labeled) == 0:
+        dgm_labeled = np.array([[0, 0]])
+    if len(dgm_cluster) == 0:
+        dgm_cluster = np.array([[0, 0]])
+
+    try:
+        return float(wasserstein(dgm_labeled, dgm_cluster))
+    except Exception as e:
+        print(f"  Warning: Wasserstein computation failed: {e}")
+        return np.nan
+
+
+@dataclass
+class TopologicalMetrics:
+    wasserstein_h0: dict[str, float]
+    wasserstein_h1: dict[str, float]
+    betti_similarity: dict[str, float]
+    labeled_betti: dict[str, np.ndarray]
+    cluster_betti: dict[str, np.ndarray]
+    mean_wasserstein: float
+    mean_betti_similarity: float
+
+
+def compute_topological_metrics(
+    method_cfg: "MethodConfig",
+    labeled_clips: dict[str, list[int]],
+    cfg: "BenchmarkAnalysisConfig",
+    body_indices: list[int],
+    max_frames: int = 3000,
+    max_ph_points: int = 1500,
+) -> TopologicalMetrics | None:
+    """
+    Compute topological similarity metrics between labeled data and clustering method.
+
+    Args:
+        method_cfg: Method configuration
+        labeled_clips: Dict mapping behavior -> clip_ids
+        cfg: Benchmark analysis configuration
+        body_indices: Indices of body parts for qpos
+        max_frames: Maximum frames to collect per behavior
+        max_ph_points: Maximum points for PH computation
+
+    Returns:
+        TopologicalMetrics dataclass or None if cluster_dict not found
+    """
+    cluster_dict = load_cluster_dict(method_cfg.results_dir, method_cfg.name)
+
+    if cluster_dict is None:
+        return None
+
+    if not method_cfg.cluster_labels:
+        method_cfg.cluster_labels = {i: f"cluster_{i}" for i in cluster_dict.keys()}
+
+    cluster_groups = group_clusters_by_behavior(
+        method_cfg.cluster_labels,
+        cfg.behavior_categories,
+    )
+
+    wasserstein_h0 = {}
+    wasserstein_h1 = {}
+    betti_similarity = {}
+    labeled_betti = {}
+    cluster_betti = {}
+
+    for behavior in cfg.behavior_categories:
+        clip_ids = labeled_clips.get(behavior, [])
+        cluster_ids = cluster_groups.get(behavior, [])
+
+        labeled_points = collect_labeled_qpos_for_behavior(
+            clip_ids, cfg.rodent_rollout_dir, body_indices, max_frames
+        )
+        cluster_points = collect_cluster_qpos_for_behavior(
+            cluster_ids, cluster_dict, cfg.rodent_rollout_dir,
+            body_indices, max_frames, cfg.max_loops
+        )
+
+        labeled_ph = compute_persistence_diagrams(labeled_points, max_dim=1, max_points=max_ph_points)
+        cluster_ph = compute_persistence_diagrams(cluster_points, max_dim=1, max_points=max_ph_points)
+
+        wasserstein_h0[behavior] = compute_wasserstein_distance(
+            labeled_ph["diagrams"][0], cluster_ph["diagrams"][0]
+        )
+        wasserstein_h1[behavior] = compute_wasserstein_distance(
+            labeled_ph["diagrams"][1] if len(labeled_ph["diagrams"]) > 1 else np.array([]),
+            cluster_ph["diagrams"][1] if len(cluster_ph["diagrams"]) > 1 else np.array([]),
+        )
+
+        labeled_betti[behavior] = labeled_ph["betti"]
+        cluster_betti[behavior] = cluster_ph["betti"]
+        betti_similarity[behavior] = compute_betti_similarity(
+            labeled_ph["betti"], cluster_ph["betti"]
+        )
+
+    valid_w0 = [v for v in wasserstein_h0.values() if not np.isnan(v)]
+    valid_w1 = [v for v in wasserstein_h1.values() if not np.isnan(v)]
+    valid_betti = [v for v in betti_similarity.values() if not np.isnan(v)]
+
+    mean_wasserstein = np.mean(valid_w0 + valid_w1) if (valid_w0 or valid_w1) else np.nan
+    mean_betti_sim = np.mean(valid_betti) if valid_betti else np.nan
+
+    return TopologicalMetrics(
+        wasserstein_h0=wasserstein_h0,
+        wasserstein_h1=wasserstein_h1,
+        betti_similarity=betti_similarity,
+        labeled_betti=labeled_betti,
+        cluster_betti=cluster_betti,
+        mean_wasserstein=mean_wasserstein,
+        mean_betti_similarity=mean_betti_sim,
+    )
+
+
+def plot_topological_comparison(
+    method_names: list[str],
+    topo_metrics: list[TopologicalMetrics | None],
+    behavior_categories: list[str],
+    output_dir: str,
+    figsize: tuple[int, int] = (14, 10),
+) -> None:
+    """
+    Plot topological comparison charts.
+
+    Args:
+        method_names: List of method names
+        topo_metrics: List of TopologicalMetrics for each method
+        behavior_categories: List of behavior categories
+        output_dir: Output directory
+        figsize: Figure size
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    valid_indices = [i for i, m in enumerate(topo_metrics) if m is not None]
+    if not valid_indices:
+        print("  Warning: No valid topological metrics to plot")
+        return
+
+    valid_names = [method_names[i] for i in valid_indices]
+    valid_metrics = [topo_metrics[i] for i in valid_indices]
+
+    fig, axes = plt.subplots(2, 2, figsize=figsize)
+
+    # 1. Mean Wasserstein Distance (lower is better)
+    ax1 = axes[0, 0]
+    mean_w = [m.mean_wasserstein for m in valid_metrics]
+    sorted_pairs = sorted(zip(valid_names, mean_w), key=lambda x: x[1] if not np.isnan(x[1]) else np.inf)
+    sorted_names_w = [p[0] for p in sorted_pairs]
+    sorted_w = [p[1] for p in sorted_pairs]
+
+    colors = plt.cm.RdYlGn_r(np.linspace(0.2, 0.8, len(sorted_names_w)))
+    bars = ax1.barh(range(len(sorted_names_w)), sorted_w, color=colors, edgecolor='black', linewidth=0.5)
+    ax1.set_yticks(range(len(sorted_names_w)))
+    ax1.set_yticklabels(sorted_names_w, fontsize=10)
+    ax1.set_xlabel("Mean Wasserstein Distance", fontsize=11)
+    ax1.set_title("PH Distance to Labeled Data\n(Lower = More Similar Topology)", fontsize=12, fontweight='bold')
+    ax1.grid(True, axis='x', alpha=0.3)
+    for bar, val in zip(bars, sorted_w):
+        if not np.isnan(val):
+            ax1.text(bar.get_width() + 0.01 * max(sorted_w), bar.get_y() + bar.get_height()/2,
+                    f'{val:.3f}', va='center', fontsize=9)
+
+    # 2. Mean Betti Similarity (higher is better)
+    ax2 = axes[0, 1]
+    mean_b = [m.mean_betti_similarity for m in valid_metrics]
+    sorted_pairs = sorted(zip(valid_names, mean_b), key=lambda x: -x[1] if not np.isnan(x[1]) else np.inf)
+    sorted_names_b = [p[0] for p in sorted_pairs]
+    sorted_b = [p[1] for p in sorted_pairs]
+
+    colors = plt.cm.RdYlGn(np.linspace(0.2, 0.8, len(sorted_names_b)))
+    bars = ax2.barh(range(len(sorted_names_b)), sorted_b, color=colors, edgecolor='black', linewidth=0.5)
+    ax2.set_yticks(range(len(sorted_names_b)))
+    ax2.set_yticklabels(sorted_names_b, fontsize=10)
+    ax2.set_xlabel("Betti Vector Cosine Similarity", fontsize=11)
+    ax2.set_title("Betti Number Similarity\n(Higher = More Similar Complexity)", fontsize=12, fontweight='bold')
+    ax2.set_xlim(0, 1.1)
+    ax2.grid(True, axis='x', alpha=0.3)
+    for bar, val in zip(bars, sorted_b):
+        if not np.isnan(val):
+            ax2.text(bar.get_width() + 0.02, bar.get_y() + bar.get_height()/2,
+                    f'{val:.3f}', va='center', fontsize=9)
+
+    # 3. Wasserstein H1 per behavior (heatmap)
+    ax3 = axes[1, 0]
+    w1_matrix = np.zeros((len(valid_names), len(behavior_categories)))
+    for i, m in enumerate(valid_metrics):
+        for j, beh in enumerate(behavior_categories):
+            w1_matrix[i, j] = m.wasserstein_h1.get(beh, np.nan)
+
+    im3 = ax3.imshow(w1_matrix, aspect='auto', cmap='RdYlGn_r')
+    ax3.set_xticks(range(len(behavior_categories)))
+    ax3.set_xticklabels([b.capitalize() for b in behavior_categories], fontsize=10)
+    ax3.set_yticks(range(len(valid_names)))
+    ax3.set_yticklabels(valid_names, fontsize=10)
+    ax3.set_xlabel("Behavior", fontsize=11)
+    ax3.set_ylabel("Method", fontsize=11)
+    ax3.set_title("Wasserstein H1 Distance per Behavior\n(Lower = Better)", fontsize=12, fontweight='bold')
+    cbar3 = plt.colorbar(im3, ax=ax3, shrink=0.8)
+    cbar3.set_label("W1 Distance", fontsize=10)
+
+    for i in range(len(valid_names)):
+        for j in range(len(behavior_categories)):
+            val = w1_matrix[i, j]
+            if not np.isnan(val):
+                ax3.text(j, i, f'{val:.2f}', ha='center', va='center', fontsize=8,
+                        color='white' if val > np.nanmedian(w1_matrix) else 'black')
+
+    # 4. Betti similarity per behavior (heatmap)
+    ax4 = axes[1, 1]
+    betti_matrix = np.zeros((len(valid_names), len(behavior_categories)))
+    for i, m in enumerate(valid_metrics):
+        for j, beh in enumerate(behavior_categories):
+            betti_matrix[i, j] = m.betti_similarity.get(beh, np.nan)
+
+    im4 = ax4.imshow(betti_matrix, aspect='auto', cmap='RdYlGn', vmin=0, vmax=1)
+    ax4.set_xticks(range(len(behavior_categories)))
+    ax4.set_xticklabels([b.capitalize() for b in behavior_categories], fontsize=10)
+    ax4.set_yticks(range(len(valid_names)))
+    ax4.set_yticklabels(valid_names, fontsize=10)
+    ax4.set_xlabel("Behavior", fontsize=11)
+    ax4.set_ylabel("Method", fontsize=11)
+    ax4.set_title("Betti Similarity per Behavior\n(Higher = Better)", fontsize=12, fontweight='bold')
+    cbar4 = plt.colorbar(im4, ax=ax4, shrink=0.8)
+    cbar4.set_label("Cosine Similarity", fontsize=10)
+
+    for i in range(len(valid_names)):
+        for j in range(len(behavior_categories)):
+            val = betti_matrix[i, j]
+            if not np.isnan(val):
+                ax4.text(j, i, f'{val:.2f}', ha='center', va='center', fontsize=8,
+                        color='white' if val < 0.5 else 'black')
+
+    plt.tight_layout()
+
+    save_path = os.path.join(output_dir, "topological_comparison.pdf")
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.savefig(save_path.replace(".pdf", ".png"), dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"Saved topological comparison to {save_path}")
+
+
 CLUSTER_COLORS = [
     "#E63946",  # Red
     "#2A9D8F",  # Teal
@@ -791,6 +1298,45 @@ def main(config_path: str = "configs/benchmark_analysis.yaml"):
                 max_loops=cfg.max_loops,
             )
 
+    print("\n=== Stage 4c: Computing topological metrics ===")
+    topo_metrics = []
+    for method_cfg in tqdm(cfg.methods, desc="Topological analysis"):
+        print(f"\n  Computing PH for: {method_cfg.name}")
+        metrics = compute_topological_metrics(
+            method_cfg,
+            labeled_clips,
+            cfg,
+            body_indices,
+            max_frames=3000,
+            max_ph_points=1500,
+        )
+        topo_metrics.append(metrics)
+
+        if metrics is not None:
+            print(f"    Mean Wasserstein: {metrics.mean_wasserstein:.4f}")
+            print(f"    Mean Betti Similarity: {metrics.mean_betti_similarity:.4f}")
+            for beh in cfg.behavior_categories:
+                print(f"      {beh}: W_H1={metrics.wasserstein_h1[beh]:.3f}, "
+                      f"Betti_sim={metrics.betti_similarity[beh]:.3f}")
+
+            all_results[method_cfg.name]["topological_metrics"] = {
+                "wasserstein_h0": metrics.wasserstein_h0,
+                "wasserstein_h1": metrics.wasserstein_h1,
+                "betti_similarity": metrics.betti_similarity,
+                "labeled_betti": {k: v.tolist() for k, v in metrics.labeled_betti.items()},
+                "cluster_betti": {k: v.tolist() for k, v in metrics.cluster_betti.items()},
+                "mean_wasserstein": metrics.mean_wasserstein,
+                "mean_betti_similarity": metrics.mean_betti_similarity,
+            }
+
+    print("\n=== Stage 4d: Generating topological comparison plots ===")
+    plot_topological_comparison(
+        method_names,
+        topo_metrics,
+        cfg.behavior_categories,
+        cfg.output_dir,
+    )
+
     print("\n=== Stage 5: Saving results ===")
     results_path = os.path.join(cfg.output_dir, "benchmark_analysis_results.pkl")
     with open(results_path, "wb") as f:
@@ -819,6 +1365,21 @@ def main(config_path: str = "configs/benchmark_analysis.yaml"):
         for rank, (name, diff) in enumerate(sorted_pairs, 1):
             f.write(f"{rank}. {name}: {diff:.4f}\n")
 
+        f.write("\n\nTopological Similarity Rankings:\n")
+        f.write("-" * 40 + "\n")
+
+        f.write("\nWasserstein Distance (lower = more similar topology):\n")
+        valid_topo = [(method_names[i], topo_metrics[i]) for i in range(len(topo_metrics))
+                      if topo_metrics[i] is not None and not np.isnan(topo_metrics[i].mean_wasserstein)]
+        sorted_topo_w = sorted(valid_topo, key=lambda x: x[1].mean_wasserstein)
+        for rank, (name, m) in enumerate(sorted_topo_w, 1):
+            f.write(f"{rank}. {name}: {m.mean_wasserstein:.4f}\n")
+
+        f.write("\nBetti Similarity (higher = more similar complexity):\n")
+        sorted_topo_b = sorted(valid_topo, key=lambda x: -x[1].mean_betti_similarity)
+        for rank, (name, m) in enumerate(sorted_topo_b, 1):
+            f.write(f"{rank}. {name}: {m.mean_betti_similarity:.4f}\n")
+
     print(f"Saved summary to {summary_path}")
 
     print("\n" + "=" * 60)
@@ -830,6 +1391,19 @@ def main(config_path: str = "configs/benchmark_analysis.yaml"):
     sorted_pairs = sorted(valid_pairs, key=lambda x: x[1])
     for rank, (name, diff) in enumerate(sorted_pairs, 1):
         print(f"  {rank}. {name}: {diff:.4f}")
+
+    print("\nTopological Rankings:")
+    print("  Wasserstein Distance (lower = more similar topology):")
+    valid_topo = [(method_names[i], topo_metrics[i]) for i in range(len(topo_metrics))
+                  if topo_metrics[i] is not None and not np.isnan(topo_metrics[i].mean_wasserstein)]
+    sorted_topo_w = sorted(valid_topo, key=lambda x: x[1].mean_wasserstein)
+    for rank, (name, m) in enumerate(sorted_topo_w, 1):
+        print(f"    {rank}. {name}: {m.mean_wasserstein:.4f}")
+
+    print("  Betti Similarity (higher = more similar complexity):")
+    sorted_topo_b = sorted(valid_topo, key=lambda x: -x[1].mean_betti_similarity)
+    for rank, (name, m) in enumerate(sorted_topo_b, 1):
+        print(f"    {rank}. {name}: {m.mean_betti_similarity:.4f}")
 
 
 if __name__ == "__main__":

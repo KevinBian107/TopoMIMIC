@@ -1,7 +1,6 @@
 # Benchmark Analysis Configuration
 # Compares variance differences between labeled behaviors and clustering methods
 
-# Data paths
 rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
 behavior_csv: "/home/jovyan/vast/kaiwen/TopoVNL/behavior_book.csv"
 output_dir: "out_benchmark_analysis"
@@ -27,16 +26,15 @@ body_parts:
 # Maximum loops per cluster for variance computation
 max_loops: 200
 
-# Methods to compare (each method has its own cluster results)
+# Methods to compare
 methods:
-  # Our TDA method (reference)
-  - name: "DM-G (Ours)"
+  - name: "DM-WKC (Ours)"
     results_dir: "out_subspace_dunn"
     n_clusters: 14
     cluster_labels:
       0: "walk_stay"
       1: "rear_left_turn"
-      2: "walk_turn"
+      2: "walk_turn_left"
       3: "rear_left_turn_walk"
       4: "groom"
       5: "groom_right_turn"
@@ -49,7 +47,6 @@ methods:
       12: "groom_up_left_turn"
       13: "groom_left_turn"
 
-  # Benchmark methods (from benchmark pipeline output)
   - name: "Vanilla KMeans"
     results_dir: "out_benchmark/vanilla_kmeans"
     n_clusters: 16
@@ -76,12 +73,12 @@ methods:
     n_clusters: 8
     cluster_labels:
       0: "non_det"
-      1: "rear_walk"
+      1: "rear_turn_walk"
       2: "walk_turn"
       3: "groom"
-      4: "groom"
-      5: "rear"
-      6: "rear"
+      4: "groom_walk"
+      5: "rear_walk"
+      6: "non_det"
       7: "non_det"
 
   - name: "t-SNE + KMeans"
@@ -119,7 +116,6 @@ methods:
       0: "groom"
       1: "rear"
 
-
   - name: "Spectral"
     results_dir: "out_benchmark/spectral"
     n_clusters: 17
@@ -141,3 +137,24 @@ methods:
       14: "non_det"
       15: "groom_left_turn_walk"
       16: "walk_left_turn"
+
+  - name: "AR-HMM"
+    results_dir: "out_kpms_benchmark"
+    n_clusters: 5
+    cluster_labels:
+      0: "rear_walk"
+      1: "groom"
+      2: "turn"
+      3: "rear"
+      4: "walk"
+
+  - name: "SLDS"
+    results_dir: "out_kpms_benchmark"
+    n_clusters: 6
+    cluster_labels:
+      0: "groom_rear"
+      1: "walk"
+      2: "non_det"
+      3: "turn"
+      4: "non_det"
+      5: "non_det"

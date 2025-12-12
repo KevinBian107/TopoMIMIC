@@ -2,11 +2,8 @@
 # Higher Dunn = min(inter-cluster dist) / max(intra-cluster diameter)
 # Maximizes distinct, well-separated clusters
 
-# Data paths
 rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
 output_dir: "out_subspace_dunn"
-
-# Data loading
 num_clips: 500
 
 # Discrete Morse parameters
@@ -35,7 +32,7 @@ auto_cluster:
   plot_dunn: true  # save Dunn Index analysis plots
   render_all_k: false  # render video for each k value evaluated
 
-# Rendering parameters
+# Rendering settings
 rendering:
   pad: 0
   max_samples: 10
