@@ -23,6 +23,10 @@ from dataclasses import dataclass, field
 from tqdm import tqdm
 
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+from matplotlib.collections import PatchCollection
+from scipy.spatial import ConvexHull
+from sklearn.decomposition import PCA
 import pandas as pd
 
 from vnl_tda.utils.load_utils import load_from_h5py
@@ -99,8 +103,8 @@ def load_config(config_path: str) -> BenchmarkAnalysisConfig:
     )
 
 
-def load_cluster_dict(results_dir: str) -> dict | None:
-    """Load cluster dictionary from results directory."""
+def load_cluster_dict(results_dir: str, method_name: str = None) -> dict | None:
+    """Load cluster dictionary from results directory or benchmark results file."""
     possible_paths = [
         os.path.join(results_dir, "clustering", "cluster_dict.pkl"),
         os.path.join(results_dir, "cluster_dict.pkl"),
@@ -111,7 +115,38 @@ def load_cluster_dict(results_dir: str) -> dict | None:
             with open(path, "rb") as f:
                 return pkl.load(f)
 
-    print(f"  Warning: No cluster_dict.pkl found in {results_dir}")
+    # Try loading from parent benchmark_results.pkl
+    parent_dir = os.path.dirname(results_dir)
+    benchmark_results_path = os.path.join(parent_dir, "benchmark_results.pkl")
+    if os.path.exists(benchmark_results_path) and method_name:
+        with open(benchmark_results_path, "rb") as f:
+            all_results = pkl.load(f)
+
+        # Try to find the method by matching name patterns
+        for key, result in all_results.items():
+            # Match by exact name or by directory basename
+            dir_basename = os.path.basename(results_dir)
+            if key == method_name or key == dir_basename or dir_basename in key.lower().replace(" ", "_"):
+                if "cluster_dict" in result:
+                    return result["cluster_dict"]
+
+        # Try matching by directory name to method key
+        name_mappings = {
+            "vanilla_kmeans": "vanilla_kmeans",
+            "pca_kmeans": "pca_kmeans",
+            "tsne_kmeans": "tsne_kmeans",
+            "umap_kmeans": "umap_kmeans",
+            "dbscan": "dbscan",
+            "spectral": "spectral",
+        }
+        dir_basename = os.path.basename(results_dir)
+        if dir_basename in name_mappings:
+            for key, result in all_results.items():
+                if name_mappings[dir_basename] in key.lower().replace(" ", "_").replace("+", "_"):
+                    if "cluster_dict" in result:
+                        return result["cluster_dict"]
+
+    print(f"  Warning: No cluster_dict found for {results_dir}")
     return None
 
 
@@ -241,7 +276,7 @@ def compute_method_variance_diff(
     Returns:
         Tuple of (mean_abs_diff, cluster_variance_matrix, diff_matrix, cluster_groups)
     """
-    cluster_dict = load_cluster_dict(method_cfg.results_dir)
+    cluster_dict = load_cluster_dict(method_cfg.results_dir, method_cfg.name)
 
     if cluster_dict is None:
         n_categories = len(cfg.behavior_categories)
@@ -390,6 +425,264 @@ def plot_method_variance_heatmap(
     print(f"  Saved heatmap to {save_path}")
 
 
+def collect_labeled_behavior_points(
+    labeled_clips: dict[str, list[int]],
+    rodent_rollout_dir: str,
+) -> dict[str, np.ndarray]:
+    """
+    Collect mean qpos for each labeled behavior clip.
+
+    Returns:
+        Dict mapping behavior_name to (N, D) array of mean qpos per clip
+    """
+    behavior_points = {}
+
+    for behavior, clip_ids in labeled_clips.items():
+        points = []
+        for clip_id in clip_ids:
+            try:
+                with h5py.File(f"{rodent_rollout_dir}/clip_{int(clip_id)}.h5", "r") as f:
+                    roll = load_from_h5py(f)
+                qpos = np.asarray(roll["qpos"])
+                points.append(qpos.mean(axis=0))
+            except:
+                continue
+
+        if points:
+            behavior_points[behavior] = np.array(points)
+
+    return behavior_points
+
+
+def collect_cluster_points_by_behavior(
+    cluster_dict: dict,
+    cluster_labels: dict[int, str],
+    rodent_rollout_dir: str,
+    behavior_categories: list[str],
+    max_loops: int = 200,
+) -> dict[str, dict[str, np.ndarray]]:
+    """
+    Collect cluster points grouped by behavior category.
+
+    Returns:
+        Dict mapping behavior_category to {cluster_label: points_array}
+    """
+    behavior_clusters = {cat: {} for cat in behavior_categories}
+
+    for cid, entries in cluster_dict.items():
+        label = cluster_labels.get(cid, f"cluster_{cid}")
+        label_lower = label.lower()
+
+        matched_behavior = None
+        for cat in behavior_categories:
+            if cat in label_lower:
+                matched_behavior = cat
+                break
+
+        if matched_behavior is None:
+            continue
+
+        points = []
+        for i, (clip_id, frames) in enumerate(entries):
+            if i >= max_loops:
+                break
+
+            try:
+                with h5py.File(f"{rodent_rollout_dir}/clip_{int(clip_id)}.h5", "r") as f:
+                    roll = load_from_h5py(f)
+                qpos = np.asarray(roll["qpos"])
+            except:
+                continue
+
+            frames = np.asarray(frames, dtype=int)
+            frames = frames[frames < len(qpos)]
+
+            if len(frames) < 2:
+                continue
+
+            points.append(qpos[frames].mean(axis=0))
+
+        if points:
+            behavior_clusters[matched_behavior][label] = np.array(points)
+
+    return behavior_clusters
+
+
+CLUSTER_COLORS = [
+    "#E63946",  # Red
+    "#2A9D8F",  # Teal
+    "#E9C46A",  # Yellow
+    "#264653",  # Dark blue
+    "#F4A261",  # Orange
+    "#8338EC",  # Purple
+    "#06D6A0",  # Mint
+    "#118AB2",  # Blue
+    "#EF476F",  # Pink
+    "#073B4C",  # Navy
+]
+
+
+def plot_method_behavior_overlay(
+    method_name: str,
+    method_cluster_dict: dict,
+    method_cluster_labels: dict[int, str],
+    labeled_clips: dict[str, list[int]],
+    behavior_categories: list[str],
+    rodent_rollout_dir: str,
+    output_dir: str,
+    pca_model: PCA = None,
+    max_loops: int = 200,
+    figsize: tuple[int, int] = (15, 5),
+) -> PCA:
+    """
+    Plot three-panel visualization (one per behavior) with labeled data as grey outline
+    and cluster overlays in distinct colors.
+
+    Args:
+        method_name: Name of the clustering method
+        method_cluster_dict: Cluster dictionary for this method
+        method_cluster_labels: Labels for each cluster
+        labeled_clips: Dict of behavior -> clip_ids (ground truth)
+        behavior_categories: List of behavior categories to plot
+        rodent_rollout_dir: Path to rollout data
+        output_dir: Output directory
+        pca_model: Pre-fitted PCA model (for consistent projection across methods)
+        max_loops: Max samples per cluster
+        figsize: Figure size
+
+    Returns:
+        Fitted PCA model (for reuse)
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    labeled_points = collect_labeled_behavior_points(labeled_clips, rodent_rollout_dir)
+    cluster_by_behavior = collect_cluster_points_by_behavior(
+        method_cluster_dict, method_cluster_labels, rodent_rollout_dir,
+        behavior_categories, max_loops
+    )
+
+    if not labeled_points:
+        print(f"  Warning: No labeled points, skipping {method_name}")
+        return pca_model
+
+    all_points = []
+    for pts in labeled_points.values():
+        all_points.append(pts)
+    for behavior_dict in cluster_by_behavior.values():
+        for pts in behavior_dict.values():
+            all_points.append(pts)
+
+    if not all_points:
+        return pca_model
+
+    all_points = np.vstack(all_points)
+
+    if pca_model is None:
+        pca_model = PCA(n_components=2, random_state=0)
+        pca_model.fit(all_points)
+
+    labeled_points_2d = {beh: pca_model.transform(pts) for beh, pts in labeled_points.items()}
+    cluster_points_2d = {}
+    for behavior, cluster_dict in cluster_by_behavior.items():
+        cluster_points_2d[behavior] = {
+            label: pca_model.transform(pts) for label, pts in cluster_dict.items()
+        }
+
+    all_2d_points = []
+    for pts in labeled_points_2d.values():
+        all_2d_points.append(pts)
+    for behavior_dict in cluster_points_2d.values():
+        for pts in behavior_dict.values():
+            all_2d_points.append(pts)
+    all_2d = np.vstack(all_2d_points) if all_2d_points else None
+
+    fig, axes = plt.subplots(1, 3, figsize=figsize)
+
+    for ax_idx, behavior in enumerate(behavior_categories[:3]):
+        ax = axes[ax_idx]
+
+        if behavior in labeled_points_2d:
+            pts = labeled_points_2d[behavior]
+
+            if len(pts) >= 3:
+                try:
+                    hull = ConvexHull(pts)
+                    hull_points = pts[hull.vertices]
+                    hull_points = np.vstack([hull_points, hull_points[0]])
+                    ax.fill(hull_points[:, 0], hull_points[:, 1],
+                            color='#f0f0f0', alpha=0.6, edgecolor='#666666',
+                            linewidth=2.5, linestyle='-', zorder=1)
+                except:
+                    pass
+
+            ax.scatter(pts[:, 0], pts[:, 1], c='#999999', alpha=0.4, s=20,
+                       edgecolors='none', zorder=1)
+
+        cluster_handles = []
+        if behavior in cluster_points_2d:
+            clusters = cluster_points_2d[behavior]
+
+            for i, (label, pts) in enumerate(sorted(clusters.items())):
+                color = CLUSTER_COLORS[i % len(CLUSTER_COLORS)]
+
+                if len(pts) >= 3:
+                    try:
+                        hull = ConvexHull(pts)
+                        hull_points = pts[hull.vertices]
+                        hull_points = np.vstack([hull_points, hull_points[0]])
+                        ax.fill(hull_points[:, 0], hull_points[:, 1],
+                                color=color, alpha=0.35, edgecolor=color,
+                                linewidth=2, zorder=2)
+                    except:
+                        pass
+
+                ax.scatter(pts[:, 0], pts[:, 1], c=color, alpha=0.7, s=25,
+                           edgecolors='white', linewidths=0.3, zorder=3)
+
+                cluster_handles.append(mpatches.Patch(
+                    facecolor=color, alpha=0.6, label=label,
+                    edgecolor=color, linewidth=1.5
+                ))
+
+        labeled_handle = mpatches.Patch(
+            facecolor='#f0f0f0', alpha=0.6, label=f'{behavior} (labeled)',
+            edgecolor='#666666', linewidth=1.5
+        )
+
+        if all_2d is not None:
+            margin = 0.1
+            x_range = all_2d[:, 0].max() - all_2d[:, 0].min()
+            y_range = all_2d[:, 1].max() - all_2d[:, 1].min()
+            ax.set_xlim(all_2d[:, 0].min() - margin * x_range, all_2d[:, 0].max() + margin * x_range)
+            ax.set_ylim(all_2d[:, 1].min() - margin * y_range, all_2d[:, 1].max() + margin * y_range)
+
+        all_handles = [labeled_handle] + cluster_handles
+        ax.legend(
+            handles=all_handles,
+            loc='upper right',
+            fontsize=8,
+            framealpha=0.95,
+        )
+
+        ax.set_xlabel("PC1", fontsize=11)
+        ax.set_ylabel("PC2", fontsize=11)
+        ax.set_title(f"{behavior.capitalize()}", fontsize=13, fontweight='bold')
+        ax.grid(True, alpha=0.3, linestyle='--')
+        ax.set_facecolor('#fafafa')
+
+    fig.suptitle(f"{method_name}", fontsize=14, fontweight='bold', y=1.02)
+    plt.tight_layout()
+
+    safe_name = method_name.replace(" ", "_").replace("+", "_").replace("(", "").replace(")", "")
+    save_path = os.path.join(output_dir, f"{safe_name}_behavior_overlay.pdf")
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.savefig(save_path.replace(".pdf", ".png"), dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"  Saved behavior overlay to {save_path}")
+
+    return pca_model
+
+
 def main(config_path: str = "configs/benchmark_analysis.yaml"):
     cfg = load_config(config_path)
     os.makedirs(cfg.output_dir, exist_ok=True)
@@ -426,6 +719,9 @@ def main(config_path: str = "configs/benchmark_analysis.yaml"):
             )
 
     print("\n=== Stage 3: Computing method variance differences ===")
+    heatmap_output_dir = os.path.join(cfg.output_dir, "heatmaps")
+    os.makedirs(heatmap_output_dir, exist_ok=True)
+
     method_names = []
     mean_diffs = []
     all_results = {}
@@ -464,11 +760,36 @@ def main(config_path: str = "configs/benchmark_analysis.yaml"):
                 diff_matrix,
                 cfg.behavior_categories,
                 valid_body_parts,
-                cfg.output_dir,
+                heatmap_output_dir,
             )
 
     print("\n=== Stage 4: Generating comparison plots ===")
     plot_comparison_bar_chart(method_names, mean_diffs, cfg.output_dir)
+
+    print("\n=== Stage 4b: Generating behavior overlay plots ===")
+    hull_output_dir = os.path.join(cfg.output_dir, "pca_hulls")
+    os.makedirs(hull_output_dir, exist_ok=True)
+
+    pca_model = None
+    for method_cfg in cfg.methods:
+        print(f"\n  Generating overlay for: {method_cfg.name}")
+        method_cluster_dict = load_cluster_dict(method_cfg.results_dir, method_cfg.name)
+
+        if method_cluster_dict is not None:
+            if not method_cfg.cluster_labels:
+                method_cfg.cluster_labels = {i: f"cluster_{i}" for i in method_cluster_dict.keys()}
+
+            pca_model = plot_method_behavior_overlay(
+                method_name=method_cfg.name,
+                method_cluster_dict=method_cluster_dict,
+                method_cluster_labels=method_cfg.cluster_labels,
+                labeled_clips=labeled_clips,
+                behavior_categories=cfg.behavior_categories,
+                rodent_rollout_dir=cfg.rodent_rollout_dir,
+                output_dir=hull_output_dir,
+                pca_model=pca_model,
+                max_loops=cfg.max_loops,
+            )
 
     print("\n=== Stage 5: Saving results ===")
     results_path = os.path.join(cfg.output_dir, "benchmark_analysis_results.pkl")
@@ -489,7 +810,7 @@ def main(config_path: str = "configs/benchmark_analysis.yaml"):
         f.write(f"Behaviors: {cfg.behavior_categories}\n")
         f.write(f"Body parts: {valid_body_parts}\n\n")
 
-        f.write("Ranking (lower = closer to labeled variance):\n")
+        f.write("Variance Diff Ranking (lower = closer to labeled variance):\n")
         f.write("-" * 40 + "\n")
 
         valid_pairs = [(n, d) for n, d in zip(method_names, mean_diffs) if not np.isnan(d)]
@@ -504,7 +825,7 @@ def main(config_path: str = "configs/benchmark_analysis.yaml"):
     print("Analysis Complete!")
     print("=" * 60)
 
-    print("\nFinal Rankings (lower = better):")
+    print("\nVariance Diff Rankings (lower = better):")
     valid_pairs = [(n, d) for n, d in zip(method_names, mean_diffs) if not np.isnan(d)]
     sorted_pairs = sorted(valid_pairs, key=lambda x: x[1])
     for rank, (name, diff) in enumerate(sorted_pairs, 1):

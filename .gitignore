@@ -13,11 +13,10 @@ dm_videos/
 
 out_subspace/
 out_fullspace/
-out_subspace_auto/
-out_subspace_silhouette/
 out_subspace_dunn/
 out_no_cycle_clips/
 out_benchmark/
-analysis_output/
+out_benchmark_analysis/
+out_analysis/
 
 __pycache__
