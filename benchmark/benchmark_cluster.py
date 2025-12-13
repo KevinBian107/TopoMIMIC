@@ -587,7 +587,7 @@ def run_rendering(
     print(f"Video saved to: {out_path}")
 
 
-def main(config_path: str = "configs/benchmark_cluster.yaml"):
+def main(config_path: str = "configs/benchmark/benchmark_cluster.yaml"):
     cfg = load_config(config_path)
 
     if cfg.clustering.only_max and cfg.clustering.only_min:
@@ -769,5 +769,5 @@ def main(config_path: str = "configs/benchmark_cluster.yaml"):
 
 
 if __name__ == "__main__":
-    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/benchmark_cluster.yaml"
+    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/benchmark/benchmark_cluster.yaml"
     main(config_path)

@@ -565,7 +565,7 @@ def run_grouped_behavior_analysis(
     )
 
 
-def main(config_path: str = "configs/analysis.yaml"):
+def main(config_path: str = "configs/dmwkc_experiment/analysis.yaml"):
     cfg = load_config(config_path)
     os.makedirs(cfg.output_dir, exist_ok=True)
 
@@ -590,5 +590,5 @@ def main(config_path: str = "configs/analysis.yaml"):
 
 
 if __name__ == "__main__":
-    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/analysis.yaml"
+    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/dmwkc_experiment/analysis.yaml"
     main(config_path)

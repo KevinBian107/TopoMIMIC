@@ -205,7 +205,7 @@ def run_rendering(
     print(f"Video saved to: {out_path}")
 
 
-def main(config_path: str = "configs/dm_latent_subspace.yaml"):
+def main(config_path: str = "configs/dmwkc/dm_latent_subspace.yaml"):
     cfg = load_config(config_path)
 
     if cfg.clustering.only_max and cfg.clustering.only_min:
@@ -267,5 +267,5 @@ def main(config_path: str = "configs/dm_latent_subspace.yaml"):
 
 if __name__ == "__main__":
     import sys
-    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/dm_latent_subspace.yaml"
+    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/dmwkc/dm_latent_subspace.yaml"
     main(config_path)

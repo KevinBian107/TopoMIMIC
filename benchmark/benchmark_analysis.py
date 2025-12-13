@@ -1190,7 +1190,7 @@ def plot_method_behavior_overlay(
     return pca_model
 
 
-def main(config_path: str = "configs/benchmark_analysis.yaml"):
+def main(config_path: str = "configs/benchmark/benchmark_analysis.yaml"):
     cfg = load_config(config_path)
     os.makedirs(cfg.output_dir, exist_ok=True)
 
@@ -1407,5 +1407,5 @@ def main(config_path: str = "configs/benchmark_analysis.yaml"):
 
 
 if __name__ == "__main__":
-    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/benchmark_analysis.yaml"
+    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/benchmark/benchmark_analysis.yaml"
     main(config_path)
