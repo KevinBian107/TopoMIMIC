@@ -26,6 +26,10 @@ body_parts:
 # Maximum loops per cluster for variance computation
 max_loops: 200
 
+# Topological comparison settings
+topo_samples_per_cluster: 1   # samples per cluster for balanced PH comparison
+topo_max_ph_points: 1500      # max total points for persistent homology
+
 # Methods to compare
 methods:
   - name: "DM-WKC (Ours)"
