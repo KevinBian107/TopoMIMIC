@@ -56,6 +56,7 @@ class AutoClusterConfig:
     k_max: int = 20
     joint_state_key: str = "qpos"
     plot_dunn: bool = True
+    seed: int = 0
 
 
 @dataclass
@@ -349,6 +350,7 @@ def select_optimal_k_with_dunn(
     windows: list[tuple[int, np.ndarray]],
     k_min: int,
     k_max: int,
+    seed: int = 0,
 ) -> tuple[int, np.ndarray, dict[int, list], dict]:
     """
     Select optimal number of clusters using Dunn Index.
@@ -378,7 +380,7 @@ def select_optimal_k_with_dunn(
     }
 
     k_range = range(k_min, k_max + 1)
-    method = get_clustering_method(method_name, method_params)
+    method = get_clustering_method(method_name, method_params, seed=seed)
 
     for k in tqdm(k_range, desc=f"{method_name} k sweep"):
         labels = method.fit_predict(X, n_clusters=k)
@@ -671,6 +673,7 @@ def main(config_path: str = "configs/benchmark_cluster.yaml"):
             windows=windows,
             k_min=cfg.auto_cluster.k_min,
             k_max=cfg.auto_cluster.k_max,
+            seed=cfg.auto_cluster.seed,
         )
 
         optimal_dunn = results["dunn_index"][optimal_k - cfg.auto_cluster.k_min]

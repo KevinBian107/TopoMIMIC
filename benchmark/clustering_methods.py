@@ -25,9 +25,10 @@ class ClusterResult:
 class BaseClusteringMethod(ABC):
     """Base class for clustering methods."""
 
-    def __init__(self, name: str, params: dict = None):
+    def __init__(self, name: str, params: dict = None, seed: int = 0):
         self.name = name
         self.params = params or {}
+        self.seed = seed
 
     @abstractmethod
     def fit_predict(self, X: np.ndarray, n_clusters: int) -> np.ndarray:
@@ -51,29 +52,29 @@ class BaseClusteringMethod(ABC):
 class VanillaKMeans(BaseClusteringMethod):
     """Standard KMeans on raw features."""
 
-    def __init__(self, params: dict = None):
-        super().__init__("vanilla_kmeans", params)
+    def __init__(self, params: dict = None, seed: int = 0):
+        super().__init__("vanilla_kmeans", params, seed)
 
     def fit_predict(self, X: np.ndarray, n_clusters: int) -> np.ndarray:
-        kmeans = KMeans(n_clusters=n_clusters, random_state=0, n_init='auto')
+        kmeans = KMeans(n_clusters=n_clusters, random_state=self.seed, n_init='auto')
         return kmeans.fit_predict(X)
 
 
 class PCAKMeans(BaseClusteringMethod):
     """PCA dimensionality reduction followed by KMeans."""
 
-    def __init__(self, params: dict = None):
-        super().__init__("pca_kmeans", params)
+    def __init__(self, params: dict = None, seed: int = 0):
+        super().__init__("pca_kmeans", params, seed)
         self.n_components = params.get("n_components", 10) if params else 10
         self._embedding = None
 
     def fit_predict(self, X: np.ndarray, n_clusters: int) -> np.ndarray:
         n_components = min(self.n_components, X.shape[1], X.shape[0])
-        pca = PCA(n_components=n_components, random_state=0)
+        pca = PCA(n_components=n_components, random_state=self.seed)
         X_pca = pca.fit_transform(X)
         self._embedding = X_pca
 
-        kmeans = KMeans(n_clusters=n_clusters, random_state=0, n_init='auto')
+        kmeans = KMeans(n_clusters=n_clusters, random_state=self.seed, n_init='auto')
         return kmeans.fit_predict(X_pca)
 
     def get_embedding(self, X: np.ndarray) -> np.ndarray | None:
@@ -83,8 +84,8 @@ class PCAKMeans(BaseClusteringMethod):
 class TSNEKMeans(BaseClusteringMethod):
     """t-SNE dimensionality reduction followed by KMeans."""
 
-    def __init__(self, params: dict = None):
-        super().__init__("tsne_kmeans", params)
+    def __init__(self, params: dict = None, seed: int = 0):
+        super().__init__("tsne_kmeans", params, seed)
         self.n_components = params.get("n_components", 3) if params else 3
         self.perplexity = params.get("perplexity", 30) if params else 30
         self._embedding = None
@@ -94,12 +95,12 @@ class TSNEKMeans(BaseClusteringMethod):
         tsne = TSNE(
             n_components=self.n_components,
             perplexity=perplexity,
-            random_state=0,
+            random_state=self.seed,
         )
         X_tsne = tsne.fit_transform(X)
         self._embedding = X_tsne
 
-        kmeans = KMeans(n_clusters=n_clusters, random_state=0, n_init='auto')
+        kmeans = KMeans(n_clusters=n_clusters, random_state=self.seed, n_init='auto')
         return kmeans.fit_predict(X_tsne)
 
     def get_embedding(self, X: np.ndarray) -> np.ndarray | None:
@@ -109,8 +110,8 @@ class TSNEKMeans(BaseClusteringMethod):
 class UMAPKMeans(BaseClusteringMethod):
     """UMAP dimensionality reduction followed by KMeans."""
 
-    def __init__(self, params: dict = None):
-        super().__init__("umap_kmeans", params)
+    def __init__(self, params: dict = None, seed: int = 0):
+        super().__init__("umap_kmeans", params, seed)
         self.n_components = params.get("n_components", 3) if params else 3
         self.n_neighbors = params.get("n_neighbors", 15) if params else 15
         self.min_dist = params.get("min_dist", 0.1) if params else 0.1
@@ -123,12 +124,12 @@ class UMAPKMeans(BaseClusteringMethod):
             n_components=self.n_components,
             n_neighbors=min(self.n_neighbors, X.shape[0] - 1),
             min_dist=self.min_dist,
-            random_state=0,
+            random_state=self.seed,
         )
         X_umap = reducer.fit_transform(X)
         self._embedding = X_umap
 
-        kmeans = KMeans(n_clusters=n_clusters, random_state=0, n_init='auto')
+        kmeans = KMeans(n_clusters=n_clusters, random_state=self.seed, n_init='auto')
         return kmeans.fit_predict(X_umap)
 
     def get_embedding(self, X: np.ndarray) -> np.ndarray | None:
@@ -143,8 +144,8 @@ class DBSCANClustering(BaseClusteringMethod):
     Auto-estimates eps range based on data if not provided.
     """
 
-    def __init__(self, params: dict = None):
-        super().__init__("dbscan", params)
+    def __init__(self, params: dict = None, seed: int = 0):
+        super().__init__("dbscan", params, seed)
         self.eps_range = params.get("eps_range", None) if params else None
         self.min_samples = params.get("min_samples", 5) if params else 5
         self._best_eps = None
@@ -186,8 +187,8 @@ class SpectralClusteringMethod(BaseClusteringMethod):
     Most similar to DM approach as it uses graph structure.
     """
 
-    def __init__(self, params: dict = None):
-        super().__init__("spectral", params)
+    def __init__(self, params: dict = None, seed: int = 0):
+        super().__init__("spectral", params, seed)
         self.n_neighbors = params.get("n_neighbors", 10) if params else 10
         self.affinity = params.get("affinity", "nearest_neighbors") if params else "nearest_neighbors"
 
@@ -198,13 +199,13 @@ class SpectralClusteringMethod(BaseClusteringMethod):
             n_clusters=n_clusters,
             affinity=self.affinity,
             n_neighbors=n_neighbors,
-            random_state=0,
+            random_state=self.seed,
             assign_labels='kmeans',
         )
         return spectral.fit_predict(X)
 
 
-def get_clustering_method(name: str, params: dict = None) -> BaseClusteringMethod:
+def get_clustering_method(name: str, params: dict = None, seed: int = 0) -> BaseClusteringMethod:
     """Factory function to get clustering method by name."""
     methods = {
         "vanilla_kmeans": VanillaKMeans,
@@ -218,4 +219,4 @@ def get_clustering_method(name: str, params: dict = None) -> BaseClusteringMetho
     if name not in methods:
         raise ValueError(f"Unknown clustering method: {name}. Available: {list(methods.keys())}")
 
-    return methods[name](params)
+    return methods[name](params, seed=seed)

@@ -1,0 +1,158 @@
+# Random Seed Benchmark Pipeline
+# Runs the same clustering with different random seeds and compares coverage
+
+master_output_dir: "out_random_seed_benchmark"
+
+# Base config - same as dm_latent_subspace_auto_dunn.yaml
+rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
+behavior_csv: "/home/jovyan/vast/kaiwen/TopoVNL/behavior_book.csv"
+num_clips: 500
+
+# Discrete Morse parameters (shared across all seeds)
+dm:
+  pers_delta: 0.75
+  k_neighbors: 5
+  epsilon: 0.99
+  skip: true
+  results_dir: "/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM/dm_results_m3_tau6_p0.75"
+
+# Clustering parameters (shared across all seeds)
+clustering:
+  min_len: 0
+  max_len: 500
+  target_len: 70
+  only_max: true
+  only_min: false
+  skip_clips: [37, 80, 152, 163, 187, 267, 281, 475, 491]
+
+# Cluster selection parameters
+auto_cluster:
+  enabled: true
+  k_min: 5
+  k_max: 20
+  joint_state_key: "qpos"
+  plot_dunn: true
+  render_all_k: false
+
+# Rendering settings
+rendering:
+  pad: 0
+  max_samples: 10
+  framerate: 30
+  target_size: [320, 240]
+
+# Random seeds to benchmark
+seeds: [123, 456, 789, 1000, 2024, 5678, 9999, 12345]
+
+# Pipeline control
+skip_clustering: true  # Set to true to skip clustering and load existing results
+skip_rendering: true   # Set to true to skip video rendering
+
+# Cluster labels per seed (optional, will be auto-generated if not provided)
+# Format: seed_<N>: {cluster_id: "label_name", ...}
+seed_labels:
+  seed_123:
+    0: "groom_left_turn"
+    1: "walk_stay"
+    2: "rear_left_walk"
+    3: "groom"
+    4: "walk_stay_left_turn"
+    5: "groom_walk"
+    6: "rear_fast_walk"
+    7: "rear_walk"
+    8: "rear_groom"
+    9: "walk_left_turn"
+    10: "rear"
+  
+  seed_456:
+    0: "rear_left_turn"
+    1: "groom_rear"
+    2: "groom_walk"
+    3: "rear"
+    4: "groom_left_turn"
+    5: "groom"
+    6: "walk_left_turn"
+    7: "rear_walk"
+    8: "rear_fast_walk"
+  
+  seed_789:
+    0: "groom"
+    1: "rear_left_turn"
+    2: "walk"
+    3: "rear"
+    4: "rear_fast_walk"
+    5: "groom_walk"
+    6: "walk_left_turn"
+  
+  seed_1000:
+    0: "rear_turn"
+    1: "walk_slow_left_turn_walk_fast"
+    2: "rear_fast_walk"
+    3: "rear_left_turn"
+    4: "rear_left_turn_walk"
+    5: "groom_left_turn"
+    6: "groom_rear_fast_walk"
+    7: "groom"
+    8: "walk_left_turn"
+    9: "rear_walk"
+    10: "groom_left_turn_fast_walk"
+    11: "groom_fast_walk"
+    12: "groom_rear"
+    13: "groom_down"
+    14: "groom_down_up"
+    15: "groom_right_turn"
+    16: "groom_walk"
+    17: "fast_walk_stay"
+    18: "groom_left_turn_walk"
+
+  seed_2024:
+    0: "non_det"
+    1: "walk_rear"
+    2: "groom"
+    3: "rear_left_turn_slow_walk"
+    4: "rear_left_turn_fast_walk"
+  
+  seed_5678:
+    0: "groom"
+    1: "rear_left_turn_fast_walk"
+    2: "walk_stay"
+    3: "rear_left_turn_slow_walk"
+    4: "rear_fast_walk"
+    5: "rear_groom"
+    6: "walk_left_turn"
+
+  seed_9999:
+    0: "rear_left_turn_fast_walk_rear"
+    1: "groom_walk"
+    2: "rear_left_turn_fast_walk"
+    3: "groom"
+    4: "walk"
+    5: "rear_walk"
+  
+  seed_12345:
+    0: "walk_stay"
+    1: "walk_slow_fast_rear"
+    2: "groom"
+    3: "rear_left_turn_walk_stay"
+    4: "rear_left_turn_fast_walk"
+
+
+# Behavior categories for coverage analysis
+behavior_categories: ["walk", "rear", "groom"]
+
+# Body parts for variance analysis
+body_parts:
+  - "upper_leg_R"
+  - "lower_leg_R"
+  - "upper_arm_R"
+  - "upper_leg_L"
+  - "lower_leg_L"
+  - "upper_arm_L"
+  - "skull"
+  - "torso"
+  - "pelvis"
+
+# Coverage plot settings
+coverage_plot:
+  max_loops: 200
+  figsize: [18, 6]

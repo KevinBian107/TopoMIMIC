@@ -24,6 +24,7 @@ auto_cluster:
   k_max: 20
   joint_state_key: "qpos"
   plot_dunn: true
+  seed: 0
 
 # Methods to benchmark
 methods:

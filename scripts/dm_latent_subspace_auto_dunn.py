@@ -60,6 +60,7 @@ class AutoClusterConfig:
     joint_state_key: str = "qpos"
     plot_dunn: bool = True
     render_all_k: bool = True
+    seed: int = 0
 
 
 @dataclass
@@ -448,7 +449,7 @@ def auto_select_clusters(
     all_cluster_dicts = {}
 
     for k in tqdm(k_range, desc="Evaluating k values"):
-        labels = cluster_from_distance_matrix(Dn, n_clusters=k)
+        labels = cluster_from_distance_matrix(Dn, n_clusters=k, random_state=auto_cfg.seed)
         cluster_dict_k = build_cluster_dict(labels, windows)
 
         dunn, min_inter, max_intra = compute_dunn_index_from_cluster_dict(
