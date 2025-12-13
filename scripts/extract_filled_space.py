@@ -286,7 +286,7 @@ def plot_cycle_vs_no_cycle_comparison(
     print(f"Saved distribution summary to {summary_path}")
 
 
-def main(config_path: str = "configs/extract_filled_space.yaml"):
+def main(config_path: str = "configs/dmwkc_experiment/extract_filled_space.yaml"):
     cfg = load_config(config_path)
 
     if not cfg.dm_results_dir:
@@ -363,5 +363,5 @@ def main(config_path: str = "configs/extract_filled_space.yaml"):
 
 
 if __name__ == "__main__":
-    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/extract_filled_space.yaml"
+    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/dmwkc_experiment/extract_filled_space.yaml"
     main(config_path)

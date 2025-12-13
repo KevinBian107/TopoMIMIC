@@ -550,7 +550,7 @@ def plot_seed_metrics_summary(
     print(f"Saved seed metrics summary to {save_path}")
 
 
-def main(config_path: str = "configs/random_seed_run.yaml"):
+def main(config_path: str = "configs/dmwkc_experiment/random_seed_run.yaml"):
     cfg = load_config(config_path)
 
     if cfg.clustering.only_max and cfg.clustering.only_min:
@@ -797,5 +797,5 @@ def main(config_path: str = "configs/random_seed_run.yaml"):
 
 
 if __name__ == "__main__":
-    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/random_seed_run.yaml"
+    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/dmwkc_experiment/random_seed_run.yaml"
     main(config_path)

@@ -397,7 +397,7 @@ def load_latest_results(output_dir: str) -> tuple[pd.DataFrame, dict | None]:
     return data["results_df"], data.get("best")
 
 
-def main(config_path: str = "configs/dm_latent_subspace_hypertune.yaml"):
+def main(config_path: str = "configs/dmwkc/dm_latent_subspace_hypertune.yaml"):
     cfg = load_config(config_path)
 
     sys.path.append("/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM")
@@ -441,5 +441,5 @@ def main(config_path: str = "configs/dm_latent_subspace_hypertune.yaml"):
 
 
 if __name__ == "__main__":
-    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/dm_latent_subspace_hypertune.yaml"
+    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/dmwkc/dm_latent_subspace_hypertune.yaml"
     main(config_path)
