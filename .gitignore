@@ -15,6 +15,7 @@ PCD-Graph-Recon-DM/
 out_subspace/
 out_fullspace/
 out_subspace_dunn/
+out_attractor/
 out_no_cycle_clips/
 out_benchmark/
 out_kpms_benchmark/

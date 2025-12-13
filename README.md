@@ -1,4 +1,4 @@
-# Seeing What's Possible: Topological Clustering of Behavioral Primitives and Transitions
+# Seeing the Boundaries: Topological Clustering of Behavioral Primitives and Transitions
 
 This code base is designed to be looking at such latent space of [Mimic-mjx](https://github.com/talmolab/Mimic-mjx) package via a topological perspective using optimized TDA pacakegs, hoping to find the `basis` of behaviors and controls.
 

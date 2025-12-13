@@ -15,3 +15,21 @@ grid_cols: 5
 # Rendering settings
 fps: 30
 target_size: [320, 240]
+
+# Distribution comparison settings
+distribution:
+  n_cycle_clips: 50
+  n_no_cycle_clips: 50
+  body_parts:
+    - "torso"
+    - "pelvis"
+    - "upper_leg_L"
+    - "lower_leg_L"
+    - "foot_L"
+    - "upper_leg_R"
+    - "lower_leg_R"
+    - "foot_R"
+    - "skull"
+    - "upper_arm_L"
+    - "upper_arm_R"
+  figsize: [14, 8]
