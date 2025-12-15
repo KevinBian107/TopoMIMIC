@@ -55,6 +55,29 @@ def _uniform_downsample(
     return frames[idx]
 
 
+def _chunked_downsample(
+    frames: np.ndarray | list[int],
+    target_len: int,
+) -> list[np.ndarray]:
+    """
+    Split frames into non-overlapping chunks of target_len.
+
+    Args:
+        frames: Frame indices array
+        target_len: Size of each chunk
+
+    Returns:
+        List of frame arrays, each of length target_len.
+        Discards remainder if frames don't divide evenly.
+    """
+    frames = np.unique(np.asarray(frames, dtype=int))
+    n_chunks = len(frames) // target_len
+    if n_chunks == 0:
+        return []
+    chunks = [frames[i * target_len : (i + 1) * target_len] for i in range(n_chunks)]
+    return chunks
+
+
 def _normalize_dist_matrix(
     D: np.ndarray,
 ) -> np.ndarray:

@@ -22,8 +22,9 @@ clustering:
 
 # Target length sweep configuration
 target_len_sweep:
-  values: [10, 30, 50, 70, 90, 110]
-  n_clusters: 10  # fixed k for fair comparison
+  values: [30, 50, 70, 90, 110]
+  n_clusters: 5  # fixed k for fair comparison
+  sampling_method: "chunked"  # "uniform" (evenly-spaced) or "chunked" (non-overlapping chunks)
 
 # Dunn Index settings (for reporting, not selection)
 auto_cluster:

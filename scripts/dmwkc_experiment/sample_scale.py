@@ -23,6 +23,7 @@ from vnl_tda.pipelines.tda.skeletonization.postprocess import (
     chunk_loops_by_clustered_vpath,
     _expand_frames_nonconsec,
     _uniform_downsample,
+    _chunked_downsample,
     _normalize_dist_matrix,
 )
 from vnl_tda.pipelines.tda.skeletonization.rendering import render_grid_clusters_side_by_side
@@ -54,6 +55,7 @@ class ClusteringConfig:
 class TargetLenSweepConfig:
     values: list[int] = None
     n_clusters: int = 10
+    sampling_method: str = "uniform"  # "uniform" or "chunked"
 
     def __post_init__(self):
         if self.values is None:
@@ -136,6 +138,7 @@ def prepare_windows_for_clustering(
     intention: np.ndarray,
     clustering_cfg: ClusteringConfig,
     target_len: int,
+    sampling_method: str = "uniform",
 ) -> tuple[list[tuple[int, np.ndarray]], list[np.ndarray]]:
     """
     Prepare windows from cycles for clustering with specified target_len.
@@ -144,7 +147,9 @@ def prepare_windows_for_clustering(
         all_cycle_dm: List of cycles per clip
         intention: Intention array (n_clips, n_frames, D)
         clustering_cfg: Clustering configuration
-        target_len: Target length for uniform downsampling
+        target_len: Target length for downsampling
+        sampling_method: "uniform" for evenly-spaced sampling,
+                        "chunked" for non-overlapping chunks
 
     Returns:
         Tuple of (windows, cleaned_loops)
@@ -170,11 +175,18 @@ def prepare_windows_for_clustering(
         clip_len = len(intention[clip_id])
         for loop in loops:
             expanded = _expand_frames_nonconsec(loop, pad=0, clip_len=clip_len)
-            sampled = _uniform_downsample(expanded, target_len)
-            if sampled is None:
-                continue
-            windows.append((clip_id, sampled))
-            cleaned_loops.append(np.asarray(loop, dtype=int))
+
+            if sampling_method == "chunked":
+                chunks = _chunked_downsample(expanded, target_len)
+                for chunk in chunks:
+                    windows.append((clip_id, chunk))
+                    cleaned_loops.append(np.asarray(loop, dtype=int))
+            else:  # uniform (default)
+                sampled = _uniform_downsample(expanded, target_len)
+                if sampled is None:
+                    continue
+                windows.append((clip_id, sampled))
+                cleaned_loops.append(np.asarray(loop, dtype=int))
 
     return windows, cleaned_loops
 
@@ -352,6 +364,7 @@ def run_rendering(
 def plot_sweep_summary(
     sweep_results: dict,
     output_dir: str,
+    sampling_method: str = "uniform",
 ) -> None:
     """Plot summary of target_len sweep results."""
     os.makedirs(output_dir, exist_ok=True)
@@ -368,7 +381,7 @@ def plot_sweep_summary(
     ax_windows.bar(target_lens, n_windows, color='steelblue', alpha=0.7)
     ax_windows.set_xlabel("Target Length", fontsize=12)
     ax_windows.set_ylabel("Number of Windows", fontsize=12)
-    ax_windows.set_title("Windows Surviving Filter by Target Length", fontsize=14)
+    ax_windows.set_title(f"Windows by Target Length (method={sampling_method})", fontsize=14)
     ax_windows.grid(True, alpha=0.3)
 
     ax_dunn.plot(target_lens, dunn_indices, color="darkgreen", marker="o", linewidth=2, markersize=8)
@@ -447,14 +460,17 @@ def main(config_path: str = "configs/dmwkc_experiment/sample_scale.yaml"):
     else:
         raise ValueError("This experiment requires pre-computed DM results (dm.skip must be true)")
 
+    sampling_method = cfg.target_len_sweep.sampling_method
     print(f"\n=== Stage 3: Target Length Sweep ({cfg.target_len_sweep.values}) ===")
+    print(f"Sampling method: {sampling_method}")
     sweep_results = {}
 
     for target_len in cfg.target_len_sweep.values:
         print(f"\n--- Processing target_len={target_len} ---")
 
         windows, cleaned_loops = prepare_windows_for_clustering(
-            all_cycle_dm, int_rodent, cfg.clustering, target_len
+            all_cycle_dm, int_rodent, cfg.clustering, target_len,
+            sampling_method=sampling_method,
         )
         print(f"  Prepared {len(windows)} windows")
 
@@ -507,9 +523,10 @@ def main(config_path: str = "configs/dmwkc_experiment/sample_scale.yaml"):
         pkl.dump(sweep_results, f)
     print(f"Results saved to {results_path}")
 
-    plot_sweep_summary(sweep_results, cfg.output_dir)
+    plot_sweep_summary(sweep_results, cfg.output_dir, sampling_method)
 
     print("\n=== Summary ===")
+    print(f"Sampling method: {sampling_method}")
     print(f"{'target_len':<12} {'n_windows':<12} {'Dunn':<10} {'min_inter':<12} {'max_intra':<12}")
     print("-" * 58)
     for tl in sorted(sweep_results.keys()):
