@@ -1,4 +1,4 @@
-"""Benchmark clustering methods for TopoVNL."""
+"""Benchmark clustering methods for dmwkc."""
 
 __all__ = [
     # Standard clustering methods

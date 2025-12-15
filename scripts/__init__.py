@@ -1,1 +1,1 @@
-"""Scripts for using our clustering method on real data."""
+"""Main entry point."""

@@ -51,60 +51,47 @@ We provide 2 notebooks each with targetting an different part of the analysis:
 To run our standard clustering scripts for batched processing on all clips for the sub-space topology, run
 
 ```python
-python -m scripts.dm_latent_subspace
-python -m scripts.dm_latent_subspace_auto_dunn
+python -m scripts.dmwkc.dm_latent_subspace
+python -m scripts.dmwkc.dm_latent_subspace_auto_dunn
 ```
 
 For hyper-tunning the sub-space topology, run
 
 ```python
-python -m scripts.dm_latent_subspace_hypertune
+python -m scripts.dmwkc.dm_latent_subspace_hypertune
 ```
 
 For running our analysis code to get the same figure, run
 
 ```python
-python -m scripts.analysis
+python -m scripts.dmwkc_experiment.analysis
 ```
 
 To extract the clips with "filled space", representing only single behavior mode within it, run
 
 ```python
-python -m scripts.extract_filled_space
-```
-
-## Running Benchmark
-To run our benchmark comparison, which include clustering method like KMeans, DBSCAN and Spectral Clustering, and state space models like SLDS and AR-HMM, run
-
-```python
-python -m benchmark.benchmark_cluster
-python -m benchmark.benchmark_kpms
-```
-
-And run the corresponding benchmark analysis to get our figure, run
-
-```python
-python -m benchmark.benchmark_analysis
+python -m scripts.dmwkc_experiment.extract_filled_space
 ```
 
 ## Segmentation on Novel Clips
 To run segmentation on the 500 frame scale on novel clips, run
 
 ```python
-python -m scripts.segmentation
+python -m scripts.dmwkc_experiment.segmentation
 ```
 
-## Multiscale Clustering & Segmentation
-To run clustering algorithm or segmentation at different a scale (i.e. 100 frame chunk instead of 500 frames), run
+## Running Benchmark
+To run our benchmark comparison, which include clustering method like KMeans, DBSCAN and Spectral Clustering, and state space models like SLDS and AR-HMM, run
 
 ```python
-python -m scripts.multiscale
+python -m scripts.benchmark.benchmark_cluster
+python -m scripts.benchmark.benchmark_kpms
 ```
 
-The same analysis scheme can be used by running
+And run the corresponding benchmark analysis to get our figure, run
 
 ```python
-python -m scripts.analysis_multiscale
+python -m scripts.benchmark.benchmark_analysis
 ```
 
 ## Acknowledgements

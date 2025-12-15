@@ -1,0 +1,38 @@
+# Sample Scale Experiment: Compare clustering across different target_len values
+
+rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
+output_dir: "out/out_sample_scale"
+num_clips: 500
+
+# Discrete Morse parameters (same as auto_dunn)
+dm:
+  pers_delta: 0.75
+  k_neighbors: 5
+  epsilon: 0.99
+  skip: true
+  results_dir: "/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM/dm_results_m3_tau6_p0.75_f500"
+
+# Clustering parameters (target_len will be swept)
+clustering:
+  min_len: 0
+  max_len: 500
+  only_max: true
+  only_min: false
+  skip_clips: [37, 80, 152, 163, 187, 267, 281, 475, 491]
+
+# Target length sweep configuration
+target_len_sweep:
+  values: [10, 30, 50, 70, 90, 110]
+  n_clusters: 10  # fixed k for fair comparison
+
+# Dunn Index settings (for reporting, not selection)
+auto_cluster:
+  joint_state_key: "qpos"
+  seed: 0
+
+# Rendering settings
+rendering:
+  pad: 0
+  max_samples: 10
+  framerate: 30
+  target_size: [320, 240]
