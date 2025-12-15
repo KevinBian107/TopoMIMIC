@@ -93,12 +93,11 @@ And run the corresponding benchmark analysis to get our figure, run
 python -m benchmark.benchmark_analysis
 ```
 
-## Running Synthetic Experiment
-To run synthetic experiment on testing our method, run the following to first generate the data and visualize it
+## Segmentation on Novel Clips
+To run segmentation on the 500 frame scale on novel clips, run
 
 ```python
-python -m synthetic.visualize
-python -m synthetic.benchmark_dmwkc
+python -m scripts.segmentation
 ```
 
 ## Acknowledgements
