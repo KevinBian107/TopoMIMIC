@@ -21,7 +21,7 @@ dm:
 clustering:
   min_len: 0
   max_len: 100
-  target_len: 50 # target length changes a lot
+  target_len: 30 # target length changes a lot
   only_max: true
   only_min: false
   skip_clips: []

@@ -3,11 +3,12 @@
 
 rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
 behavior_csv: "/home/jovyan/vast/kaiwen/TopoVNL/behavior_book.csv"
-output_dir: "out/out_analysis"
+# output_dir: "out/out_analysis"
+output_dir: "out/out_multiscale/analysis"
 
 # Cluster configuration
 cluster:
-  results_dir: "out_subspace_dunn"
+  results_dir: "out/out_subspace_dunn"
   n_clusters: 14
   cluster_labels:
     0: "walk_stay"
@@ -24,7 +25,6 @@ cluster:
     11: "walk_stay_walk"
     12: "groom_up_left_turn"
     13: "groom_left_turn"
-
 
 # MDS subspace analysis parameters
 mds_k_cycles: 50

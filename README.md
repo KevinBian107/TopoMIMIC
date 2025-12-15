@@ -101,10 +101,10 @@ To run clustering algorithm or segmentation at different a scale (i.e. 100 frame
 python -m scripts.multiscale
 ```
 
-The same analysis scheme can be used by changing the config and running
+The same analysis scheme can be used by running
 
 ```python
-python -m scripts.analysis
+python -m scripts.analysis_multiscale
 ```
 
 ## Acknowledgements
