@@ -139,3 +139,48 @@ def subsample_data(
     np.random.seed(42)
     indices = np.random.choice(X.shape[0], sample_size, replace=False)
     return X[indices]
+
+
+def split_clips_by_frames(
+    data: np.ndarray,
+    original_num_clips: int,
+    frames_per_clip: int = 500,
+) -> np.ndarray:
+    """
+    Split loaded clip data into smaller segments based on frames_per_clip.
+
+    Args:
+        data: Stacked data array from multiple clips (total_frames, dim)
+        original_num_clips: Number of original clips loaded
+        frames_per_clip: Number of frames per output clip segment
+
+    Returns:
+        Reshaped array (new_num_clips, frames_per_clip - 1, dim)
+        where new_num_clips = original_num_clips * (original_frames // frames_per_clip)
+
+    Example:
+        - frames_per_clip=500: 500 clips -> 500 clips with 499 frames each
+        - frames_per_clip=100: 500 clips -> 2500 clips with 99 frames each
+    """
+    dim = data.shape[-1]
+    total_frames = data.shape[0]
+    original_frames_per_clip = total_frames // original_num_clips
+
+    if frames_per_clip >= original_frames_per_clip + 1:
+        return data.reshape(original_num_clips, original_frames_per_clip, dim)
+
+    data_reshaped = data.reshape(original_num_clips, original_frames_per_clip, dim)
+
+    usable_frames = frames_per_clip - 1
+    splits_per_clip = original_frames_per_clip // usable_frames
+
+    segments = []
+    for clip_idx in range(original_num_clips):
+        clip_data = data_reshaped[clip_idx]
+        for seg_idx in range(splits_per_clip):
+            start = seg_idx * usable_frames
+            end = start + usable_frames
+            segment = clip_data[start:end]
+            segments.append(segment)
+
+    return np.array(segments)

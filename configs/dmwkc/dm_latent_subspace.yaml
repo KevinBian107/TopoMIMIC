@@ -11,7 +11,7 @@ dm:
   k_neighbors: 5
   epsilon: 0.99
   skip: true # load in if true
-  results_dir: "/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM/dm_results_m3_tau6_p0.75"
+  results_dir: "/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM/dm_results_m3_tau6_p0.75_f500"
 
 # Clustering parameters
 clustering:

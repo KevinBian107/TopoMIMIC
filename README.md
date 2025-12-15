@@ -61,12 +61,6 @@ For hyper-tunning the sub-space topology, run
 python -m scripts.dm_latent_subspace_hypertune
 ```
 
-For running the full-space topology, run
-
-```python
-python -m scripts.dm_latent_fullspace
-```
-
 For running our analysis code to get the same figure, run
 
 ```python
@@ -98,6 +92,19 @@ To run segmentation on the 500 frame scale on novel clips, run
 
 ```python
 python -m scripts.segmentation
+```
+
+## Multiscale Clustering & Segmentation
+To run clustering algorithm or segmentation at different a scale (i.e. 100 frame chunk instead of 500 frames), run
+
+```python
+python -m scripts.multiscale
+```
+
+The same analysis scheme can be used by changing the config and running
+
+```python
+python -m scripts.analysis
 ```
 
 ## Acknowledgements

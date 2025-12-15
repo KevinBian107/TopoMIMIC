@@ -11,7 +11,7 @@ takens:
 
 # Per-clip DM parameters (load from DM results)
 per_clip_dm:
-  results_dir: "/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM/dm_results_m3_tau6_p0.75"
+  results_dir: "/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM/dm_results_m3_tau6_p0.75_f500"
   loop_select: "shortest"  # "shortest" or "longest"
   target_len: 10  # downsample each loop to this length
   min_len: 0

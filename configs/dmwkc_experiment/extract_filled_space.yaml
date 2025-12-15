@@ -1,7 +1,7 @@
 # Render clips that have no cycles (simply connected manifolds)
 # These clips represent continuous behavioral dynamics with no discrete modes
 
-dm_results_dir: "/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM/dm_results_m3_tau6_p0.75"
+dm_results_dir: "/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM/dm_results_m3_tau6_p0.75_f500"
 
 rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
 output_dir: "out/out_no_cycle_clips"
