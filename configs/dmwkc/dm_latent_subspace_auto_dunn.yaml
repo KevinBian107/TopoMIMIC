@@ -3,7 +3,7 @@
 # Maximizes distinct, well-separated clusters
 
 rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
-output_dir: "out_subspace_dunn_123"
+output_dir: "out/out_subspace_dunn"
 num_clips: 500
 
 # Discrete Morse parameters
@@ -31,7 +31,7 @@ auto_cluster:
   joint_state_key: "qpos"  # key in h5 file for joint space (used for clustering)
   plot_dunn: true  # save Dunn Index analysis plots
   render_all_k: false  # render video for each k value evaluated
-  seed: 123
+  seed: 0
 
 # Rendering settings
 rendering:

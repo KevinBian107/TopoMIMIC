@@ -1,0 +1,58 @@
+# Segments new clips using DM graph and compares to existing clusters
+
+rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
+output_dir: "out/out_segmentation"
+
+# Clips to segment (list of clip indices)
+clip_ids:
+  - 800
+  - 801
+  - 802
+  - 804
+  - 805
+  - 806
+
+# Reference clustering results (from dm_latent_subspace_auto_dunn)
+reference:
+  results_dir: "out/out_subspace_dunn"
+  cluster_dict_path: "out/out_subspace_dunn/clustering/cluster_dict.pkl"
+  w2_cache_path: "out/out_subspace_dunn/w2_distance_matrix.pkl"
+  cluster_labels:
+    0: "walk_stay"
+    1: "rear_left_turn"
+    2: "walk_turn_left"
+    3: "rear_left_turn_walk"
+    4: "groom"
+    5: "groom_right_turn"
+    6: "walk_rear"
+    7: "rear_right_turn"
+    8: "walk_turn"
+    9: "rear_face_groom"
+    10: "rear_walk_rear"
+    11: "walk_stay_walk"
+    12: "groom_up_left_turn"
+    13: "groom_left_turn"
+
+# DM extraction parameters for new clips
+dm:
+  pers_delta: 0.75
+  k_neighbors: 5
+  epsilon: 0.99
+
+# Takens embedding parameters
+takens:
+  m: 3
+  tau: 6
+
+# Segmentation parameters
+segmentation:
+  target_len: 50           # Window length for Wasserstein comparison
+  top_k: 3                 # Number of top cluster matches to return
+  min_loop_len: 10         # Minimum loop length to consider
+  max_loop_len: 500        # Maximum loop length to consider
+
+# Rendering parameters
+rendering:
+  framerate: 30
+  target_size: [320, 240]
+  camera_name: "close_profile"

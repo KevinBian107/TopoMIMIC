@@ -1,0 +1,61 @@
+# Synthetic Behavioral State Space Configuration
+
+data_dir: "data/synthetic"
+output_dir: "out/out_synthetic"
+random_seed: 0
+
+n_clips: 200
+frames_per_clip: 200
+latent_dim: 16
+
+behaviors:
+  - walk
+  - rear
+  - groom
+subclusters_per_behavior: 3
+
+# Cluster geometry
+behavior_separation: 2.0
+subcluster_separation: 0.8
+cluster_std: 0.6
+
+# Trajectory dynamics
+dwell_time_mean: 50
+dwell_time_std: 20
+dwell_time_min: 10
+transition_smoothness: 10
+
+# Transition probabilities
+intra_behavior_transition_prob: 0.3
+inter_behavior_transition_prob: 0.7
+
+# Noise to obscure structure
+noise_scale: 0.3
+global_noise_scale: 1.5
+
+pca:
+  n_components: 2
+  random_state: 42
+
+figsize: [15, 5]
+dpi: 150
+alpha: 0.6
+point_size: 15
+
+behavior_colors:
+  walk: "#2A9D8F"
+  rear: "#E63946"
+  groom: "#E9C46A"
+
+subcluster_markers:
+  - "o"
+  - "s"
+  - "^"
+
+trajectory:
+  n_clips: 1
+  line_alpha: 0.3
+  line_width: 1.0
+
+show_hulls: true
+hull_alpha: 0.2

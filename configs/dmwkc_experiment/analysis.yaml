@@ -3,7 +3,7 @@
 
 rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
 behavior_csv: "/home/jovyan/vast/kaiwen/TopoVNL/behavior_book.csv"
-output_dir: "out_analysis"
+output_dir: "out/out_analysis"
 
 # Cluster configuration
 cluster:

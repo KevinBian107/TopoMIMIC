@@ -2,7 +2,7 @@
 # Compares multiple clustering methods with Dunn-based k selection
 
 rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
-output_dir: "out_benchmark"
+output_dir: "out/out_benchmark"
 num_clips: 500
 
 # DM results

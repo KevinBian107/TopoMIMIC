@@ -12,16 +12,7 @@ checkpoints/
 PCD-Graph-Recon-DM/
 
 # out figures
-out_subspace/
-out_fullspace/
-out_subspace_dunn/
-out_attractor/
-out_no_cycle_clips/
-out_benchmark/
-out_kpms_benchmark/
-out_benchmark_analysis/
-out_random_seed_benchmark/
-out_analysis/
+out/
 figures/
 
 __pycache__

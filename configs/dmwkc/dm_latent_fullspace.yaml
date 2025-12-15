@@ -2,7 +2,7 @@
 # Performs DM graph on pooled loop intentions from per-clip DM analysis
 
 rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
-output_dir: "out_fullspace"
+output_dir: "out/out_fullspace"
 
 # Takens embedding parameters
 takens:

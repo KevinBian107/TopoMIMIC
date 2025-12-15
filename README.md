@@ -93,6 +93,13 @@ And run the corresponding benchmark analysis to get our figure, run
 python -m benchmark.benchmark_analysis
 ```
 
+## Running Synthetic Experiment
+To run synthetic experiment on testing our method, run the following to first generate the data and visualize it
+
+```python
+python -m synthetic.visualize
+python -m synthetic.benchmark_dmwkc
+```
 
 ## Acknowledgements
 This codebase is adapted from the [MIMIC-MJX](https://mimic-mjx.talmolab.org/) package, particularly for manifold & topological analysis. The TDA analysis and DM graph was consructed using packages such as [Ripser](https://ripser.scikit-tda.org/en/latest/) and [PCD-Graph-Recon-DM](https://github.com/lucasjmagee/PCD-Graph-Recon-DM/tree/main).

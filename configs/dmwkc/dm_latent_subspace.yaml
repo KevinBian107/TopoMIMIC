@@ -1,7 +1,7 @@
 # DM Latent Subspace Pipeline Configuration
 
 rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
-output_dir: "out_subspace"
+output_dir: "out/out_subspace"
 
 num_clips: 500
 

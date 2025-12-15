@@ -1,14 +1,12 @@
 # Random Seed Benchmark Pipeline
 # Runs the same clustering with different random seeds and compares coverage
 
-master_output_dir: "out_random_seed_benchmark"
-
-# Base config - same as dm_latent_subspace_auto_dunn.yaml
+master_output_dir: "out/out_random_seed_benchmark"
 rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
 behavior_csv: "/home/jovyan/vast/kaiwen/TopoVNL/behavior_book.csv"
 num_clips: 500
 
-# Discrete Morse parameters (shared across all seeds)
+# Discrete-Morse parameters (shared across all seeds)
 dm:
   pers_delta: 0.75
   k_neighbors: 5
@@ -34,22 +32,18 @@ auto_cluster:
   plot_dunn: true
   render_all_k: false
 
-# Rendering settings
 rendering:
   pad: 0
   max_samples: 10
   framerate: 30
   target_size: [320, 240]
 
-# Random seeds to benchmark
 seeds: [123, 456, 789, 1000, 2024, 5678, 9999, 12345]
 
-# Pipeline control
-skip_clustering: true  # Set to true to skip clustering and load existing results
-skip_rendering: true   # Set to true to skip video rendering
+skip_clustering: true  # true to skip clustering and load existing results
+skip_rendering: true   # true to skip video rendering
 
-# Cluster labels per seed (optional, will be auto-generated if not provided)
-# Format: seed_<N>: {cluster_id: "label_name", ...}
+# Auto-generated if not provided with format: seed_<N>: {cluster_id: "label_name", ...}
 seed_labels:
   seed_123:
     0: "groom_left_turn"
@@ -152,7 +146,6 @@ body_parts:
   - "torso"
   - "pelvis"
 
-# Coverage plot settings
 coverage_plot:
   max_loops: 200
   figsize: [18, 6]

@@ -1,18 +1,15 @@
 # Render clips that have no cycles (simply connected manifolds)
 # These clips represent continuous behavioral dynamics with no discrete modes
 
-# Path to DM results directory containing all_cycle_dm.pkl
 dm_results_dir: "/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM/dm_results_m3_tau6_p0.75"
 
 rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
-output_dir: "out_no_cycle_clips"
+output_dir: "out/out_no_cycle_clips"
 num_clips: 500
 
-# Grid layout for video
 grid_rows: 4
 grid_cols: 5
 
-# Rendering settings
 fps: 30
 target_size: [320, 240]
 
