@@ -3,14 +3,14 @@
 rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
 output_dir: "out/out_segmentation"
 
-# Clips to segment (list of clip indices)
+# Clips to segment
 clip_ids:
-  - 800
-  - 801
-  - 802
-  - 804
+  - 505
+  - 507
+  - 509
   - 805
-  - 806
+  - 807
+  - 809
 
 # Reference clustering results (from dm_latent_subspace_auto_dunn)
 reference:

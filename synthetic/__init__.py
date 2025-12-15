@@ -1,1 +1,0 @@
-"""Synthetic data generation and analysis for benchmarking clustering methods."""
