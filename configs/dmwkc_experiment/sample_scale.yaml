@@ -25,6 +25,8 @@ target_len_sweep:
   values: [30, 50, 70, 90, 110]
   n_clusters: 5  # fixed k for fair comparison
   sampling_method: "chunked"  # "uniform" (evenly-spaced) or "chunked" (non-overlapping chunks)
+  skip: false
+  results_path: null
 
 # Dunn Index settings (for reporting, not selection)
 auto_cluster:
@@ -33,6 +35,7 @@ auto_cluster:
 
 # Rendering settings
 rendering:
+  skip: true  # Set to true to skip video rendering
   pad: 0
   max_samples: 10
   framerate: 30

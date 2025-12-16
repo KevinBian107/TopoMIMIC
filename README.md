@@ -73,6 +73,13 @@ To extract the clips with "filled space", representing only single behavior mode
 python -m scripts.dmwkc_experiment.extract_filled_space
 ```
 
+## Sampling at Different Scale
+When sampling at different scale, the clustering method picks up different granularity of "changes" occuring in the space, results in clusters at different frequency (i.e. target length of 30 frames capture turning motion whereas target length of 90 frames capture behaviors like rear left turn)
+
+```python
+python -m scripts.dmwkc_experiment.sample_scale
+```
+
 ## Segmentation on Novel Clips
 To run segmentation on the 500 frame scale on novel clips, run
 

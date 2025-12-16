@@ -1,0 +1,18 @@
+# Render Cycle Comparison: visualize min/median/max cycles per clip
+
+rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
+output_dir: "out/out_render_cycle"
+dm_results_dir: "/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM/dm_results_m3_tau6_p0.75_f500"
+
+# Number of clips to render in the grid (rows)
+num_clips_to_render: 5
+
+# Cycle length filtering
+min_cycle_len: 10
+max_cycle_len: 500
+
+target_size: [320, 240]
+framerate: 30
+gutter: 10
+pad_x: 24
+pad_y: 24
