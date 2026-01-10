@@ -1,7 +1,7 @@
 # Analysis Pipeline Configuration
 # Runs MDS subspace analysis, axis motion comparison, and spectral analysis
 
-rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
+rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/latest_rodent.h5"
 behavior_csv: "/home/jovyan/vast/kaiwen/TopoVNL/behavior_book.csv"
 # output_dir: "out/out_analysis"
 output_dir: "out/out_multiscale/analysis"

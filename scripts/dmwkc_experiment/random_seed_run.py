@@ -19,7 +19,7 @@ from scipy.spatial import ConvexHull
 from sklearn.decomposition import PCA
 import pandas as pd
 
-from vnl_tda.utils.load_utils import get_aggregate_data, load_from_h5py
+from vnl_tda.utils.load_utils import get_aggregate_data, load_from_h5py, load_rollout_from_source
 
 sys.path.insert(0, "/home/jovyan/vast/kaiwen/TopoVNL")
 from scripts.dm_latent_subspace_auto_dunn import (
@@ -128,8 +128,7 @@ def load_behavior_labels(behavior_csv: str) -> dict[str, list[int]]:
 
 
 def load_qpos(clip_id: int, rodent_rollout_dir: str) -> np.ndarray:
-    with h5py.File(f"{rodent_rollout_dir}/clip_{int(clip_id)}.h5", "r") as f:
-        roll = load_from_h5py(f)
+    roll = load_rollout_from_source(int(clip_id), rodent_rollout_dir)
     return np.asarray(roll["qpos"])
 
 

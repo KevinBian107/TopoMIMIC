@@ -16,7 +16,7 @@ from sklearn.manifold import MDS
 import ot
 
 from vnl_tda.utils.rendering import render_from_saved_rollout
-from vnl_tda.utils.load_utils import load_from_h5py
+from vnl_tda.utils.load_utils import load_from_h5py, load_rollout_from_source
 
 
 def _expand_frames_nonconsec(
@@ -203,8 +203,7 @@ def chunk_frames_by_loop(
             continue
         loop_indices = np.array(loop_indices)
         min_idx, max_idx = loop_indices.min(), loop_indices.max()
-        with h5py.File(f"{rodent_rollout_dir}/clip_{clip_idx}.h5", "r") as h5file:
-            rollout = load_from_h5py(h5file)
+        rollout = load_rollout_from_source(clip_idx, rodent_rollout_dir)
         frames = render_from_saved_rollout(rollout)
         loop_chunks[clip_idx] = frames[min_idx:max_idx+1]
         non_loop_chunks[clip_idx] = frames[:min_idx] + frames[max_idx+1:]
@@ -248,8 +247,7 @@ def chunk_loops_by_clustered_vpath(
         cluster_clip_ids[cid] = []
 
         for clip_id, frames in items:
-            with h5py.File(f"{rodent_rollout_dir}/clip_{clip_id}.h5", "r") as h5file:
-                rollout = load_from_h5py(h5file)
+            rollout = load_rollout_from_source(clip_id, rodent_rollout_dir)
             full_frames = render_from_saved_rollout(rollout)
             T = len(full_frames)
 

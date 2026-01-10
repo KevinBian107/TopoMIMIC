@@ -9,19 +9,29 @@ import pickle as pkl
 import yaml
 import matplotlib.pyplot as plt
 import seaborn as sns
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from tqdm import tqdm
 from sklearn.model_selection import ParameterGrid
 
 from vnl_tda.utils.load_utils import get_aggregate_data
 from vnl_tda.pipelines.tda.skeletonization.skeletonization import extract_skeleton_pcd_dm
+from vnl_tda.pipelines.tda.skeletonization.preprocess import estimate_delay_embedding_params
 
 
 @dataclass
 class TakensConfig:
+    auto_estimate: bool = True
     m: int = 3
     tau: int = 6
+    max_tau: int = 200
+    bins: int = 64
+    m_max: int = 15
+    R_tol: float = 15.0
+    A_tol: float = 2.0
+    fnn_thr: float = 0.05
+    theiler: str | int | None = "auto"
+    max_points: int = 20000
 
 
 @dataclass
@@ -43,6 +53,7 @@ class VisualizationConfig:
     save_plots: bool = True
     plot_by_k: bool = True
     plot_by_clip: bool = True
+    save_ami_fnn_plot: bool = True
 
 
 @dataclass
@@ -77,7 +88,15 @@ def load_config(config_path: str) -> HypertuneConfig:
     with open(config_path, "r") as f:
         cfg = yaml.safe_load(f)
 
-    takens_cfg = TakensConfig(**cfg.get("takens", {}))
+    takens_raw = cfg.get("takens", {})
+    theiler_val = takens_raw.get("theiler", "auto")
+    if theiler_val == "auto":
+        theiler_val = "auto"
+    elif theiler_val is not None:
+        theiler_val = int(theiler_val)
+    takens_raw["theiler"] = theiler_val
+    takens_cfg = TakensConfig(**takens_raw)
+
     dm_cfg = DMConfig(**cfg.get("dm", {}))
     scoring_cfg = ScoringConfig(**cfg.get("scoring", {}))
     viz_cfg = VisualizationConfig(**cfg.get("visualization", {}))
@@ -397,13 +416,109 @@ def load_latest_results(output_dir: str) -> tuple[pd.DataFrame, dict | None]:
     return data["results_df"], data.get("best")
 
 
+def estimate_takens_params(
+    cfg: HypertuneConfig,
+    save_plot: bool = True,
+) -> tuple[int, int, dict]:
+    """
+    Estimate optimal tau and m using AMI and FNN methods.
+
+    Args:
+        cfg: Hypertune configuration
+        save_plot: Whether to save diagnostic plots
+
+    Returns:
+        Tuple of (tau_star, m_star, diagnostics_dict)
+    """
+    print("=== Auto-estimating Takens parameters (AMI + FNN) ===")
+
+    tau_star, m_star, diagnostics = estimate_delay_embedding_params(
+        rodent_rollout_dir=cfg.rodent_rollout_dir,
+        get_aggregate_data_fn=get_aggregate_data,
+        num_clips=cfg.num_clips_total,
+        intention_key="/intention",
+        clip_indices=range(cfg.num_clips_total),
+        max_tau=cfg.takens.max_tau,
+        bins=cfg.takens.bins,
+        m_max=cfg.takens.m_max,
+        R_tol=cfg.takens.R_tol,
+        A_tol=cfg.takens.A_tol,
+        fnn_thr=cfg.takens.fnn_thr,
+        theiler=cfg.takens.theiler,
+        max_points=cfg.takens.max_points,
+        plot=False,
+    )
+
+    print(f"Estimated: τ* = {tau_star}, m* = {m_star}")
+
+    if save_plot:
+        fig = plt.figure(figsize=(12, 4.5))
+        gs = fig.add_gridspec(1, 2, wspace=0.25)
+
+        ax1 = fig.add_subplot(gs[0, 0])
+        taus = np.arange(1, cfg.takens.max_tau + 1)
+        I_mean = diagnostics["I_mean"]
+        I_se = diagnostics["I_se"]
+        ax1.plot(taus, I_mean, label="mean AMI")
+        if np.all(np.isfinite(I_se)):
+            ax1.fill_between(taus, I_mean - I_se, I_mean + I_se, alpha=0.2, linewidth=0)
+        ax1.axvline(tau_star, ls="--", color="red", label=f"τ* = {tau_star}")
+        ax1.set_xlabel("Delay τ")
+        ax1.set_ylabel("AMI")
+        ax1.set_title("Average Mutual Information")
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
+
+        ax2 = fig.add_subplot(gs[0, 1])
+        ms = diagnostics["ms"]
+        fnn_mean = diagnostics["fnn_mean"]
+        fnn_se = diagnostics["fnn_se"]
+        ax2.plot(ms, fnn_mean, marker="o", label="mean FNN")
+        if np.all(np.isfinite(fnn_se)):
+            ax2.fill_between(ms, fnn_mean - fnn_se, fnn_mean + fnn_se, alpha=0.2, linewidth=0)
+        ax2.axhline(cfg.takens.fnn_thr, ls=":", color="gray", label=f"threshold = {cfg.takens.fnn_thr}")
+        ax2.axvline(m_star, ls="--", color="red", label=f"m* = {m_star}")
+        ax2.set_xlabel("Embedding dimension m")
+        ax2.set_ylabel("Fraction of false neighbors")
+        ax2.set_title(f"FNN at τ = {tau_star}")
+        ax2.legend()
+        ax2.grid(True, alpha=0.3)
+
+        fig.suptitle("Delay-Embedding Parameter Selection (AMI → τ*, FNN → m*)")
+        plt.tight_layout()
+
+        plot_path = os.path.join(cfg.output_dir, "ami_fnn_estimation.png")
+        plt.savefig(plot_path, dpi=150, bbox_inches="tight")
+        print(f"Saved AMI/FNN plot to {plot_path}")
+        plt.close(fig)
+
+    return tau_star, m_star, diagnostics
+
+
 def main(config_path: str = "configs/dmwkc/dm_latent_subspace_hypertune.yaml"):
     cfg = load_config(config_path)
 
     sys.path.append("/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM")
     os.makedirs(cfg.output_dir, exist_ok=True)
 
-    print("=== Stage 1: Loading intention data ===")
+    if cfg.takens.auto_estimate:
+        print("=== Stage 1: Auto-estimating Takens parameters ===")
+        tau_star, m_star, diagnostics = estimate_takens_params(
+            cfg,
+            save_plot=cfg.visualization.save_ami_fnn_plot,
+        )
+        cfg.takens.tau = tau_star
+        cfg.takens.m = m_star
+
+        diag_path = os.path.join(cfg.output_dir, "ami_fnn_diagnostics.pkl")
+        with open(diag_path, "wb") as f:
+            pkl.dump({"tau_star": tau_star, "m_star": m_star, "diagnostics": diagnostics}, f)
+        print(f"Saved diagnostics to {diag_path}")
+    else:
+        print("=== Stage 1: Using fixed Takens parameters ===")
+        print(f"τ = {cfg.takens.tau}, m = {cfg.takens.m}")
+
+    print(f"\n=== Stage 2: Loading intention data ===")
     work = functools.partial(get_aggregate_data, "/intention", [], path=cfg.rodent_rollout_dir)
     with mp.Pool(processes=mp.cpu_count()) as pool:
         arrs = list(tqdm(pool.imap(work, range(cfg.num_clips_total)), total=cfg.num_clips_total))
@@ -411,13 +526,13 @@ def main(config_path: str = "configs/dmwkc/dm_latent_subspace_hypertune.yaml"):
     int_rodent = int_rodent.reshape(cfg.num_clips_total, 499, 16)
     print(f"Loaded intention: {int_rodent.shape}")
 
-    print("\n=== Stage 2: Grid search ===")
+    print(f"\n=== Stage 3: Grid search (m={cfg.takens.m}, τ={cfg.takens.tau}) ===")
     print(f"Evaluating on {cfg.num_clips_eval} clips")
     print(f"Parameter grid: {cfg.param_grid}")
 
     results_df, best_params, ts = grid_search(int_rodent, cfg)
 
-    print("\n=== Stage 3: Visualization ===")
+    print("\n=== Stage 4: Visualization ===")
     if cfg.visualization.save_plots:
         if cfg.visualization.plot_by_k:
             viz_path_k = os.path.join(cfg.output_dir, f"tuning_by_k_{ts}.png")

@@ -31,7 +31,7 @@ import pandas as pd
 import ripser
 from persim import wasserstein
 
-from vnl_tda.utils.load_utils import load_from_h5py
+from vnl_tda.utils.load_utils import load_from_h5py, is_consolidated_format, _get_consolidated_file
 
 
 QPOS_BODY_NAMES = [
@@ -214,6 +214,9 @@ def load_cluster_dict(results_dir: str, method_name: str = None) -> dict | None:
 
 def load_qpos(clip_id: int, rodent_rollout_dir: str) -> np.ndarray:
     """Load qpos data for a clip."""
+    if is_consolidated_format(rodent_rollout_dir):
+        f = _get_consolidated_file(rodent_rollout_dir)
+        return np.asarray(f['qpos_rollout'][int(clip_id)])
     with h5py.File(f"{rodent_rollout_dir}/clip_{int(clip_id)}.h5", "r") as f:
         roll = load_from_h5py(f)
     return np.asarray(roll["qpos"])
@@ -221,6 +224,9 @@ def load_qpos(clip_id: int, rodent_rollout_dir: str) -> np.ndarray:
 
 def load_intention(clip_id: int, rodent_rollout_dir: str) -> np.ndarray:
     """Load intention data for a clip."""
+    if is_consolidated_format(rodent_rollout_dir):
+        f = _get_consolidated_file(rodent_rollout_dir)
+        return np.asarray(f['intention'][int(clip_id)])
     with h5py.File(f"{rodent_rollout_dir}/clip_{int(clip_id)}.h5", "r") as f:
         roll = load_from_h5py(f)
     return np.asarray(roll["intention"])
@@ -510,9 +516,7 @@ def collect_labeled_behavior_points(
         points = []
         for clip_id in clip_ids:
             try:
-                with h5py.File(f"{rodent_rollout_dir}/clip_{int(clip_id)}.h5", "r") as f:
-                    roll = load_from_h5py(f)
-                qpos = np.asarray(roll["qpos"])
+                qpos = load_qpos(clip_id, rodent_rollout_dir)
                 points.append(qpos.mean(axis=0))
             except:
                 continue
@@ -557,9 +561,7 @@ def collect_cluster_points_by_behavior(
                 break
 
             try:
-                with h5py.File(f"{rodent_rollout_dir}/clip_{int(clip_id)}.h5", "r") as f:
-                    roll = load_from_h5py(f)
-                qpos = np.asarray(roll["qpos"])
+                qpos = load_qpos(clip_id, rodent_rollout_dir)
             except:
                 continue
 

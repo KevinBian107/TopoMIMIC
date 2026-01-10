@@ -24,17 +24,13 @@ from dataclasses import dataclass, field
 from PIL import Image, ImageDraw, ImageFont
 import imageio_ffmpeg
 
-from vnl_tda.utils.load_utils import load_from_h5py, get_aggregate_data
+from vnl_tda.utils.load_utils import load_from_h5py, get_aggregate_data, is_consolidated_format, _get_consolidated_file
 from vnl_tda.utils.rendering import render_from_saved_rollout
 from vnl_tda.pipelines.tda.skeletonization.skeletonization import extract_skeleton_pcd_dm
 from vnl_tda.pipelines.tda.skeletonization.postprocess import (
     _uniform_downsample,
     _expand_frames_nonconsec,
 )
-
-
-M = 3
-TAU = 6
 
 
 @dataclass
@@ -131,7 +127,7 @@ def load_config(config_path: str) -> PipelineConfig:
     )
 
 
-def takens_points(X: np.ndarray, m: int = M, tau: int = TAU) -> np.ndarray:
+def takens_points(X: np.ndarray, m: int, tau: int) -> np.ndarray:
     n_frames, D = X.shape
     start = (m - 1) * tau
     idxs = np.arange(start, n_frames)
@@ -143,6 +139,12 @@ def load_clip_data(
     clip_id: int,
     rodent_rollout_dir: str,
 ) -> dict:
+    if is_consolidated_format(rodent_rollout_dir):
+        f = _get_consolidated_file(rodent_rollout_dir)
+        return {
+            'intention': f['intention'][clip_id],
+            'qpos': f['qpos_rollout'][clip_id],
+        }
     with h5py.File(f"{rodent_rollout_dir}/clip_{clip_id}.h5", "r") as f:
         rollout = load_from_h5py(f)
     return rollout

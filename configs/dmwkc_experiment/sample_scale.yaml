@@ -1,8 +1,13 @@
 # Sample Scale Experiment: Compare clustering across different target_len values
 
-rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
+rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/latest_rodent.h5"
 output_dir: "out/out_sample_scale"
 num_clips: 500
+
+# Takens embedding parameters
+takens:
+  m: 3
+  tau: 5
 
 # Discrete Morse parameters (same as auto_dunn)
 dm:

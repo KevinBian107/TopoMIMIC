@@ -1,15 +1,26 @@
 # DM Latent Subspace Hyperparameter Tuning Configuration
 
-rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
-output_dir: "dm_tuning_takens_m3_tau6"
+rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/latest_rodent.h5"
+output_dir: "dm_tuning_auto"
 
-num_clips_total: 800
+num_clips_total: 642
 num_clips_eval: 10
 
-# Fixed Takens parameters
+# Takens parameters - set auto_estimate: true to compute via AMI+FNN
 takens:
-  m: 3
-  tau: 6
+  auto_estimate: true
+  m: 3          # fallback if auto_estimate fails
+  tau: 5        # fallback if auto_estimate fails
+  # AMI parameters
+  max_tau: 200
+  bins: 64
+  # FNN parameters
+  m_max: 15
+  R_tol: 15.0
+  A_tol: 2.0
+  fnn_thr: 0.05
+  theiler: "auto"
+  max_points: 20000
 
 # DM parameters to tune
 dm:
@@ -33,3 +44,4 @@ visualization:
   save_plots: true
   plot_by_k: true
   plot_by_clip: true
+  save_ami_fnn_plot: true

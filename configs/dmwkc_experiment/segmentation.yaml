@@ -1,6 +1,6 @@
 # Segments new clips using DM graph and compares to existing clusters
 
-rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
+rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/latest_rodent.h5"
 output_dir: "out/out_segmentation"
 
 # Clips to segment
@@ -42,7 +42,7 @@ dm:
 # Takens embedding parameters
 takens:
   m: 3
-  tau: 6
+  tau: 5
 
 # Segmentation parameters
 segmentation:

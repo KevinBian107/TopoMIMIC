@@ -18,7 +18,8 @@ from dataclasses import dataclass
 from tqdm import tqdm
 
 from vnl_tda.utils.load_utils import get_aggregate_data, split_clips_by_frames
-from scripts.dm_latent_subspace_auto_dunn import (
+from scripts.dmwkc.dm_latent_subspace_auto_dunn import (
+    TakensConfig,
     DMConfig,
     ClusteringConfig,
     AutoClusterConfig,
@@ -32,10 +33,6 @@ from scripts.dm_latent_subspace_auto_dunn import (
 )
 
 
-M = 3
-TAU = 6
-
-
 @dataclass
 class MultiscaleConfig:
     frames_per_clip: int = 100
@@ -46,6 +43,7 @@ class MultiscalePipelineConfig:
     rodent_rollout_dir: str = "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
     output_dir: str = "out/out_multiscale"
     num_clips: int = 500
+    takens: TakensConfig = None
     multiscale: MultiscaleConfig = None
     dm: DMConfig = None
     clustering: ClusteringConfig = None
@@ -53,6 +51,8 @@ class MultiscalePipelineConfig:
     rendering: RenderingConfig = None
 
     def __post_init__(self):
+        if self.takens is None:
+            self.takens = TakensConfig()
         if self.multiscale is None:
             self.multiscale = MultiscaleConfig()
         if self.dm is None:
@@ -69,6 +69,7 @@ def load_config(config_path: str) -> MultiscalePipelineConfig:
     with open(config_path, "r") as f:
         cfg = yaml.safe_load(f)
 
+    takens_cfg = TakensConfig(**cfg.get("takens", {}))
     multiscale_cfg = MultiscaleConfig(**cfg.get("multiscale", {}))
     dm_cfg = DMConfig(**cfg.get("dm", {}))
 
@@ -91,6 +92,7 @@ def load_config(config_path: str) -> MultiscalePipelineConfig:
         rodent_rollout_dir=cfg.get("rodent_rollout_dir", MultiscalePipelineConfig.rodent_rollout_dir),
         output_dir=cfg.get("output_dir", MultiscalePipelineConfig.output_dir),
         num_clips=cfg.get("num_clips", MultiscalePipelineConfig.num_clips),
+        takens=takens_cfg,
         multiscale=multiscale_cfg,
         dm=dm_cfg,
         clustering=clustering_cfg,
@@ -159,12 +161,13 @@ def main(config_path: str = "configs/dmwkc_experiment/multiscale.yaml"):
         print(f"Loaded {len(all_cycle_dm)} cycle sets")
     else:
         base_output_dir = os.path.join(
-            cfg.output_dir, f"dm_results_m{M}_tau{TAU}_p{cfg.dm.pers_delta}_f{frames_per_clip}"
+            cfg.output_dir, f"dm_results_m{cfg.takens.m}_tau{cfg.takens.tau}_p{cfg.dm.pers_delta}_f{frames_per_clip}"
         )
         all_cycle_dm, _ = run_dm_extraction(
             int_rodent_split,
             num_clips=num_split_clips,
             dm_cfg=cfg.dm,
+            takens_cfg=cfg.takens,
             base_output_dir=base_output_dir,
         )
 

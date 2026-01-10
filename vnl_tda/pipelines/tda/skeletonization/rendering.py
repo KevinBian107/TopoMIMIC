@@ -10,6 +10,8 @@ from vnl_tda.utils.load_utils import (
     load_from_h5py,
     get_aggregate_data,
     extract_clip_info,
+    is_consolidated_format,
+    load_rollout_from_source,
 )
 
 from vnl_tda.utils.rendering import (
@@ -28,8 +30,7 @@ def _ensure_rgb_uint8(frame: np.ndarray) -> np.ndarray:
 
 
 def _load_full_clip_frames(rodent_rollout_dir, clip_id, camera_name="close_profile"):
-    with h5py.File(os.path.join(rodent_rollout_dir, f"clip_{clip_id}.h5"), "r") as f:
-        ro = load_from_h5py(f)
+    ro = load_rollout_from_source(clip_id, rodent_rollout_dir)
     frames = render_from_saved_rollout(ro, camera_name=camera_name)
     return [_ensure_rgb_uint8(fr) for fr in frames]
 
@@ -102,15 +103,6 @@ def _select_densest_nodes(G_knn, q=0.10, k_smallest=10):
     med = np.nanmedian(vals); vals = np.where(np.isnan(vals), med, vals)
     thr = np.quantile(vals, q)
     return [n for n, v in zip(nodes, vals) if v <= thr]
-
-
-def _load_full_clip_frames(rodent_rollout_dir, clip_id):
-    """Load clips"""
-    
-    with h5py.File(os.path.join(rodent_rollout_dir, f"clip_{clip_id}.h5"), "r") as f:
-        ro = load_from_h5py(f)  
-    frames = render_from_saved_rollout(ro) 
-    return [np.asarray(fr) for fr in frames]
 
 
 def _dense_frame_ranges(dense_nodes, total_frames, m=0, pad=25, min_gap=30):

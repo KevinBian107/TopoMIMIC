@@ -29,8 +29,10 @@ from vnl_tda.pipelines.tda.skeletonization.postprocess import (
 from vnl_tda.pipelines.tda.skeletonization.rendering import render_grid_clusters_side_by_side
 
 
-M = 3
-TAU = 6
+@dataclass
+class TakensConfig:
+    m: int = 3
+    tau: int = 6
 
 
 @dataclass
@@ -76,12 +78,15 @@ class PipelineConfig:
     rodent_rollout_dir: str = "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
     output_dir: str = "out_subspace_dunn"
     num_clips: int = 500
+    takens: TakensConfig = None
     dm: DMConfig = None
     clustering: ClusteringConfig = None
     auto_cluster: AutoClusterConfig = None
     rendering: RenderingConfig = None
 
     def __post_init__(self):
+        if self.takens is None:
+            self.takens = TakensConfig()
         if self.dm is None:
             self.dm = DMConfig()
         if self.clustering is None:
@@ -96,6 +101,7 @@ def load_config(config_path: str) -> PipelineConfig:
     with open(config_path, "r") as f:
         cfg = yaml.safe_load(f)
 
+    takens_cfg = TakensConfig(**cfg.get("takens", {}))
     dm_cfg = DMConfig(**cfg.get("dm", {}))
 
     clustering_dict = cfg.get("clustering", {})
@@ -117,6 +123,7 @@ def load_config(config_path: str) -> PipelineConfig:
         rodent_rollout_dir=cfg.get("rodent_rollout_dir", PipelineConfig.rodent_rollout_dir),
         output_dir=cfg.get("output_dir", PipelineConfig.output_dir),
         num_clips=cfg.get("num_clips", PipelineConfig.num_clips),
+        takens=takens_cfg,
         dm=dm_cfg,
         clustering=clustering_cfg,
         auto_cluster=auto_cluster_cfg,
@@ -124,7 +131,7 @@ def load_config(config_path: str) -> PipelineConfig:
     )
 
 
-def takens_points(X: np.ndarray, m: int = M, tau: int = TAU) -> np.ndarray:
+def takens_points(X: np.ndarray, m: int, tau: int) -> np.ndarray:
     n_frames, D = X.shape
     start = (m - 1) * tau
     idxs = np.arange(start, n_frames)
@@ -136,6 +143,7 @@ def run_dm_extraction(
     int_rodent: np.ndarray,
     num_clips: int,
     dm_cfg: DMConfig,
+    takens_cfg: TakensConfig,
     base_output_dir: str,
 ) -> tuple[list, list]:
     all_cycle_dm = []
@@ -145,7 +153,7 @@ def run_dm_extraction(
 
     for clip_id in tqdm(range(num_clips), desc="DM extraction"):
         clip = int_rodent[clip_id]
-        pts = takens_points(clip, m=M, tau=TAU)
+        pts = takens_points(clip, m=takens_cfg.m, tau=takens_cfg.tau)
         clip_output_dir = os.path.join(base_output_dir, f"clip_{clip_id}")
         cycle_inds, G_sm = extract_skeleton_pcd_dm(
             pts,
@@ -637,12 +645,13 @@ def main(config_path: str = "configs/dmwkc/dm_latent_subspace_auto_dunn.yaml"):
         print(f"Loaded {len(all_cycle_dm)} cycle sets")
     else:
         base_output_dir = os.path.join(
-            cfg.output_dir, f"dm_results_m{M}_tau{TAU}_p{cfg.dm.pers_delta}"
+            cfg.output_dir, f"dm_results_m{cfg.takens.m}_tau{cfg.takens.tau}_p{cfg.dm.pers_delta}"
         )
         all_cycle_dm, _ = run_dm_extraction(
             int_rodent,
             num_clips=cfg.num_clips,
             dm_cfg=cfg.dm,
+            takens_cfg=cfg.takens,
             base_output_dir=base_output_dir,
         )
 

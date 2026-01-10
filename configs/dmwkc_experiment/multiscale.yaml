@@ -1,9 +1,14 @@
 # Multiscale DM Latent Subspace Pipeline
 # splits clips into smaller segments before clustering
 
-rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
+rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/latest_rodent.h5"
 output_dir: "out/out_multiscale"
 num_clips: 500
+
+# Takens embedding parameters
+takens:
+  m: 3
+  tau: 5
 
 # Multiscale parameters
 multiscale:

@@ -12,7 +12,7 @@ from PIL import Image, ImageDraw, ImageFont
 import imageio_ffmpeg
 import h5py
 
-from vnl_tda.utils.load_utils import load_from_h5py
+from vnl_tda.utils.load_utils import load_from_h5py, load_rollout_from_source
 from vnl_tda.utils.rendering import render_from_saved_rollout
 
 
@@ -96,9 +96,7 @@ def get_cycle_stats(
 
 
 def load_clip_frames(rodent_rollout_dir: str, clip_id: int) -> list[np.ndarray]:
-    path = os.path.join(rodent_rollout_dir, f"clip_{clip_id}.h5")
-    with h5py.File(path, "r") as f:
-        rollout = load_from_h5py(f)
+    rollout = load_rollout_from_source(clip_id, rodent_rollout_dir)
     frames = render_from_saved_rollout(rollout)
     return [np.asarray(fr) for fr in frames]
 

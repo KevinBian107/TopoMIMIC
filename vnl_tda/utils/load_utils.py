@@ -6,6 +6,81 @@ import h5py
 import numpy as np
 import re
 import jax.numpy as jnp
+import atexit
+
+_CONSOLIDATED_CACHE: dict[str, h5py.File] = {}
+
+
+def _cleanup_cache():
+    for f in _CONSOLIDATED_CACHE.values():
+        try:
+            f.close()
+        except:
+            pass
+    _CONSOLIDATED_CACHE.clear()
+
+
+atexit.register(_cleanup_cache)
+
+
+def _map_consolidated_key(group_path: str) -> str:
+    key = group_path.lstrip('/')
+    if key == 'qpos':
+        return 'qpos_rollout'
+    return key
+
+
+def _get_consolidated_file(filepath: str) -> h5py.File:
+    if filepath not in _CONSOLIDATED_CACHE:
+        _CONSOLIDATED_CACHE[filepath] = h5py.File(filepath, 'r')
+    return _CONSOLIDATED_CACHE[filepath]
+
+
+def _get_from_consolidated(
+    filepath: str,
+    group_path: str,
+    clip_idx: int,
+    use_cache: bool = False,
+) -> np.ndarray:
+    key = _map_consolidated_key(group_path)
+    if use_cache:
+        f = _get_consolidated_file(filepath)
+        return f[key][clip_idx]
+    else:
+        with h5py.File(filepath, 'r') as f:
+            return np.array(f[key][clip_idx])
+
+
+def is_consolidated_format(path: str) -> bool:
+    return path.endswith('.h5')
+
+
+def get_num_clips(path: str) -> int:
+    if is_consolidated_format(path):
+        with h5py.File(path, 'r') as f:
+            return f['intention'].shape[0]
+    else:
+        count = 0
+        while os.path.exists(os.path.join(path, f"clip_{count}.h5")):
+            count += 1
+        return count
+
+
+def load_rollout_from_source(
+    clip_idx: int,
+    source_path: str,
+    use_cache: bool = False,
+) -> dict:
+    if is_consolidated_format(source_path):
+        if use_cache:
+            f = _get_consolidated_file(source_path)
+            return {'qpos': np.array(f['qpos_rollout'][clip_idx])}
+        else:
+            with h5py.File(source_path, 'r') as f:
+                return {'qpos': np.array(f['qpos_rollout'][clip_idx])}
+    else:
+        with h5py.File(f"{source_path}/clip_{clip_idx}.h5", 'r') as hf:
+            return load_from_h5py(hf)
 
 
 def save_to_h5py(
@@ -77,15 +152,27 @@ def get_aggregate_data(
     """
     Get the aggregate data from the hdf5 file.
 
+    Supports both per-clip format (directory with clip_X.h5 files) and
+    consolidated format (single .h5 file with stacked arrays).
+
     Args:
         group_path: HDF5 group path to read from
         keys: List of keys to traverse in the data structure
         clip_idx: Index of the clip file to load
-        path: Directory containing clip HDF5 files
+        path: Directory containing clip HDF5 files OR path to consolidated .h5 file
 
     Returns:
         Extracted data from the specified path and keys
     """
+    if is_consolidated_format(path):
+        data = _get_from_consolidated(path, group_path, clip_idx)
+        for key in keys:
+            if type(data) == list and type(data[0]) == dict:
+                data = [d[key] for d in data]
+            elif type(data) == dict:
+                data = data[key]
+        return data
+
     with h5py.File(path + f"/clip_{clip_idx}.h5", "r") as h5file:
         data = load_from_h5py(h5file, group_path=group_path)
         for key in keys:

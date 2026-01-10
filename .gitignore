@@ -1,8 +1,6 @@
 # claude
 .claude
-node_modules/
-package-lock.json
-package.json
+scratch/
 
 # logging, data, ckpts
 wandb/

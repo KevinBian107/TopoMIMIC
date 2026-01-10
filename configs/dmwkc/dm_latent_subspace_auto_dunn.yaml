@@ -2,17 +2,22 @@
 # Higher Dunn = min(inter-cluster dist) / max(intra-cluster diameter)
 # Maximizes distinct, well-separated clusters
 
-rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
+rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/latest_rodent.h5"
 output_dir: "out/out_subspace_dunn"
-num_clips: 500
+num_clips: 642
+
+# Takens embedding parameters
+takens:
+  m: 3
+  tau: 5
 
 # Discrete Morse parameters
 dm:
   pers_delta: 0.75
   k_neighbors: 5
   epsilon: 0.99
-  skip: true
-  results_dir: "/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM/dm_results_m3_tau6_p0.75_f500"
+  skip: false
+  results_dir: null
 
 # Clustering parameters
 clustering:
@@ -21,7 +26,7 @@ clustering:
   target_len: 70
   only_max: true
   only_min: false
-  skip_clips: [37, 80, 152, 163, 187, 267, 281, 475, 491]
+  skip_clips: []
 
 # Dunn Index cluster selection
 auto_cluster:

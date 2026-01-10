@@ -25,7 +25,7 @@ import functools
 import h5py
 
 from vnl_tda.utils.rendering import render_from_saved_rollout
-from vnl_tda.utils.load_utils import load_from_h5py, get_aggregate_data
+from vnl_tda.utils.load_utils import load_from_h5py, get_aggregate_data, load_rollout_from_source
 from vnl_tda.utils.rendering import display_video
 
 
@@ -53,9 +53,8 @@ def render_pca_with_clips(
     end = start + clip_length
     global_subset_indices = np.arange(start, end)
 
-    with h5py.File(rollout_dir + f"/clip_{clip_id}.h5", "r") as h5file:
-        rollout = load_from_h5py(h5file)
-        act = get_aggregate_data("/activations", ['intention'], clip_id, path=rollout_dir)
+    rollout = load_rollout_from_source(clip_id, rollout_dir)
+    act = get_aggregate_data("/activations", ['intention'], clip_id, path=rollout_dir)
     
     if len(act) > clip_length:    
         act = act[:clip_length] # ref only have clip_length
@@ -486,9 +485,8 @@ def render_umap_with_clips(
     end = start + clip_length
     global_subset_indices = np.arange(start, end)
 
-    with h5py.File(f"{rollout_dir}/clip_{clip_id}.h5", "r") as h5file:
-        rollout = load_from_h5py(h5file)
-        act = get_aggregate_data("/activations", ['intention'], clip_id, path=rollout_dir)
+    rollout = load_rollout_from_source(clip_id, rollout_dir)
+    act = get_aggregate_data("/activations", ['intention'], clip_id, path=rollout_dir)
 
     if len(act) > clip_length:
         act = act[:clip_length]

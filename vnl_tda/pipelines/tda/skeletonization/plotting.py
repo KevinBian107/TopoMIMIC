@@ -34,6 +34,7 @@ from vnl_tda.utils.load_utils import (
     load_from_h5py,
     get_aggregate_data,
     extract_clip_info,
+    load_rollout_from_source,
 )
 
 
@@ -651,8 +652,7 @@ def plot_eigenbase_compression_loss(
     full_list, cyc_list = [], []
     D = None
     for clip_id in clip_ids:
-        with h5py.File(f"{rodent_rollout_dir}/clip_{clip_id}.h5","r") as f:
-            roll = load_from_h5py(f)
+        roll = load_rollout_from_source(clip_id, rodent_rollout_dir)
         try:
             Q = np.asarray(roll[state_key])
         except KeyError:
@@ -782,8 +782,7 @@ def plot_eigenbase_cross_reconstruction(
     full_list, cyc_list = [], []
     D = None
     for clip_id in clip_ids:
-        with h5py.File(f"{rodent_rollout_dir}/clip_{clip_id}.h5","r") as f:
-            roll = load_from_h5py(f)
+        roll = load_rollout_from_source(clip_id, rodent_rollout_dir)
         try:
             Q = np.asarray(roll[state_key])
         except KeyError:
@@ -927,8 +926,7 @@ def plot_cluster_eigenbase_cross_reconstruction(
     df = pd.read_csv(csv_path)
 
     def load_qpos(i):
-        with h5py.File(f"{rodent_rollout_dir}/clip_{int(i)}.h5","r") as f:
-            roll = load_from_h5py(f)
+        roll = load_rollout_from_source(int(i), rodent_rollout_dir)
         return np.asarray(roll[state_key])[:,7:]
 
     def has_label(r,k):
@@ -1131,8 +1129,7 @@ def plot_cluster_principal_angles_to_target_union(
     df = pd.read_csv(csv_path)
 
     def load_qpos(i):
-        with h5py.File(f"{rodent_rollout_dir}/clip_{int(i)}.h5","r") as f:
-            roll = load_from_h5py(f)
+        roll = load_rollout_from_source(int(i), rodent_rollout_dir)
         try:
             Q = np.asarray(roll[state_key])
         except KeyError:
@@ -1364,8 +1361,7 @@ def _compare_clusters_axis_motion_with_union(
     out_pdf=None,
 ):
     def qpos_loader(clip_id):
-        with h5py.File(f"{rodent_rollout_dir}/clip_{int(clip_id)}.h5","r") as f:
-            roll = load_from_h5py(f)
+        roll = load_rollout_from_source(int(clip_id), rodent_rollout_dir)
         return np.asarray(roll["qpos"])
 
     loop_means, loop_stds, union_means, union_stds, names = [], [], [], [], []
@@ -1486,8 +1482,7 @@ def plot_cluster_subspace_mds(
     df = pd.read_csv(csv_path)
 
     def load_qpos(i):
-        with h5py.File(f"{rodent_rollout_dir}/clip_{int(i)}.h5", "r") as f:
-            roll = load_from_h5py(f)
+        roll = load_rollout_from_source(int(i), rodent_rollout_dir)
         try:
             Q = np.asarray(roll[state_key])
         except KeyError:
@@ -1807,8 +1802,7 @@ def plot_cluster_eigenbase_reconstruction_box(
     df = pd.read_csv(csv_path)
 
     def load_qpos(i):
-        with h5py.File(f"{rodent_rollout_dir}/clip_{int(i)}.h5", "r") as f:
-            roll = load_from_h5py(f)
+        roll = load_rollout_from_source(int(i), rodent_rollout_dir)
         return np.asarray(roll[state_key])[:, 7:]
 
     def to_cid(x):

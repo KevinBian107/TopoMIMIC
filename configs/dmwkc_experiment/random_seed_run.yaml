@@ -2,7 +2,7 @@
 # Runs the same clustering with different random seeds and compares coverage
 
 master_output_dir: "out/out_random_seed_benchmark"
-rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
+rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/latest_rodent.h5"
 behavior_csv: "/home/jovyan/vast/kaiwen/TopoVNL/behavior_book.csv"
 num_clips: 500
 

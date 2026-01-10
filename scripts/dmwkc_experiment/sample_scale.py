@@ -30,8 +30,10 @@ from vnl_tda.pipelines.tda.skeletonization.postprocess import (
 from vnl_tda.pipelines.tda.skeletonization.rendering import render_grid_clusters_side_by_side
 
 
-M = 3
-TAU = 6
+@dataclass
+class TakensConfig:
+    m: int = 3
+    tau: int = 6
 
 
 @dataclass
@@ -85,6 +87,7 @@ class PipelineConfig:
     rodent_rollout_dir: str = "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
     output_dir: str = "out/out_sample_scale"
     num_clips: int = 500
+    takens: TakensConfig = None
     dm: DMConfig = None
     clustering: ClusteringConfig = None
     target_len_sweep: TargetLenSweepConfig = None
@@ -92,6 +95,8 @@ class PipelineConfig:
     rendering: RenderingConfig = None
 
     def __post_init__(self):
+        if self.takens is None:
+            self.takens = TakensConfig()
         if self.dm is None:
             self.dm = DMConfig()
         if self.clustering is None:
@@ -108,6 +113,7 @@ def load_config(config_path: str) -> PipelineConfig:
     with open(config_path, "r") as f:
         cfg = yaml.safe_load(f)
 
+    takens_cfg = TakensConfig(**cfg.get("takens", {}))
     dm_cfg = DMConfig(**cfg.get("dm", {}))
 
     clustering_dict = cfg.get("clustering", {})
@@ -131,6 +137,7 @@ def load_config(config_path: str) -> PipelineConfig:
         rodent_rollout_dir=cfg.get("rodent_rollout_dir", PipelineConfig.rodent_rollout_dir),
         output_dir=cfg.get("output_dir", PipelineConfig.output_dir),
         num_clips=cfg.get("num_clips", PipelineConfig.num_clips),
+        takens=takens_cfg,
         dm=dm_cfg,
         clustering=clustering_cfg,
         target_len_sweep=sweep_cfg,
