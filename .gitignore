@@ -11,6 +11,5 @@ PCD-Graph-Recon-DM/
 
 # out figures
 out/
-figures/
 
 __pycache__
