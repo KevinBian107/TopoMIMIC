@@ -2,6 +2,8 @@
 
 This code base is designed to be looking at such latent space of [Mimic-mjx](https://github.com/talmolab/Mimic-mjx) package via a topological perspective using optimized TDA pacakegs, hoping to find the `basis` of behaviors and controls.
 
+![Demo](figures/torus_dm_demo.gif)
+
 - [View demo presentations](https://1drv.ms/p/c/98d7a8c1c4098906/EWaQUCtAdxhOnRaLUJEzJ4ABF2L1F52lpLsUqw0Z8AQzcA)
 - [View SfN poster](https://drive.google.com/file/d/1tTwwww-OyBqC_tmbU0du2dtpfIY9_OI4/view)
 
@@ -46,11 +48,17 @@ python -m scripts.render.render_for_label configs/render/render_for_label.yaml
 
 ## Running the Codebase
 
-### Step 1: Hyperparameter Tuning (optional but recommended)
-Find optimal Takens embedding (m, tau) and DM parameters (k_neighbors, pers_delta):
+### Step 1: Hyperparameter Tuning
+Find optimal Takens embedding (m, tau) and DM parameters (k_neighbors, pers_delta) first prior to clustering, this is a crtical parameter search for the unsupervised learning method to work:
 ```bash
 python -m scripts.dmwkc.dm_hypertune configs/dmwkc/dm_hypertune.yaml
 ```
+
+We should be looking for:
+- Number of Cycles: Want few (1-3) so we get one dominant persistent cycle, not many redundant interpolations.
+- Cycle Coverage: Want moderate (~40-50%) since we only need the recurrent core, not transient frames that add noise.
+- Mean Cycle Length: Want long cycles (~70-90 frames) close to target_len to minimize resampling distortion.
+- Edge/Cycle Ratio: Want higher ratio indicating surviving cycles are well-supported by persistent edges, not spurious.
 
 ### Step 2: Extract DM Graphs
 Run discrete Morse extraction on all clips:
