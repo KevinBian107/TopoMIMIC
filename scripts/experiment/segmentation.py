@@ -574,7 +574,7 @@ def run_segmentation(
 
 
 def main(
-    config_path: str = "configs/dmwkc_experiment/segmentation.yaml",
+    config_path: str = "configs/experiment/segmentation.yaml",
     clip_ids: list[int] | None = None,
 ):
     """
@@ -665,7 +665,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--config",
         type=str,
-        default="configs/dmwkc_experiment/segmentation.yaml",
+        default="configs/experiment/segmentation.yaml",
         help="Path to config YAML",
     )
     parser.add_argument(

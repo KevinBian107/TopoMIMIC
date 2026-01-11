@@ -1,0 +1,115 @@
+# Unified Benchmark Experiment Configuration
+# Single entry point for all clustering methods
+
+output_dir: "out/benchmark_experiment"
+rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
+num_clips: 642
+
+# Data configuration
+data:
+  dm_key: "intention"
+  evaluation_key: "qpos"
+
+# DM results directory (required - run dm_pipeline first)
+dm:
+  results_dir: "out/dm_pipeline"
+
+# Window extraction settings
+clustering:
+  min_len: 0
+  max_len: 500
+  target_len: 50
+  only_max: true
+  only_min: false
+  skip_clips: [187, 267, 491]
+
+# K selection configuration
+# Option 1: Fixed k (legacy compatible - use n_clusters directly)
+# n_clusters: 10
+# Option 2: Explicit k_selection block (recommended)
+k_selection:
+  mode: "fixed"  # "fixed" or "auto" (Dunn Index-based selection)
+  n_clusters: 6  # Used when mode="fixed"
+  k_min: 5        # Used when mode="auto"
+  k_max: 15       # Used when mode="auto"
+  evaluation_key: "qpos"  # Joint space for Dunn evaluation
+  plot_dunn: true  # Generate Dunn analysis plots
+  save_all_k: false  # Save results for all k values (for k-sweep videos)
+
+# Seeds for reproducibility (multiple seeds for stability analysis)
+seeds: [0, 42, 123]
+aggregate_seeds: true
+
+# Methods to run
+methods:
+  - name: "vanilla_kmeans"
+    type: "clustering"
+    enabled: false
+
+  - name: "pca_kmeans"
+    type: "clustering"
+    enabled: false
+    params:
+      n_components: 10
+
+  - name: "umap_kmeans"
+    type: "clustering"
+    enabled: false
+    params:
+      n_components: 3
+      n_neighbors: 15
+      min_dist: 0.1
+
+  - name: "tsne_kmeans"
+    type: "clustering"
+    enabled: false
+    params:
+      n_components: 3
+      perplexity: 30
+
+  - name: "w2_kmeans"
+    type: "clustering"
+    enabled: true
+    params:
+      mds_components: 3
+
+  - name: "spectral"
+    type: "clustering"
+    enabled: false
+    params:
+      affinity: "nearest_neighbors"
+      n_neighbors: 10
+
+  - name: "dbscan"
+    type: "clustering"
+    enabled: false
+    params:
+      eps: 0.5
+      min_samples: 5
+
+  # State-space methods (require keypoint-moseq)
+  - name: "arhmm"
+    type: "state_space"
+    enabled: false
+    params:
+      latent_dim: 10
+      kappa: 10000
+      ar_iters: 100
+
+  - name: "slds"
+    type: "state_space"
+    enabled: false
+    params:
+      latent_dim: 10
+      kappa: 10000
+      ar_iters: 50
+      full_iters: 50
+
+# Video rendering settings
+rendering:
+  enabled: true
+  pad: 0
+  max_samples: 5
+  framerate: 50
+  target_size: [320, 240]
+  per_cluster_videos: false

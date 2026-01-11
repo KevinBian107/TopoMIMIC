@@ -1,0 +1,31 @@
+# Discrete Morse Pipeline Configuration
+# Run this first to extract DM cycles
+
+output_dir: "out/dm_pipeline"
+
+data:
+  dm_key: "intention"
+  rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
+  num_clips: 642
+
+# Takens delay embedding parameters
+# Use dm_hypertune to find optimal values
+takens:
+  m: 3
+  tau: 5
+
+# Discrete Morse parameters
+dm:
+  pers_delta: 0.75
+  k_neighbors: 3
+  epsilon: 0.99
+  skip: false  # Set to true to load existing results
+  results_dir: null  # Set path when skip is true
+
+# Video rendering (optional)
+rendering:
+  enabled: true
+  pad: 0
+  max_samples: 5
+  framerate: 50
+  target_size: [320, 240]
