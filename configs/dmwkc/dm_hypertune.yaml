@@ -1,0 +1,43 @@
+# DM Hyperparameter Tuning Configuration
+# Run this to find optimal k_neighbors and pers_delta
+
+output_dir: "out/dm_hypertune"
+
+data:
+  dm_key: "intention"
+  rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
+  num_clips_total: 800
+  num_clips_eval: 10  # Number of clips for grid search evaluation
+
+# Takens parameters
+takens:
+  auto_estimate: false  # Use AMI + FNN to find optimal tau and m
+  m: 3  # Used when auto_estimate is false
+  tau: 6  # Used when auto_estimate is false
+  max_tau: 200
+  bins: 64
+  m_max: 15
+  R_tol: 15.0
+  A_tol: 2.0
+  fnn_thr: 0.05
+  theiler: "auto"  # Can be "auto" or an integer
+  max_points: 20000
+
+# Discrete Morse fixed parameters
+dm:
+  epsilon: 0.99
+
+# Grid search space
+param_grid:
+  k_neighbors: [3, 5, 7]
+  pers_delta: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.75, 0.8]
+
+# Scoring weights for selecting best parameters
+scoring:
+  cycle_coverage_weight: 0.3
+  num_cycles_weight: 0.2
+  connectivity_weight: 0.2
+  mean_cycle_length_weight: 0.15
+  cycle_length_std_weight: 0.15
+
+save_plots: true

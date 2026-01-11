@@ -1,0 +1,42 @@
+# Unified Analysis Configuration
+# Run after experiment.py to analyze results
+
+experiment_dir: "out/benchmark_experiment"
+output_dir: "out/benchmark_analysis"
+
+rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
+behavior_csv: "/home/jovyan/vast/kaiwen/TopoVNL/behavior_book.csv"
+behavior_labels_csv: "/home/jovyan/vast/kaiwen/TopoVNL/behavior_labels.csv"
+
+# Analysis modules to run
+run_variance_heatmap: true
+run_mds_analysis: true
+run_cluster_to_label_comparison: true
+run_cross_method_comparison: false
+run_seed_stability_analysis: true
+
+# MDS settings
+mds_k_cycles: 50
+mds_s_top: 10
+# Behaviors to show separately in MDS (null = all behaviors from behavior_labels_csv)
+# Available: Walking, Immobility, Grooming, Orienting, Supported Rear, Unsupported Rear, Left Turn, Right Turn
+mds_behaviors: null
+
+# Body parts for variance analysis
+body_parts:
+  - "torso"
+  - "pelvis"
+  - "upper_leg_L"
+  - "lower_leg_L"
+  - "foot_L"
+  - "upper_leg_R"
+  - "lower_leg_R"
+  - "foot_R"
+  - "skull"
+  - "jaw"
+  - "upper_arm_L"
+  - "lower_arm_L"
+  - "upper_arm_R"
+  - "lower_arm_R"
+
+max_loops: 200

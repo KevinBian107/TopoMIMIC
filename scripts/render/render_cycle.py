@@ -245,7 +245,7 @@ def render_cycle_grid(
     return output_path
 
 
-def main(config_path: str = "configs/dmwkc_experiment/render_cycle.yaml"):
+def main(config_path: str = "configs/render/render_cycle.yaml"):
     cfg = load_config(config_path)
     os.makedirs(cfg.output_dir, exist_ok=True)
 
@@ -277,5 +277,5 @@ def main(config_path: str = "configs/dmwkc_experiment/render_cycle.yaml"):
 
 
 if __name__ == "__main__":
-    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/dmwkc_experiment/render_cycle.yaml"
+    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/render/render_cycle.yaml"
     main(config_path)

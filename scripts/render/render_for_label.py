@@ -76,7 +76,7 @@ def render_single_clip(
     save_video(frames, output_path, framerate=framerate)
 
 
-def main(config_path: str = "configs/render_for_label.yaml"):
+def main(config_path: str = "configs/render/render_for_label.yaml"):
     cfg = load_config(config_path)
 
     if not is_consolidated_format(cfg.data_path):
@@ -120,5 +120,5 @@ def main(config_path: str = "configs/render_for_label.yaml"):
 
 
 if __name__ == "__main__":
-    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/render_for_label.yaml"
+    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/render/render_for_label.yaml"
     main(config_path)

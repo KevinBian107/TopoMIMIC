@@ -555,7 +555,7 @@ def compute_spectral_analysis(
     return spectral_results
 
 
-def main(config_path: str = "configs/dmwkc_experiment/sample_scale.yaml"):
+def main(config_path: str = "configs/experiment/resolution_sweep.yaml"):
     cfg = load_config(config_path)
 
     if cfg.clustering.only_max and cfg.clustering.only_min:
@@ -704,5 +704,5 @@ def main(config_path: str = "configs/dmwkc_experiment/sample_scale.yaml"):
 
 
 if __name__ == "__main__":
-    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/dmwkc_experiment/sample_scale.yaml"
+    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/experiment/resolution_sweep.yaml"
     main(config_path)
