@@ -23,9 +23,8 @@ from typing import Any
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-from scipy.spatial.distance import pdist, cdist
 
-from vnl_tda.utils.load_utils import get_aggregate_data
+from vnl_tda.utils.load_utils import get_aggregate_data, get_clip_indices
 from vnl_tda.pipelines.tda.skeletonization.postprocess import (
     _expand_frames_nonconsec,
     _uniform_downsample,
@@ -98,18 +97,13 @@ class RenderingConfig:
 class KSelectionConfig:
     mode: str = "fixed"
     n_clusters: int = 10
-    k_min: int = 2
-    k_max: int = 15
-    evaluation_key: str = "qpos"
-    plot_dunn: bool = True
-    save_all_k: bool = False
 
 
 @dataclass
 class ExperimentConfig:
     output_dir: str = "out/experiment"
     rodent_rollout_dir: str = "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
-    num_clips: int = 500
+    split: str = "train"
 
     data: DataConfig = None
     dm: DMConfig = None
@@ -138,10 +132,6 @@ class ExperimentConfig:
     def n_clusters(self) -> int:
         return self.k_selection.n_clusters
 
-    @property
-    def compute_dunn(self) -> bool:
-        return self.k_selection.mode == "auto" or self.k_selection.plot_dunn
-
 
 @dataclass
 class ExperimentResults:
@@ -162,12 +152,15 @@ def load_config(config_path: str) -> ExperimentConfig:
     clustering_cfg = ClusteringConfig(**clustering_dict)
 
     if "k_selection" in cfg:
-        k_selection_cfg = KSelectionConfig(**cfg["k_selection"])
+        k_sel_dict = cfg["k_selection"].copy()
+        for key in ["plot_dunn", "plot_silhouette", "evaluation_key", "k_min", "k_max", "save_all_k"]:
+            k_sel_dict.pop(key, None)
+        k_sel_dict["mode"] = "fixed"
+        k_selection_cfg = KSelectionConfig(**k_sel_dict)
     elif "n_clusters" in cfg:
         k_selection_cfg = KSelectionConfig(
             mode="fixed",
             n_clusters=cfg["n_clusters"],
-            plot_dunn=cfg.get("compute_dunn", True),
         )
     else:
         k_selection_cfg = KSelectionConfig()
@@ -189,7 +182,7 @@ def load_config(config_path: str) -> ExperimentConfig:
     return ExperimentConfig(
         output_dir=cfg.get("output_dir", ExperimentConfig.output_dir),
         rodent_rollout_dir=cfg.get("rodent_rollout_dir", ExperimentConfig.rodent_rollout_dir),
-        num_clips=cfg.get("num_clips", ExperimentConfig.num_clips),
+        split=cfg.get("split", ExperimentConfig.split),
         data=data_cfg,
         dm=dm_cfg,
         clustering=clustering_cfg,
@@ -204,13 +197,14 @@ def load_config(config_path: str) -> ExperimentConfig:
 def load_data(
     data_key: str,
     rodent_rollout_dir: str,
-    num_clips: int,
-) -> np.ndarray:
+    split: str,
+) -> tuple[np.ndarray, list[int]]:
+    clip_indices = get_clip_indices(split)
     work_fn = functools.partial(
         get_aggregate_data, f"/{data_key}", [], path=rodent_rollout_dir
     )
     with mp.Pool(processes=mp.cpu_count()) as pool:
-        data_list = list(tqdm(pool.imap(work_fn, range(num_clips)), total=num_clips, desc=f"Loading {data_key}"))
+        data_list = list(tqdm(pool.imap(work_fn, clip_indices), total=len(clip_indices), desc=f"Loading {data_key}"))
 
     first_clip = data_list[0]
     if first_clip.ndim == 2:
@@ -228,8 +222,8 @@ def load_data(
     min_frames = min(d.shape[0] for d in data)
     data = data[:, :min_frames, :]
 
-    print(f"Loaded {data_key}: {data.shape}")
-    return data
+    print(f"Loaded {data_key}: {data.shape} (split={split}, clips={clip_indices[0]}-{clip_indices[-1]})")
+    return data, clip_indices
 
 
 def prepare_windows_for_clustering(
@@ -322,73 +316,6 @@ def compute_w2_distance_matrix(
     return D, Dn
 
 
-def prepare_joint_trajectories(
-    windows: list[tuple[int, np.ndarray]],
-    joint_data: np.ndarray,
-    target_len: int,
-) -> np.ndarray:
-    trajectories = []
-    for clip_id, frames in windows:
-        frames = np.asarray(frames, dtype=int)
-        sampled = _uniform_downsample(frames, target_len)
-        if sampled is None:
-            sampled = frames[:target_len] if len(frames) >= target_len else frames
-        traj = joint_data[clip_id, sampled].flatten()
-        trajectories.append(traj)
-    return np.array(trajectories)
-
-
-def compute_dunn_index(
-    labels: np.ndarray,
-    joint_trajectories: np.ndarray,
-) -> tuple[float, float, float]:
-    unique_labels = [l for l in np.unique(labels) if l >= 0]
-    n_clusters = len(unique_labels)
-
-    if n_clusters < 2:
-        return 0.0, 0.0, 0.0
-
-    cluster_data = {}
-    for lbl in unique_labels:
-        mask = labels == lbl
-        cluster_data[lbl] = joint_trajectories[mask]
-
-    cluster_diameters = []
-    for lbl in unique_labels:
-        X = cluster_data[lbl]
-        if len(X) < 2:
-            cluster_diameters.append(0.0)
-        else:
-            pairwise = pdist(X, metric='euclidean')
-            diameter = pairwise.max() if len(pairwise) > 0 else 0.0
-            cluster_diameters.append(diameter)
-
-    max_intra_diameter = max(cluster_diameters) if cluster_diameters else 0.0
-
-    min_inter_distance = np.inf
-    for i, lbl_i in enumerate(unique_labels):
-        for j, lbl_j in enumerate(unique_labels):
-            if i >= j:
-                continue
-            X_i = cluster_data[lbl_i]
-            X_j = cluster_data[lbl_j]
-            if len(X_i) == 0 or len(X_j) == 0:
-                continue
-            inter_dists = cdist(X_i, X_j, metric='euclidean')
-            min_dist = inter_dists.min()
-            min_inter_distance = min(min_inter_distance, min_dist)
-
-    if min_inter_distance == np.inf:
-        min_inter_distance = 0.0
-
-    if max_intra_diameter < 1e-10:
-        dunn_index = 0.0
-    else:
-        dunn_index = min_inter_distance / max_intra_diameter
-
-    return dunn_index, min_inter_distance, max_intra_diameter
-
-
 def labels_to_cluster_dict(
     labels: np.ndarray,
     windows: list[tuple[int, np.ndarray]],
@@ -400,166 +327,6 @@ def labels_to_cluster_dict(
             continue
         cluster_dict.setdefault(lbl, []).append(win)
     return cluster_dict
-
-
-def compute_per_cluster_stats(
-    labels: np.ndarray,
-    joint_trajectories: np.ndarray,
-) -> dict:
-    unique_labels = [l for l in np.unique(labels) if l >= 0]
-    stats = {}
-
-    for lbl in unique_labels:
-        mask = labels == lbl
-        X = joint_trajectories[mask]
-        n_points = len(X)
-
-        if n_points < 2:
-            diameter = 0.0
-        else:
-            pairwise = pdist(X, metric='euclidean')
-            diameter = pairwise.max() if len(pairwise) > 0 else 0.0
-
-        stats[int(lbl)] = {
-            "size": n_points,
-            "diameter": diameter,
-        }
-
-    return stats
-
-
-def auto_select_clusters(
-    method,
-    X: np.ndarray,
-    joint_trajectories: np.ndarray,
-    windows: list[tuple[int, np.ndarray]],
-    k_selection: "KSelectionConfig",
-    seed: int,
-    output_dir: str,
-) -> tuple[int, dict, dict]:
-    """
-    Automatically select optimal number of clusters using Dunn Index.
-
-    Args:
-        method: Clustering method instance
-        X: Feature matrix for clustering
-        joint_trajectories: Joint space trajectories for Dunn evaluation
-        windows: List of (clip_id, frames) tuples
-        k_selection: K selection configuration
-        seed: Random seed
-        output_dir: Output directory for plots
-
-    Returns:
-        Tuple of (optimal_k, cluster_dict, all_results)
-    """
-    print(f"\n=== Dunn Index Auto-Selection (k={k_selection.k_min} to {k_selection.k_max}) ===")
-
-    k_range = range(k_selection.k_min, k_selection.k_max + 1)
-    results = {
-        "dunn_index": [],
-        "min_inter_dist": [],
-        "max_intra_diam": [],
-        "per_cluster_stats": {},
-    }
-    all_cluster_dicts = {}
-
-    for k in tqdm(k_range, desc="Evaluating k values"):
-        labels = method.fit_predict(X, n_clusters=k, seed=seed)
-        cluster_dict_k = labels_to_cluster_dict(labels, windows)
-
-        dunn, min_inter, max_intra = compute_dunn_index(labels, joint_trajectories)
-        per_cluster = compute_per_cluster_stats(labels, joint_trajectories)
-
-        results["dunn_index"].append(dunn)
-        results["min_inter_dist"].append(min_inter)
-        results["max_intra_diam"].append(max_intra)
-        results["per_cluster_stats"][k] = per_cluster
-        all_cluster_dicts[k] = {
-            "cluster_dict": cluster_dict_k,
-            "labels": labels,
-            "dunn_index": dunn,
-            "min_inter_dist": min_inter,
-            "max_intra_diam": max_intra,
-        }
-
-    dunn_arr = np.array(results["dunn_index"])
-    optimal_idx = np.argmax(dunn_arr)
-    optimal_k = list(k_range)[optimal_idx]
-    optimal_dunn = results["dunn_index"][optimal_idx]
-
-    print(f"\nDunn Index by k:")
-    for i, k in enumerate(k_range):
-        dunn = results["dunn_index"][i]
-        marker = " <-- optimal" if k == optimal_k else ""
-        print(f"  k={k}: Dunn={dunn:.4f}{marker}")
-
-    print(f"\nOptimal k={optimal_k} with Dunn={optimal_dunn:.4f}")
-
-    if k_selection.plot_dunn:
-        plot_dunn_analysis(k_range, results, optimal_k, output_dir)
-
-    return optimal_k, all_cluster_dicts[optimal_k], all_cluster_dicts
-
-
-def plot_dunn_analysis(
-    k_range: range,
-    results: dict,
-    optimal_k: int,
-    output_dir: str,
-) -> None:
-    os.makedirs(output_dir, exist_ok=True)
-
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    (ax_dunn, ax_inter), (ax_intra, ax_per) = axes
-
-    k_list = list(k_range)
-
-    ax_dunn.plot(k_list, results["dunn_index"], color="darkgreen", marker="o", linewidth=2, markersize=6)
-    ax_dunn.axvline(x=optimal_k, color='red', linestyle='--', alpha=0.7, label=f'Optimal k={optimal_k}')
-    ax_dunn.set_xlabel("Number of clusters (k)", fontsize=12)
-    ax_dunn.set_ylabel("Dunn Index", fontsize=12)
-    ax_dunn.set_title("Dunn Index (higher = more distinct clusters)", fontsize=14)
-    ax_dunn.legend()
-    ax_dunn.grid(True, alpha=0.3)
-
-    ax_inter.plot(k_list, results["min_inter_dist"], color="blue", marker="s", linewidth=2, markersize=6)
-    ax_inter.axvline(x=optimal_k, color='red', linestyle='--', alpha=0.7, label=f'Optimal k={optimal_k}')
-    ax_inter.set_xlabel("Number of clusters (k)", fontsize=12)
-    ax_inter.set_ylabel("Min Inter-cluster Distance", fontsize=12)
-    ax_inter.set_title("Min Inter-cluster Distance (Dunn numerator)", fontsize=14)
-    ax_inter.legend()
-    ax_inter.grid(True, alpha=0.3)
-
-    ax_intra.plot(k_list, results["max_intra_diam"], color="purple", marker="^", linewidth=2, markersize=6)
-    ax_intra.axvline(x=optimal_k, color='red', linestyle='--', alpha=0.7, label=f'Optimal k={optimal_k}')
-    ax_intra.set_xlabel("Number of clusters (k)", fontsize=12)
-    ax_intra.set_ylabel("Max Intra-cluster Diameter", fontsize=12)
-    ax_intra.set_title("Max Intra-cluster Diameter (Dunn denominator)", fontsize=14)
-    ax_intra.legend()
-    ax_intra.grid(True, alpha=0.3)
-
-    per_cluster_optimal = results["per_cluster_stats"].get(optimal_k, {})
-    if per_cluster_optimal:
-        cluster_ids = sorted(per_cluster_optimal.keys())
-        diameters = [per_cluster_optimal[cid]["diameter"] for cid in cluster_ids]
-        sizes = [per_cluster_optimal[cid]["size"] for cid in cluster_ids]
-
-        bars = ax_per.bar(cluster_ids, diameters, color='steelblue', alpha=0.7)
-        for bar, size in zip(bars, sizes):
-            ax_per.annotate(f'n={size}',
-                          xy=(bar.get_x() + bar.get_width()/2, bar.get_height()),
-                          ha='center', va='bottom', fontsize=9)
-
-    ax_per.set_xlabel("Cluster ID", fontsize=12)
-    ax_per.set_ylabel("Diameter", fontsize=12)
-    ax_per.set_title(f"Per-cluster Diameter at optimal k={optimal_k}", fontsize=14)
-    ax_per.grid(True, alpha=0.3)
-
-    plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, "dunn_analysis.pdf"), dpi=300, bbox_inches='tight')
-    plt.savefig(os.path.join(output_dir, "dunn_analysis.png"), dpi=150, bbox_inches='tight')
-    plt.close()
-    print(f"Dunn analysis saved to {output_dir}/dunn_analysis.pdf")
 
 
 def generate_labels_yaml(
@@ -634,17 +401,14 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
     print("Unified Benchmark Experiment")
     print("=" * 60)
     print(f"Output dir: {config.output_dir}")
-    if config.k_selection.mode == "auto":
-        print(f"k_selection: auto (k_min={config.k_selection.k_min}, k_max={config.k_selection.k_max})")
-    else:
-        print(f"k_selection: fixed (n_clusters={config.k_selection.n_clusters})")
+    print(f"n_clusters: {config.k_selection.n_clusters}")
     print(f"Seeds: {config.seeds}")
 
     print(f"\n=== Stage 1: Loading {config.data.dm_key} data ===")
-    dm_data = load_data(config.data.dm_key, config.rodent_rollout_dir, config.num_clips)
+    dm_data, clip_indices = load_data(config.data.dm_key, config.rodent_rollout_dir, config.split)
 
     print(f"\n=== Stage 2: Loading {config.data.evaluation_key} data ===")
-    eval_data = load_data(config.data.evaluation_key, config.rodent_rollout_dir, config.num_clips)
+    eval_data, _ = load_data(config.data.evaluation_key, config.rodent_rollout_dir, config.split)
 
     min_frames = min(dm_data.shape[1], eval_data.shape[1])
     dm_data = dm_data[:, :min_frames, :]
@@ -669,11 +433,6 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
 
     X = build_feature_matrix(windows, dm_data)
     print(f"Feature matrix: {X.shape}")
-
-    joint_trajectories = prepare_joint_trajectories(
-        windows, eval_data, config.clustering.target_len
-    )
-    print(f"Joint trajectories: {joint_trajectories.shape}")
 
     w2_cache_path = os.path.join(config.output_dir, "w2_distance_matrix.pkl")
     if os.path.exists(w2_cache_path):
@@ -719,78 +478,24 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
                     dm_data, n_clusters_to_use, seed_dir, seed
                 )
 
-                dunn_index = None
-                if config.compute_dunn:
-                    cluster_dict = kpms_labels_to_cluster_dict(kpms_result.labels)
-                    joint_traj = prepare_kpms_joint_trajectories(
-                        kpms_result.labels, eval_data
-                    )
-                    dunn_index, _, _ = compute_kpms_dunn_index(
-                        kpms_result.labels, eval_data
-                    )
-
                 method_results[seed] = {
                     "n_clusters": n_clusters_to_use,
                     "labels": kpms_result.labels,
-                    "dunn_index": dunn_index,
                 }
 
-                print(f"  Seed {seed}: Dunn={dunn_index:.4f}" if dunn_index else f"  Seed {seed}: complete")
+                print(f"  Seed {seed}: complete")
         else:
-            if config.k_selection.mode == "auto":
-                primary_seed = config.seeds[0]
-                optimal_k, optimal_result, all_k_results = auto_select_clusters(
-                    method=method,
-                    X=X,
-                    joint_trajectories=joint_trajectories,
-                    windows=windows,
-                    k_selection=config.k_selection,
-                    seed=primary_seed,
-                    output_dir=method_output_dir,
-                )
+            for seed in config.seeds:
+                labels = method.fit_predict(X, config.k_selection.n_clusters, seed)
+                cluster_dict = labels_to_cluster_dict(labels, windows)
 
-                method_results[primary_seed] = {
-                    "n_clusters": optimal_k,
-                    "cluster_dict": optimal_result["cluster_dict"],
-                    "labels": optimal_result["labels"],
-                    "dunn_index": optimal_result["dunn_index"],
-                    "optimal_k": optimal_k,
-                    "dunn_by_k": {k: r["dunn_index"] for k, r in all_k_results.items()},
+                method_results[seed] = {
+                    "n_clusters": config.k_selection.n_clusters,
+                    "cluster_dict": cluster_dict,
+                    "labels": labels,
                 }
 
-                if config.k_selection.save_all_k:
-                    method_results["all_k_results"] = all_k_results
-
-                for seed in config.seeds[1:]:
-                    labels = method.fit_predict(X, optimal_k, seed)
-                    cluster_dict = labels_to_cluster_dict(labels, windows)
-                    dunn_index, _, _ = compute_dunn_index(labels, joint_trajectories)
-
-                    method_results[seed] = {
-                        "n_clusters": optimal_k,
-                        "cluster_dict": cluster_dict,
-                        "labels": labels,
-                        "dunn_index": dunn_index,
-                        "optimal_k": optimal_k,
-                    }
-                    print(f"  Seed {seed}: k={optimal_k}, Dunn={dunn_index:.4f}")
-            else:
-                for seed in config.seeds:
-                    labels = method.fit_predict(X, config.k_selection.n_clusters, seed)
-                    cluster_dict = labels_to_cluster_dict(labels, windows)
-
-                    dunn_index = None
-                    if config.compute_dunn:
-                        dunn_index, _, _ = compute_dunn_index(labels, joint_trajectories)
-
-                    method_results[seed] = {
-                        "n_clusters": config.k_selection.n_clusters,
-                        "cluster_dict": cluster_dict,
-                        "labels": labels,
-                        "dunn_index": dunn_index,
-                    }
-
-                    print(f"  Seed {seed}: Dunn={dunn_index:.4f}" if dunn_index else f"  Seed {seed}: complete")
+                print(f"  Seed {seed}: complete")
 
         if len(config.seeds) > 1 and method.method_type == MethodType.CLUSTERING:
             print(f"  Aligning clusters across seeds...")
@@ -824,14 +529,6 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
             method_results["alignment_summary"] = alignment_summary
             print(f"  Mean alignment: {alignment_summary['mean_score']:.1%}")
 
-        if config.aggregate_seeds and len(config.seeds) > 1:
-            dunn_values = [r.get("dunn_index", 0) for r in method_results.values() if r.get("dunn_index")]
-            method_results["aggregated"] = {
-                "mean_dunn": np.mean(dunn_values) if dunn_values else 0.0,
-                "std_dunn": np.std(dunn_values) if dunn_values else 0.0,
-                "n_seeds": len(config.seeds),
-            }
-
         primary_seed = config.seeds[0]
         result_n_clusters = method_results[primary_seed].get("n_clusters", config.k_selection.n_clusters)
         generate_labels_yaml(
@@ -861,8 +558,6 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
                 cluster_dict = result["cluster_dict"]
                 cluster_labels = {i: f"C{i}" for i in cluster_dict.keys()}
 
-                is_auto = config.k_selection.mode == "auto"
-                title_suffix = " (auto)" if is_auto else ""
                 run_rendering(
                     cluster_dict,
                     config.rodent_rollout_dir,
@@ -870,26 +565,8 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
                     method_output_dir,
                     cluster_labels=cluster_labels,
                     output_filename=f"clusters_k{result_n_clusters}.mp4",
-                    title=f"{method_entry.name} (k={result_n_clusters}{title_suffix})",
+                    title=f"{method_entry.name} (k={result_n_clusters})",
                 )
-
-                if is_auto and config.k_selection.save_all_k and "all_k_results" in method_results:
-                    k_sweep_dir = os.path.join(method_output_dir, "k_sweep")
-                    os.makedirs(k_sweep_dir, exist_ok=True)
-                    print(f"  Rendering k-sweep videos for {method_entry.name}...")
-                    for k, k_result in tqdm(method_results["all_k_results"].items(), desc="Rendering k sweep"):
-                        k_cluster_dict = k_result["cluster_dict"]
-                        k_labels = {i: f"C{i}" for i in k_cluster_dict.keys()}
-                        is_optimal = " (optimal)" if k == result_n_clusters else ""
-                        run_rendering(
-                            k_cluster_dict,
-                            config.rodent_rollout_dir,
-                            config.rendering,
-                            k_sweep_dir,
-                            cluster_labels=k_labels,
-                            output_filename=f"clusters_k{k}.mp4",
-                            title=f"{method_entry.name} (k={k}){is_optimal}",
-                        )
 
     print("\n=== Stage 7: Saving summary ===")
     summary_path = os.path.join(config.output_dir, "experiment_summary.txt")
@@ -897,10 +574,7 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
         f.write("Unified Benchmark Experiment Summary\n")
         f.write("=" * 60 + "\n\n")
         f.write(f"Experiment ID: {experiment_id}\n")
-        if config.k_selection.mode == "auto":
-            f.write(f"k_selection: auto (k_min={config.k_selection.k_min}, k_max={config.k_selection.k_max})\n")
-        else:
-            f.write(f"k_selection: fixed (n_clusters={config.k_selection.n_clusters})\n")
+        f.write(f"n_clusters: {config.k_selection.n_clusters}\n")
         f.write(f"Seeds: {config.seeds}\n\n")
 
         f.write("Results by Method:\n")
@@ -908,21 +582,11 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
 
         for method_name, results in all_results.items():
             f.write(f"\n{method_name}:\n")
-            primary_result = results.get(config.seeds[0], {})
-            if "optimal_k" in primary_result:
-                f.write(f"  Optimal k: {primary_result['optimal_k']}\n")
             for seed in config.seeds:
                 if seed in results:
                     r = results[seed]
-                    dunn = r.get("dunn_index", "N/A")
                     k = r.get("n_clusters", "N/A")
-                    if isinstance(dunn, float):
-                        f.write(f"  Seed {seed}: k={k}, Dunn={dunn:.4f}\n")
-                    else:
-                        f.write(f"  Seed {seed}: k={k}, Dunn={dunn}\n")
-            if "aggregated" in results:
-                agg = results["aggregated"]
-                f.write(f"  Aggregated: mean_dunn={agg['mean_dunn']:.4f} +/- {agg['std_dunn']:.4f}\n")
+                    f.write(f"  Seed {seed}: k={k}\n")
             if "alignment_summary" in results:
                 align_sum = results["alignment_summary"]
                 f.write(f"  Alignment: mean={align_sum['mean_score']:.1%}, ")
@@ -961,98 +625,6 @@ def kpms_labels_to_cluster_dict(
             cluster_dict[syll].append((clip_idx, frame_indices))
 
     return cluster_dict
-
-
-def prepare_kpms_joint_trajectories(
-    labels_list: list[np.ndarray],
-    joint_data: np.ndarray,
-) -> np.ndarray:
-    cluster_frames = {}
-    for clip_idx, sylls in enumerate(labels_list):
-        for t, s in enumerate(sylls):
-            s = int(s)
-            if s not in cluster_frames:
-                cluster_frames[s] = []
-            if t < joint_data.shape[1]:
-                cluster_frames[s].append(joint_data[clip_idx, t])
-
-    return cluster_frames
-
-
-def compute_kpms_dunn_index(
-    labels_list: list[np.ndarray],
-    joint_data: np.ndarray,
-) -> tuple[float, float, float]:
-    cluster_frames = {}
-    for clip_idx, sylls in enumerate(labels_list):
-        for t, s in enumerate(sylls):
-            s = int(s)
-            if s not in cluster_frames:
-                cluster_frames[s] = []
-            if t < joint_data.shape[1]:
-                cluster_frames[s].append(joint_data[clip_idx, t])
-
-    cluster_data = {}
-    for s, frames in cluster_frames.items():
-        if len(frames) > 0:
-            cluster_data[s] = np.array(frames)
-
-    unique_labels = list(cluster_data.keys())
-    n_clusters = len(unique_labels)
-
-    if n_clusters < 2:
-        return 0.0, 0.0, 0.0
-
-    cluster_diameters = []
-    for lbl in unique_labels:
-        X = cluster_data[lbl]
-        if len(X) < 2:
-            cluster_diameters.append(0.0)
-        else:
-            n_samples = min(500, len(X))
-            if len(X) > n_samples:
-                idx = np.random.choice(len(X), n_samples, replace=False)
-                X_sub = X[idx]
-            else:
-                X_sub = X
-            pairwise = pdist(X_sub, metric='euclidean')
-            diameter = pairwise.max() if len(pairwise) > 0 else 0.0
-            cluster_diameters.append(diameter)
-
-    max_intra_diameter = max(cluster_diameters) if cluster_diameters else 0.0
-
-    min_inter_distance = np.inf
-    for i, lbl_i in enumerate(unique_labels):
-        for j, lbl_j in enumerate(unique_labels):
-            if i >= j:
-                continue
-            X_i = cluster_data[lbl_i]
-            X_j = cluster_data[lbl_j]
-            if len(X_i) == 0 or len(X_j) == 0:
-                continue
-
-            n_i = min(200, len(X_i))
-            n_j = min(200, len(X_j))
-            if len(X_i) > n_i:
-                idx_i = np.random.choice(len(X_i), n_i, replace=False)
-                X_i = X_i[idx_i]
-            if len(X_j) > n_j:
-                idx_j = np.random.choice(len(X_j), n_j, replace=False)
-                X_j = X_j[idx_j]
-
-            inter_dists = cdist(X_i, X_j, metric='euclidean')
-            min_dist = inter_dists.min()
-            min_inter_distance = min(min_inter_distance, min_dist)
-
-    if min_inter_distance == np.inf:
-        min_inter_distance = 0.0
-
-    if max_intra_diameter < 1e-10:
-        dunn_index = 0.0
-    else:
-        dunn_index = min_inter_distance / max_intra_diameter
-
-    return dunn_index, min_inter_distance, max_intra_diameter
 
 
 def main(config_path: str = "configs/benchmark/experiment.yaml"):

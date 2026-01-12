@@ -4,7 +4,7 @@
 experiment_dir: "out/benchmark_experiment"
 output_dir: "out/benchmark_analysis"
 
-rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
+rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/latest_rodent.h5"
 behavior_csv: "/home/jovyan/vast/kaiwen/TopoVNL/behavior_book.csv"
 behavior_labels_csv: "/home/jovyan/vast/kaiwen/TopoVNL/behavior_labels.csv"
 

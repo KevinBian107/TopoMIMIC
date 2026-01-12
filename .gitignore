@@ -1,6 +1,7 @@
 # claude
 .claude
 scratch/
+tmp_code
 
 # logging, data, ckpts
 wandb/

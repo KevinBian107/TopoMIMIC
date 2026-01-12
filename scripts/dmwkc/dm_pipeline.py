@@ -21,7 +21,7 @@ from pathlib import Path
 import numpy as np
 from tqdm import tqdm
 
-from vnl_tda.utils.load_utils import get_aggregate_data
+from vnl_tda.utils.load_utils import get_aggregate_data, get_clip_indices
 from vnl_tda.pipelines.tda.skeletonization.skeletonization import extract_skeleton_pcd_dm
 from vnl_tda.pipelines.tda.skeletonization.postprocess import (
     chunk_loops_by_clustered_vpath,
@@ -35,7 +35,7 @@ from vnl_tda.pipelines.tda.skeletonization.rendering import render_grid_clusters
 class DataConfig:
     dm_key: str = "intention"
     rodent_rollout_dir: str = "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
-    num_clips: int = 500
+    split: str = "train"
 
 
 @dataclass
@@ -103,12 +103,13 @@ def load_config(config_path: str) -> PipelineConfig:
     )
 
 
-def load_data(config: DataConfig) -> np.ndarray:
+def load_data(config: DataConfig) -> tuple[np.ndarray, list[int]]:
+    clip_indices = get_clip_indices(config.split)
     work_fn = functools.partial(
         get_aggregate_data, f"/{config.dm_key}", [], path=config.rodent_rollout_dir
     )
     with mp.Pool(processes=mp.cpu_count()) as pool:
-        data_list = list(tqdm(pool.imap(work_fn, range(config.num_clips)), total=config.num_clips, desc=f"Loading {config.dm_key}"))
+        data_list = list(tqdm(pool.imap(work_fn, clip_indices), total=len(clip_indices), desc=f"Loading {config.dm_key}"))
 
     first_clip = data_list[0]
     if first_clip.ndim == 2:
@@ -126,8 +127,8 @@ def load_data(config: DataConfig) -> np.ndarray:
     min_frames = min(d.shape[0] for d in data)
     data = data[:, :min_frames, :]
 
-    print(f"Loaded {config.dm_key}: {data.shape}")
-    return data
+    print(f"Loaded {config.dm_key}: {data.shape} (split={config.split}, clips={clip_indices[0]}-{clip_indices[-1]})")
+    return data, clip_indices
 
 
 def takens_embedding(X: np.ndarray, m: int, tau: int) -> np.ndarray:
@@ -230,7 +231,7 @@ def run_pipeline(config: PipelineConfig) -> tuple[list, list]:
         print(f"Loaded {len(all_cycle_dm)} cycle sets")
     else:
         print("\n=== Stage 1: Loading data ===")
-        data = load_data(config.data)
+        data, clip_indices = load_data(config.data)
 
         print("\n=== Stage 2: Running DM extraction ===")
         all_cycle_dm, all_G_sm = run_dm_extraction(data, config)

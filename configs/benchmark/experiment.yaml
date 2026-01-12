@@ -2,8 +2,8 @@
 # Single entry point for all clustering methods
 
 output_dir: "out/benchmark_experiment"
-rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
-num_clips: 642
+rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/latest_rodent.h5"
+split: "train"
 
 # Data configuration
 data:
@@ -18,26 +18,17 @@ dm:
 clustering:
   min_len: 0
   max_len: 500
-  target_len: 50
+  target_len: 75
   only_max: true
   only_min: false
-  skip_clips: [187, 267, 491]
+  skip_clips: [80, 187, 267, 491]
 
 # K selection configuration
-# Option 1: Fixed k (legacy compatible - use n_clusters directly)
-# n_clusters: 10
-# Option 2: Explicit k_selection block (recommended)
 k_selection:
-  mode: "fixed"  # "fixed" or "auto" (Dunn Index-based selection)
-  n_clusters: 6  # Used when mode="fixed"
-  k_min: 5        # Used when mode="auto"
-  k_max: 15       # Used when mode="auto"
-  evaluation_key: "qpos"  # Joint space for Dunn evaluation
-  plot_dunn: true  # Generate Dunn analysis plots
-  save_all_k: false  # Save results for all k values (for k-sweep videos)
+  n_clusters: 10
 
 # Seeds for reproducibility (multiple seeds for stability analysis)
-seeds: [0, 42, 123]
+seeds: [0, 123, 234]
 aggregate_seeds: true
 
 # Methods to run
@@ -109,7 +100,7 @@ methods:
 rendering:
   enabled: true
   pad: 0
-  max_samples: 5
+  max_samples: 10
   framerate: 50
   target_size: [320, 240]
   per_cluster_videos: false

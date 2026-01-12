@@ -5,19 +5,19 @@ output_dir: "out/dm_pipeline"
 
 data:
   dm_key: "intention"
-  rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
-  num_clips: 642
+  rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/latest_rodent.h5"
+  split: "train"
 
 # Takens delay embedding parameters
 # Use dm_hypertune to find optimal values
 takens:
   m: 3
-  tau: 6
+  tau: 5
 
 # Discrete Morse parameters
 dm:
-  pers_delta: 0.7
-  k_neighbors: 5
+  pers_delta: 0.75
+  k_neighbors: 3
   epsilon: 0.99
   skip: false  # Set to true to load existing results
   results_dir: null  # Set path when skip is true
