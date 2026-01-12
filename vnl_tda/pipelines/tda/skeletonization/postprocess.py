@@ -46,9 +46,24 @@ def _expand_indices(
 def _uniform_downsample(
     frames: np.ndarray | list[int],
     target_len: int,
+    min_frames: int = 3,
 ) -> np.ndarray | None:
+    """
+    Resample frame indices to target_len via uniform sampling.
+
+    If frames >= target_len: downsample by selecting evenly spaced indices.
+    If frames < target_len: upsample by interpolating frame indices.
+
+    Args:
+        frames: Frame indices array
+        target_len: Desired output length
+        min_frames: Minimum frames required (returns None if fewer)
+
+    Returns:
+        Resampled frame indices of length target_len, or None if too few frames
+    """
     frames = np.unique(np.asarray(frames, dtype=int))
-    if len(frames) < target_len:
+    if len(frames) < min_frames:
         return None
     idx = np.linspace(0, len(frames) - 1, target_len)
     idx = np.rint(idx).astype(int)
@@ -372,7 +387,6 @@ def cluster_vpath_with_wasserstein2d_fixedlen_kmeans(
     skip_clips: tuple[int, ...] = (37, 152, 163, 274, 281),
     squared_cost: bool = False,
     only_max: bool = False,
-    only_min: bool = False,
     use_full_union: bool = False,
     random_state: int = 0,
     return_mats: bool = False,
@@ -393,7 +407,6 @@ def cluster_vpath_with_wasserstein2d_fixedlen_kmeans(
         skip_clips: Clip indices to skip
         squared_cost: Whether to square the cost matrix
         only_max: Whether to keep only the longest loop per clip
-        only_min: Whether to keep only the shortest loop per clip
         use_full_union: Whether to merge overlapping loops
         random_state: Random seed for reproducibility
         return_mats: Whether to return distance matrices
@@ -409,8 +422,6 @@ def cluster_vpath_with_wasserstein2d_fixedlen_kmeans(
         loops = [loop for loop in all_loops[clip_id] if min_len <= len(loop) <= max_len]
         if only_max and len(loops) > 0:
             loops = [max(loops, key=len)]
-        elif only_min and len(loops) > 0:
-            loops = [min(loops, key=len)]
         elif use_full_union:
             from vnl_tda.pipelines.tda.skeletonization.rendering_postprocess import drop_middle_nearby_loops
             from vnl_tda.pipelines.tda.skeletonization.skeletonization import _merge_overlapping_loops
@@ -429,10 +440,9 @@ def cluster_vpath_with_wasserstein2d_fixedlen_kmeans(
             windows.append((clip_id, sampled))
             cleaned_loops.append(np.asarray(loop, dtype=int))
 
-    if (only_max or only_min) and cleaned_loops:
+    if only_max and cleaned_loops:
         loop_lengths = np.array([len(loop) for loop in cleaned_loops])
-        mode = "only_max" if only_max else "only_min"
-        print(f"[{mode}] Loop length stats: mean={loop_lengths.mean():.2f}, std={loop_lengths.std():.2f}, n={len(loop_lengths)}")
+        print(f"[only_max] Loop length stats: mean={loop_lengths.mean():.2f}, std={loop_lengths.std():.2f}, n={len(loop_lengths)}")
 
     M = len(windows)
     if M == 0:

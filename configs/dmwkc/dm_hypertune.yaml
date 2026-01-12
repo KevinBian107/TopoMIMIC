@@ -5,9 +5,9 @@ output_dir: "out/dm_hypertune"
 
 data:
   dm_key: "intention"
-  rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/latest_rodent.h5"
+  rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
   num_clips_total: 842
-  num_clips_eval: 10  # Number of clips for grid search evaluation
+  num_clips_eval: 30  # Number of clips for grid search evaluation
 
 # Takens parameters
 takens:
@@ -29,15 +29,7 @@ dm:
 
 # Grid search space
 param_grid:
-  k_neighbors: [3, 5, 7]
-  pers_delta: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.75, 0.8]
-
-# Scoring weights for selecting best parameters
-scoring:
-  cycle_coverage_weight: 0.3
-  num_cycles_weight: 0.2
-  connectivity_weight: 0.2
-  mean_cycle_length_weight: 0.15
-  cycle_length_std_weight: 0.15
+  k_neighbors: [3, 5, 7, 9]
+  pers_delta: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
 
 save_plots: true

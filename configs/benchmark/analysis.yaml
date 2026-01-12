@@ -4,7 +4,7 @@
 experiment_dir: "out/benchmark_experiment"
 output_dir: "out/benchmark_analysis"
 
-rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/latest_rodent.h5"
+rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
 behavior_csv: "/home/jovyan/vast/kaiwen/TopoVNL/behavior_book.csv"
 behavior_labels_csv: "/home/jovyan/vast/kaiwen/TopoVNL/behavior_labels.csv"
 
@@ -12,8 +12,7 @@ behavior_labels_csv: "/home/jovyan/vast/kaiwen/TopoVNL/behavior_labels.csv"
 run_variance_heatmap: true
 run_mds_analysis: true
 run_cluster_to_label_comparison: true
-run_cross_method_comparison: false
-run_seed_stability_analysis: true
+run_seed_comparison: true  # Side-by-side plots across seeds
 
 # MDS settings
 mds_k_cycles: 50
