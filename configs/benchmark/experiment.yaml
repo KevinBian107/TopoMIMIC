@@ -2,7 +2,7 @@
 # Single entry point for all clustering methods
 
 output_dir: "out/benchmark_experiment"
-rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/latest_rodent.h5"
+rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
 split: "train"
 
 # Data configuration
@@ -12,7 +12,7 @@ data:
 
 # DM results directory (required - run dm_pipeline first)
 dm:
-  results_dir: "out/dm_pipeline"
+  results_dir: "out/dm_pipeline_ar"
 
 # Window extraction settings
 clustering:
@@ -20,12 +20,11 @@ clustering:
   max_len: 500
   target_len: 75
   only_max: true
-  only_min: false
-  skip_clips: [80, 187, 267, 491]
+  skip_clips: [80, 187, 267, 392, 456, 491]
 
 # K selection configuration
 k_selection:
-  n_clusters: 10
+  n_clusters: 6
 
 # Seeds for reproducibility (multiple seeds for stability analysis)
 seeds: [0, 123, 234]
@@ -100,7 +99,7 @@ methods:
 rendering:
   enabled: true
   pad: 0
-  max_samples: 10
+  max_samples: 6
   framerate: 50
   target_size: [320, 240]
   per_cluster_videos: false

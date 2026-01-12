@@ -1,4 +1,4 @@
-data_path: "data/latest_rodent.h5"
+data_path: "data/rodent_label.h5"
 output_dir: "out/rendered_for_label"
 start_clip: 642
 end_clip: 842

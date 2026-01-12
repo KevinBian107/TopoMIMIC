@@ -45,13 +45,6 @@ from scripts.benchmark.methods import (
     ClusteringResult,
     KPMSResult,
 )
-from scripts.benchmark.alignment import (
-    align_clusters_to_reference,
-    remap_cluster_dict,
-    remap_labels,
-    compute_alignment_summary,
-    get_alignment_quality_label,
-)
 
 
 @dataclass
@@ -71,7 +64,6 @@ class ClusteringConfig:
     max_len: int = 500
     target_len: int = 70
     only_max: bool = True
-    only_min: bool = False
     skip_clips: tuple[int, ...] = (37, 152, 163, 274, 281)
 
 
@@ -248,8 +240,6 @@ def prepare_windows_for_clustering(
 
         if clustering_cfg.only_max and len(loops) > 0:
             loops = [max(loops, key=len)]
-        elif clustering_cfg.only_min and len(loops) > 0:
-            loops = [min(loops, key=len)]
 
         clip_len = len(data[clip_id])
         for loop in loops:
@@ -260,10 +250,9 @@ def prepare_windows_for_clustering(
             windows.append((clip_id, sampled))
             cleaned_loops.append(np.asarray(loop, dtype=int))
 
-    if (clustering_cfg.only_max or clustering_cfg.only_min) and cleaned_loops:
+    if clustering_cfg.only_max and cleaned_loops:
         loop_lengths = np.array([len(loop) for loop in cleaned_loops])
-        mode = "only_max" if clustering_cfg.only_max else "only_min"
-        print(f"[{mode}] Loop length stats: mean={loop_lengths.mean():.2f}, std={loop_lengths.std():.2f}, n={len(loop_lengths)}")
+        print(f"[only_max] Loop length stats: mean={loop_lengths.mean():.2f}, std={loop_lengths.std():.2f}, n={len(loop_lengths)}")
 
     return windows, cleaned_loops
 
@@ -340,7 +329,7 @@ def generate_labels_yaml(
         from datetime import datetime
         experiment_id = f"experiment_{datetime.now().strftime('%Y-%m-%d')}"
 
-    labels_path = os.path.join(output_dir, "labels.yaml")
+    labels_path = os.path.join(output_dir, f"labels_seed_{seed}.yaml")
 
     labels_content = {
         "experiment_id": experiment_id,
@@ -497,47 +486,15 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
 
                 print(f"  Seed {seed}: complete")
 
-        if len(config.seeds) > 1 and method.method_type == MethodType.CLUSTERING:
-            print(f"  Aligning clusters across seeds...")
-            primary_seed = config.seeds[0]
-            ref_labels = method_results[primary_seed]["labels"]
-            alignment_results = {}
-
-            for seed in config.seeds[1:]:
-                target_labels = method_results[seed]["labels"]
-                alignment = align_clusters_to_reference(ref_labels, target_labels)
-                alignment_results[seed] = alignment
-
-                aligned_labels = remap_labels(target_labels, alignment.mapping)
-                aligned_cluster_dict = remap_cluster_dict(
-                    method_results[seed]["cluster_dict"], alignment.mapping
-                )
-
-                method_results[seed]["labels_aligned"] = aligned_labels
-                method_results[seed]["cluster_dict_aligned"] = aligned_cluster_dict
-                method_results[seed]["alignment"] = {
-                    "mapping": alignment.mapping,
-                    "score": alignment.alignment_score,
-                    "per_cluster_scores": alignment.per_cluster_scores,
-                    "quality": get_alignment_quality_label(alignment.alignment_score),
-                }
-
-                quality = get_alignment_quality_label(alignment.alignment_score)
-                print(f"    Seed {seed}: alignment={alignment.alignment_score:.1%} ({quality})")
-
-            alignment_summary = compute_alignment_summary(alignment_results)
-            method_results["alignment_summary"] = alignment_summary
-            print(f"  Mean alignment: {alignment_summary['mean_score']:.1%}")
-
-        primary_seed = config.seeds[0]
-        result_n_clusters = method_results[primary_seed].get("n_clusters", config.k_selection.n_clusters)
-        generate_labels_yaml(
-            method_name=method_entry.name,
-            n_clusters=result_n_clusters,
-            seed=primary_seed,
-            output_dir=method_output_dir,
-            experiment_id=experiment_id,
-        )
+        for seed in config.seeds:
+            result_n_clusters = method_results[seed].get("n_clusters", config.k_selection.n_clusters)
+            generate_labels_yaml(
+                method_name=method_entry.name,
+                n_clusters=result_n_clusters,
+                seed=seed,
+                output_dir=method_output_dir,
+                experiment_id=experiment_id,
+            )
 
         with open(os.path.join(method_output_dir, "results.pkl"), "wb") as f:
             pkl.dump(method_results, f)
@@ -550,23 +507,23 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
             method_output_dir = os.path.join(config.output_dir, method_entry.name)
             method_results = all_results[method_entry.name]
 
-            primary_seed = config.seeds[0]
-            result = method_results[primary_seed]
-            result_n_clusters = result.get("n_clusters", config.k_selection.n_clusters)
+            for seed in config.seeds:
+                result = method_results[seed]
+                result_n_clusters = result.get("n_clusters", config.k_selection.n_clusters)
 
-            if "cluster_dict" in result:
-                cluster_dict = result["cluster_dict"]
-                cluster_labels = {i: f"C{i}" for i in cluster_dict.keys()}
+                if "cluster_dict" in result:
+                    cluster_dict = result["cluster_dict"]
+                    cluster_labels = {i: f"C{i}" for i in cluster_dict.keys()}
 
-                run_rendering(
-                    cluster_dict,
-                    config.rodent_rollout_dir,
-                    config.rendering,
-                    method_output_dir,
-                    cluster_labels=cluster_labels,
-                    output_filename=f"clusters_k{result_n_clusters}.mp4",
-                    title=f"{method_entry.name} (k={result_n_clusters})",
-                )
+                    run_rendering(
+                        cluster_dict,
+                        config.rodent_rollout_dir,
+                        config.rendering,
+                        method_output_dir,
+                        cluster_labels=cluster_labels,
+                        output_filename=f"clusters_k{result_n_clusters}_seed{seed}.mp4",
+                        title=f"{method_entry.name} (k={result_n_clusters}, seed={seed})",
+                    )
 
     print("\n=== Stage 7: Saving summary ===")
     summary_path = os.path.join(config.output_dir, "experiment_summary.txt")
@@ -586,14 +543,7 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
                 if seed in results:
                     r = results[seed]
                     k = r.get("n_clusters", "N/A")
-                    f.write(f"  Seed {seed}: k={k}\n")
-            if "alignment_summary" in results:
-                align_sum = results["alignment_summary"]
-                f.write(f"  Alignment: mean={align_sum['mean_score']:.1%}, ")
-                f.write(f"min={align_sum['min_score']:.1%}, max={align_sum['max_score']:.1%}\n")
-                for seed, score in align_sum.get("per_seed_scores", {}).items():
-                    quality = get_alignment_quality_label(score)
-                    f.write(f"    Seed {seed}: {score:.1%} ({quality})\n")
+                    f.write(f"  Seed {seed}: k={k}, labels_file=labels_seed_{seed}.yaml\n")
 
     print(f"Saved summary to {summary_path}")
 

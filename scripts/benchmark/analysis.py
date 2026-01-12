@@ -56,8 +56,7 @@ class AnalysisConfig:
     run_variance_heatmap: bool = True
     run_mds_analysis: bool = True
     run_cluster_to_label_comparison: bool = True
-    run_cross_method_comparison: bool = True
-    run_seed_stability_analysis: bool = True
+    run_seed_comparison: bool = True
 
     mds_k_cycles: int = 50
     mds_s_top: int = 10
@@ -91,8 +90,7 @@ def load_config(config_path: str) -> AnalysisConfig:
         run_variance_heatmap=cfg.get("run_variance_heatmap", True),
         run_mds_analysis=cfg.get("run_mds_analysis", True),
         run_cluster_to_label_comparison=cfg.get("run_cluster_to_label_comparison", True),
-        run_cross_method_comparison=cfg.get("run_cross_method_comparison", True),
-        run_seed_stability_analysis=cfg.get("run_seed_stability_analysis", True),
+        run_seed_comparison=cfg.get("run_seed_comparison", True),
         mds_k_cycles=cfg.get("mds_k_cycles", 50),
         mds_s_top=cfg.get("mds_s_top", 10),
         mds_behaviors=cfg.get("mds_behaviors", None),
@@ -118,14 +116,13 @@ def load_method_results(method_dir: str) -> dict:
     return {}
 
 
-def load_cluster_dict(method_dir: str, seed: int = 0, use_aligned: bool = True) -> dict:
+def load_cluster_dict(method_dir: str, seed: int = 0) -> dict:
     """
     Load cluster_dict for a specific seed.
 
     Args:
         method_dir: Path to method output directory
         seed: Random seed to load
-        use_aligned: If True, prefer aligned cluster_dict for non-primary seeds
 
     Returns:
         Cluster dict mapping cluster_id to list of (clip_id, frames)
@@ -133,14 +130,12 @@ def load_cluster_dict(method_dir: str, seed: int = 0, use_aligned: bool = True) 
     results = load_method_results(method_dir)
     if seed in results:
         result = results[seed]
-        if use_aligned and "cluster_dict_aligned" in result:
-            return result["cluster_dict_aligned"]
         return result.get("cluster_dict", {})
     return {}
 
 
-def load_labels_yaml(method_dir: str) -> dict[int, str]:
-    labels_path = os.path.join(method_dir, "labels.yaml")
+def load_labels_yaml(method_dir: str, seed: int = 0) -> dict[int, str]:
+    labels_path = os.path.join(method_dir, f"labels_seed_{seed}.yaml")
     if not os.path.exists(labels_path):
         return {}
 
@@ -358,104 +353,128 @@ def plot_cluster_to_label_comparison(
     return results
 
 
-def run_cross_method_comparison(
-    experiment_dir: str,
+def plot_variance_heatmaps_side_by_side(
+    cluster_dicts: dict[int, dict],
+    cluster_labels_per_seed: dict[int, dict[int, str]],
+    rodent_rollout_dir: str,
     output_dir: str,
+    body_parts: list[str] = None,
+    max_loops: int = 200,
+    method_name: str = "",
 ) -> None:
+    """
+    Plot variance heatmaps for multiple seeds side by side.
+
+    Args:
+        cluster_dicts: Dict mapping seed -> cluster_dict
+        cluster_labels_per_seed: Dict mapping seed -> {cluster_id: label}
+        rodent_rollout_dir: Path to rollout data
+        output_dir: Output directory
+        body_parts: List of body parts to analyze
+        max_loops: Max loops per cluster
+        method_name: Method name for title
+    """
     os.makedirs(output_dir, exist_ok=True)
 
-    all_results = load_experiment_results(experiment_dir)
+    if body_parts is None:
+        body_parts = [
+            "torso", "pelvis",
+            "upper_leg_L", "lower_leg_L", "foot_L",
+            "upper_leg_R", "lower_leg_R", "foot_R",
+            "skull", "jaw",
+            "upper_arm_L", "lower_arm_L",
+            "upper_arm_R", "lower_arm_R",
+        ]
 
-    methods = list(all_results.keys())
-    if len(methods) < 2:
-        print("Need at least 2 methods for comparison")
+    body_indices = []
+    valid_body_parts = []
+    for bp in body_parts:
+        if bp in QPOS_BODY_NAMES:
+            body_indices.append(QPOS_BODY_NAMES.index(bp))
+            valid_body_parts.append(bp)
+
+    seeds = sorted(cluster_dicts.keys())
+    n_seeds = len(seeds)
+
+    if n_seeds < 2:
+        print("  Need at least 2 seeds for side-by-side comparison")
         return
 
-    alignment_per_method = {}
+    fig, axes = plt.subplots(1, n_seeds, figsize=(6 * n_seeds, 8), sharey=True)
+    if n_seeds == 1:
+        axes = [axes]
 
-    for method_name, method_results in all_results.items():
-        align_sum = method_results.get("alignment_summary", {})
-        if align_sum:
-            alignment_per_method[method_name] = align_sum.get("mean_score", 0.0)
+    for ax_idx, seed in enumerate(seeds):
+        cluster_dict = cluster_dicts[seed]
+        cluster_labels = cluster_labels_per_seed.get(seed, {})
 
-    if not alignment_per_method:
-        print("No alignment data available for cross-method comparison")
-        return
+        cluster_ids = sorted(cluster_dict.keys())
+        if cluster_labels:
+            sorted_pairs = sorted(
+                zip(cluster_ids, [cluster_labels.get(cid, f"C{cid}") for cid in cluster_ids]),
+                key=lambda x: x[1]
+            )
+            cluster_ids = [p[0] for p in sorted_pairs]
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+        n_clusters = len(cluster_ids)
+        n_bodies = len(valid_body_parts)
+        variance_matrix = np.zeros((n_clusters, n_bodies))
 
-    method_names = list(alignment_per_method.keys())
-    x_pos = np.arange(len(method_names))
-    scores = [alignment_per_method[m] * 100 for m in method_names]
+        for row_idx, cid in enumerate(cluster_ids):
+            entries = cluster_dict.get(cid, [])
+            all_qpos_by_body = {bp: [] for bp in valid_body_parts}
 
-    colors = ['green' if s >= 90 else 'yellowgreen' if s >= 70 else 'orange' if s >= 50 else 'red' for s in scores]
-    bars = ax.bar(x_pos, scores, color=colors, alpha=0.7, edgecolor='black')
+            for i, (clip_id, frames) in enumerate(entries):
+                if i >= max_loops:
+                    break
+                try:
+                    qpos = load_qpos(clip_id, rodent_rollout_dir)
+                except:
+                    continue
 
-    ax.axhline(y=90, color='green', linestyle='--', alpha=0.5, label='Excellent (90%)')
-    ax.axhline(y=70, color='orange', linestyle='--', alpha=0.5, label='Good (70%)')
-    ax.set_xticks(x_pos)
-    ax.set_xticklabels(method_names, rotation=45, ha='right', fontsize=11)
-    ax.set_ylabel("Mean Alignment Score (%)", fontsize=12)
-    ax.set_ylim(0, 100)
-    ax.set_title("Cross-Method Comparison (Cluster Alignment)", fontsize=14, fontweight='bold')
-    ax.legend(loc='lower right', fontsize=9)
-    ax.grid(True, alpha=0.3, axis='y')
+                frames = np.asarray(frames, dtype=int)
+                frames = frames[frames < len(qpos)]
+                if len(frames) < 2:
+                    continue
 
-    plt.tight_layout()
-    save_path = os.path.join(output_dir, "cross_method_comparison.pdf")
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    plt.savefig(save_path.replace(".pdf", ".png"), dpi=150, bbox_inches='tight')
+                for col_idx, (bp, body_idx) in enumerate(zip(valid_body_parts, body_indices)):
+                    if body_idx < qpos.shape[1]:
+                        all_qpos_by_body[bp].append(qpos[frames, body_idx])
+
+            for col_idx, bp in enumerate(valid_body_parts):
+                if all_qpos_by_body[bp]:
+                    combined = np.concatenate(all_qpos_by_body[bp])
+                    variance_matrix[row_idx, col_idx] = np.var(combined)
+
+        cluster_names = [cluster_labels.get(cid, f"C{cid}").replace("_", " ") for cid in cluster_ids]
+        body_labels = [bp.replace("_", " ") for bp in valid_body_parts]
+
+        ax = axes[ax_idx]
+        im = ax.imshow(variance_matrix, aspect="auto", cmap="plasma")
+
+        ax.set_xticks(np.arange(n_bodies))
+        ax.set_xticklabels(body_labels, rotation=45, ha="right", fontsize=9)
+        ax.set_yticks(np.arange(n_clusters))
+        ax.set_yticklabels(cluster_names, fontsize=9)
+
+        ax.set_xlabel("Body Part", fontsize=11)
+        if ax_idx == 0:
+            ax.set_ylabel("Cluster", fontsize=11)
+        ax.set_title(f"Seed {seed}", fontsize=12, fontweight="bold")
+
+    title = f"{method_name}: Variance Heatmaps by Seed" if method_name else "Variance Heatmaps by Seed"
+    fig.suptitle(title, fontsize=14, fontweight="bold")
+
+    cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])
+    fig.colorbar(im, cax=cbar_ax, label="Variance")
+
+    plt.tight_layout(rect=[0, 0, 0.9, 0.95])
+
+    save_path = os.path.join(output_dir, f"{method_name}_variance_heatmap_seeds.pdf" if method_name else "variance_heatmap_seeds.pdf")
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
+    plt.savefig(save_path.replace(".pdf", ".png"), dpi=150, bbox_inches="tight")
     plt.close()
-    print(f"Saved cross-method comparison to {save_path}")
-
-
-def run_seed_stability_analysis(
-    experiment_dir: str,
-    output_dir: str,
-) -> None:
-    os.makedirs(output_dir, exist_ok=True)
-
-    all_results = load_experiment_results(experiment_dir)
-
-    method_names = []
-    alignment_scores = []
-
-    for method_name, method_results in all_results.items():
-        seeds = [k for k in method_results.keys() if isinstance(k, int)]
-        if len(seeds) < 2:
-            continue
-
-        align_sum = method_results.get("alignment_summary", {})
-        if align_sum:
-            method_names.append(method_name)
-            alignment_scores.append(align_sum.get("mean_score", 0.0))
-
-    if not method_names:
-        print("No alignment data available for seed stability analysis")
-        return
-
-    fig, ax = plt.subplots(figsize=(10, 6))
-
-    x_pos = np.arange(len(method_names))
-    colors = ['green' if s >= 0.9 else 'yellowgreen' if s >= 0.7 else 'orange' if s >= 0.5 else 'red' for s in alignment_scores]
-    bars = ax.bar(x_pos, [s * 100 for s in alignment_scores], color=colors, alpha=0.7, edgecolor='black')
-
-    ax.axhline(y=90, color='green', linestyle='--', alpha=0.5, label='Excellent (90%)')
-    ax.axhline(y=70, color='orange', linestyle='--', alpha=0.5, label='Good (70%)')
-    ax.set_xticks(x_pos)
-    ax.set_xticklabels(method_names, rotation=45, ha='right', fontsize=10)
-    ax.set_ylabel("Mean Alignment Score (%)", fontsize=12)
-    ax.set_ylim(0, 100)
-    ax.set_title("Cluster Alignment Across Seeds (Higher = More Consistent)", fontsize=14, fontweight='bold')
-    ax.legend(loc='lower right', fontsize=9)
-    ax.grid(True, alpha=0.3)
-
-    plt.tight_layout()
-    save_path = os.path.join(output_dir, "seed_stability.pdf")
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    plt.savefig(save_path.replace(".pdf", ".png"), dpi=150, bbox_inches='tight')
-    plt.close()
-    print(f"Saved seed stability analysis to {save_path}")
+    print(f"Saved side-by-side variance heatmaps to {save_path}")
 
 
 def run_analysis(config: AnalysisConfig) -> None:
@@ -481,79 +500,90 @@ def run_analysis(config: AnalysisConfig) -> None:
         method_output_dir = os.path.join(config.output_dir, method_name)
         os.makedirs(method_output_dir, exist_ok=True)
 
-        primary_seed = list(method_results.keys())[0]
-        if isinstance(primary_seed, str):
-            for k in method_results.keys():
-                if isinstance(k, int):
-                    primary_seed = k
-                    break
-
-        result = method_results.get(primary_seed, {})
-        cluster_dict = result.get("cluster_dict", {})
-
-        if not cluster_dict:
-            print(f"  No cluster_dict found, skipping")
+        seeds = sorted([k for k in method_results.keys() if isinstance(k, int)])
+        if not seeds:
+            print(f"  No seeds found, skipping")
             continue
 
-        cluster_labels = load_labels_yaml(method_dir)
-        if not cluster_labels:
-            cluster_labels = {i: f"C{i}" for i in cluster_dict.keys()}
+        cluster_dicts = {}
+        cluster_labels_per_seed = {}
 
-        if config.run_variance_heatmap:
-            print(f"  Running variance heatmap...")
-            plot_variance_heatmap(
-                cluster_dict=cluster_dict,
-                cluster_labels=cluster_labels,
+        for seed in seeds:
+            result = method_results.get(seed, {})
+            cluster_dict = result.get("cluster_dict", {})
+
+            if not cluster_dict:
+                print(f"  Seed {seed}: No cluster_dict found, skipping")
+                continue
+
+            cluster_dicts[seed] = cluster_dict
+            cluster_labels = load_labels_yaml(method_dir, seed)
+            if not cluster_labels:
+                cluster_labels = {i: f"C{i}" for i in cluster_dict.keys()}
+            cluster_labels_per_seed[seed] = cluster_labels
+
+            seed_output_dir = os.path.join(method_output_dir, f"seed_{seed}")
+            os.makedirs(seed_output_dir, exist_ok=True)
+
+            print(f"  Seed {seed}:")
+
+            if config.run_variance_heatmap:
+                print(f"    Running variance heatmap...")
+                plot_variance_heatmap(
+                    cluster_dict=cluster_dict,
+                    cluster_labels=cluster_labels,
+                    rodent_rollout_dir=config.rodent_rollout_dir,
+                    output_dir=seed_output_dir,
+                    body_parts=config.body_parts,
+                    max_loops=config.max_loops,
+                    method_name=f"{method_name}_seed{seed}",
+                )
+
+            if config.run_mds_analysis:
+                if os.path.exists(config.behavior_labels_csv):
+                    print(f"    Running MDS analysis...")
+                    target_clusters = list(cluster_dict.keys())
+                    mds_save_path = os.path.join(seed_output_dir, f"{method_name}_seed{seed}_mds_separate.pdf")
+                    try:
+                        plot_cluster_subspace_mds_separate(
+                            cluster_cycles_by_id=cluster_dict,
+                            cluster_labels=cluster_labels,
+                            target_clusters=target_clusters,
+                            rodent_rollout_dir=config.rodent_rollout_dir,
+                            behavior_csv_path=config.behavior_labels_csv,
+                            behaviors=config.mds_behaviors,
+                            k_cycles=config.mds_k_cycles,
+                            s_top=config.mds_s_top,
+                            save_path=mds_save_path,
+                        )
+                        print(f"    Saved MDS plot to {mds_save_path}")
+                    except Exception as e:
+                        print(f"    MDS analysis failed: {e}")
+
+            if config.run_cluster_to_label_comparison and behavior_labels:
+                print(f"    Running cluster-to-label comparison...")
+                plot_cluster_to_label_comparison(
+                    cluster_dict=cluster_dict,
+                    cluster_labels=cluster_labels,
+                    behavior_labels=behavior_labels,
+                    rodent_rollout_dir=config.rodent_rollout_dir,
+                    output_dir=seed_output_dir,
+                    body_parts=config.body_parts,
+                    max_loops=config.max_loops,
+                    method_name=f"{method_name}_seed{seed}",
+                )
+
+        if config.run_seed_comparison and len(cluster_dicts) > 1:
+            print(f"  Running side-by-side seed comparison...")
+            plot_variance_heatmaps_side_by_side(
+                cluster_dicts=cluster_dicts,
+                cluster_labels_per_seed=cluster_labels_per_seed,
                 rodent_rollout_dir=config.rodent_rollout_dir,
                 output_dir=method_output_dir,
                 body_parts=config.body_parts,
                 max_loops=config.max_loops,
                 method_name=method_name,
             )
-
-        if config.run_mds_analysis:
-            if os.path.exists(config.behavior_labels_csv):
-                print(f"  Running MDS analysis (separate behaviors)...")
-                target_clusters = list(cluster_dict.keys())
-                mds_save_path = os.path.join(method_output_dir, f"{method_name}_mds_separate.pdf")
-                try:
-                    plot_cluster_subspace_mds_separate(
-                        cluster_cycles_by_id=cluster_dict,
-                        cluster_labels=cluster_labels,
-                        target_clusters=target_clusters,
-                        rodent_rollout_dir=config.rodent_rollout_dir,
-                        behavior_csv_path=config.behavior_labels_csv,
-                        behaviors=config.mds_behaviors,
-                        k_cycles=config.mds_k_cycles,
-                        s_top=config.mds_s_top,
-                        save_path=mds_save_path,
-                    )
-                    print(f"  Saved MDS plot to {mds_save_path}")
-                except Exception as e:
-                    print(f"  MDS analysis failed: {e}")
-            else:
-                print(f"  Skipping MDS: behavior_labels_csv not found at {config.behavior_labels_csv}")
-
-        if config.run_cluster_to_label_comparison and behavior_labels:
-            print(f"  Running cluster-to-label comparison...")
-            plot_cluster_to_label_comparison(
-                cluster_dict=cluster_dict,
-                cluster_labels=cluster_labels,
-                behavior_labels=behavior_labels,
-                rodent_rollout_dir=config.rodent_rollout_dir,
-                output_dir=method_output_dir,
-                body_parts=config.body_parts,
-                max_loops=config.max_loops,
-                method_name=method_name,
-            )
-
-    if config.run_cross_method_comparison and len(all_results) > 1:
-        print("\n=== Running cross-method comparison ===")
-        run_cross_method_comparison(config.experiment_dir, config.output_dir)
-
-    if config.run_seed_stability_analysis:
-        print("\n=== Running seed stability analysis ===")
-        run_seed_stability_analysis(config.experiment_dir, config.output_dir)
 
     print("\n" + "=" * 60)
     print("Analysis Complete!")

@@ -21,6 +21,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from tqdm import tqdm
+from sklearn.decomposition import PCA
 from sklearn.model_selection import ParameterGrid
 
 from vnl_tda.utils.load_utils import get_aggregate_data
@@ -63,22 +64,12 @@ class ParamGridConfig:
 
 
 @dataclass
-class ScoringConfig:
-    cycle_coverage_weight: float = 0.3
-    num_cycles_weight: float = 0.2
-    connectivity_weight: float = 0.2
-    mean_cycle_length_weight: float = 0.15
-    cycle_length_std_weight: float = 0.15
-
-
-@dataclass
 class HypertuneConfig:
     output_dir: str = "out/dm_hypertune"
     data: DataConfig = None
     takens: TakensConfig = None
     dm: DMConfig = None
     param_grid: ParamGridConfig = None
-    scoring: ScoringConfig = None
     save_plots: bool = True
 
     def __post_init__(self):
@@ -90,8 +81,6 @@ class HypertuneConfig:
             self.dm = DMConfig()
         if self.param_grid is None:
             self.param_grid = ParamGridConfig()
-        if self.scoring is None:
-            self.scoring = ScoringConfig()
 
 
 def load_config(config_path: str) -> HypertuneConfig:
@@ -110,7 +99,6 @@ def load_config(config_path: str) -> HypertuneConfig:
     takens_cfg = TakensConfig(**takens_raw)
 
     dm_cfg = DMConfig(**cfg.get("dm", {}))
-    scoring_cfg = ScoringConfig(**cfg.get("scoring", {}))
 
     param_grid_raw = cfg.get("param_grid", {})
     param_grid_cfg = ParamGridConfig(
@@ -124,7 +112,6 @@ def load_config(config_path: str) -> HypertuneConfig:
         takens=takens_cfg,
         dm=dm_cfg,
         param_grid=param_grid_cfg,
-        scoring=scoring_cfg,
         save_plots=cfg.get("save_plots", True),
     )
 
@@ -218,27 +205,69 @@ def evaluate_skeleton_quality(
     return metrics
 
 
-def compute_score(
-    df: pd.DataFrame,
-    scoring_cfg: ScoringConfig,
-) -> pd.DataFrame:
-    ok = df[df["success"] == True].copy()
-    if len(ok) == 0:
-        return ok
+def plot_longest_cycle_pca(
+    pts: np.ndarray,
+    cycle_inds: list[np.ndarray],
+    save_path: str,
+    figsize: tuple[int, int] = (8, 8),
+) -> dict:
+    """
+    Project point cloud to 2D PCA and highlight the longest cycle's traversal.
 
-    nc_max = max(1, int(ok["num_cycles"].max()))
-    comp_max = max(1, int(ok["num_components"].max()))
-    mcl_max = float(max(1e-9, ok["mean_cycle_length"].replace(0, np.nan).max()))
-    scl_max = float(max(1e-9, ok["std_cycle_length"].replace(0, np.nan).max()))
+    Args:
+        pts: Point cloud array (N, D)
+        cycle_inds: List of cycle index arrays
+        save_path: Path to save the figure
+        figsize: Figure size
 
-    ok["score"] = (
-        scoring_cfg.cycle_coverage_weight * ok["cycle_coverage"].fillna(0)
-        + scoring_cfg.num_cycles_weight * (ok["num_cycles"] / nc_max)
-        + scoring_cfg.connectivity_weight * (1 - ok["num_components"] / comp_max)
-        + scoring_cfg.mean_cycle_length_weight * (ok["mean_cycle_length"] / mcl_max)
-        + scoring_cfg.cycle_length_std_weight * (1 - ok["std_cycle_length"] / scl_max)
+    Returns:
+        Dict with longest_cycle_length and pca variance info
+    """
+    if len(cycle_inds) == 0:
+        return {"longest_cycle_length": 0, "pca_var_1": 0.0, "pca_var_2": 0.0}
+
+    longest_cycle = max(cycle_inds, key=len)
+    longest_len = len(longest_cycle)
+
+    pca = PCA(n_components=2)
+    pts_2d = pca.fit_transform(pts)
+    var_explained = pca.explained_variance_ratio_
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    ax.scatter(
+        pts_2d[:, 0], pts_2d[:, 1],
+        c="gray", s=5, alpha=0.3, label="All points"
     )
-    return ok
+
+    cycle_pts = pts_2d[longest_cycle]
+    ax.plot(
+        cycle_pts[:, 0], cycle_pts[:, 1],
+        c="red", linewidth=1.5, alpha=0.8, label=f"Longest cycle (n={longest_len})"
+    )
+    ax.scatter(
+        cycle_pts[:, 0], cycle_pts[:, 1],
+        c=np.arange(len(cycle_pts)), cmap="coolwarm", s=20, zorder=5
+    )
+
+    ax.scatter(cycle_pts[0, 0], cycle_pts[0, 1], c="green", s=100, marker="o", zorder=10, label="Start")
+    ax.scatter(cycle_pts[-1, 0], cycle_pts[-1, 1], c="blue", s=100, marker="x", zorder=10, label="End")
+
+    ax.set_xlabel(f"PC1 ({var_explained[0]*100:.1f}% var)")
+    ax.set_ylabel(f"PC2 ({var_explained[1]*100:.1f}% var)")
+    ax.set_title(f"Longest Cycle Traversal (length={longest_len})")
+    ax.legend(loc="upper right", fontsize=9)
+    ax.set_aspect("equal", adjustable="box")
+
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=100, bbox_inches="tight")
+    plt.close(fig)
+
+    return {
+        "longest_cycle_length": longest_len,
+        "pca_var_1": float(var_explained[0]),
+        "pca_var_2": float(var_explained[1]),
+    }
 
 
 def estimate_takens_params(
@@ -350,6 +379,11 @@ def run_grid_search(
                 )
                 cycle_inds = [np.array(inds, dtype=int) for inds in cycle_inds]
                 metrics = evaluate_skeleton_quality(cycle_inds, G_jc, pts)
+
+                pca_plot_path = os.path.join(clip_dir, "longest_cycle_pca.png")
+                pca_metrics = plot_longest_cycle_pca(pts, cycle_inds, pca_plot_path)
+                metrics.update(pca_metrics)
+
                 metrics.update({
                     "m": config.takens.m,
                     "tau": config.takens.tau,
@@ -376,31 +410,35 @@ def run_grid_search(
                     "output_dir": clip_dir,
                     "success": False,
                     "error": str(e),
+                    "longest_cycle_length": 0,
+                    "pca_var_1": 0.0,
+                    "pca_var_2": 0.0,
                 }
             results.append(metrics)
 
     df = pd.DataFrame(results)
-    ok = compute_score(df, config.scoring)
+    ok = df[df["success"] == True].copy()
 
     best = None
     if len(ok) > 0:
         agg = ok.groupby(["k_neighbors", "pers_delta"], as_index=False).agg(
-            score_mean=("score", "mean"),
-            score_std=("score", "std"),
             num_cycles_mean=("num_cycles", "mean"),
             cycle_coverage_mean=("cycle_coverage", "mean"),
             num_edges_mean=("num_edges", "mean"),
             mean_cycle_length_mean=("mean_cycle_length", "mean"),
             num_components_mean=("num_components", "mean"),
             edge_cycle_ratio_mean=("edge_cycle_ratio", "mean"),
+            longest_cycle_length_mean=("longest_cycle_length", "mean"),
+            pca_var_1_mean=("pca_var_1", "mean"),
+            pca_var_2_mean=("pca_var_2", "mean"),
         )
-        best_row = agg.loc[agg["score_mean"].idxmax()]
+        best_row = agg.loc[agg["cycle_coverage_mean"].idxmax()]
         best = {
             "m": config.takens.m,
             "tau": config.takens.tau,
             "k_neighbors": int(best_row["k_neighbors"]),
             "pers_delta": float(best_row["pers_delta"]),
-            "score": float(best_row["score_mean"]),
+            "cycle_coverage": float(best_row["cycle_coverage_mean"]),
         }
 
     run_base = os.path.join(config.output_dir, f"tuning_results_{run_ts}")
@@ -515,8 +553,8 @@ def run_hypertune(config: HypertuneConfig) -> tuple[pd.DataFrame, dict | None]:
             f"Best: m={int(best_params['m'])} tau={int(best_params['tau'])} "
             f"k={int(best_params['k_neighbors'])} pers_delta={float(best_params['pers_delta']):.3f}"
         )
-        if "score" in best_params:
-            print(f"Avg Score: {best_params['score']:.3f}")
+        if "cycle_coverage" in best_params:
+            print(f"Avg Cycle Coverage: {best_params['cycle_coverage']:.3f}")
         print(f"Artifacts in: {config.output_dir}")
 
     return results_df, best_params
