@@ -228,6 +228,31 @@ def subsample_data(
     return X[indices]
 
 
+TOTAL_CLIPS = 842
+TEST_SIZE = 200
+
+
+def get_clip_indices(split: str) -> list[int]:
+    """
+    Get clip indices for a given split.
+
+    Args:
+        split: One of "train", "test", or "all"
+
+    Returns:
+        List of clip indices for the specified split
+    """
+    train_end = TOTAL_CLIPS - TEST_SIZE
+    if split == "train":
+        return list(range(train_end))
+    elif split == "test":
+        return list(range(train_end, TOTAL_CLIPS))
+    elif split == "all":
+        return list(range(TOTAL_CLIPS))
+    else:
+        raise ValueError(f"Unknown split: {split}. Must be 'train', 'test', or 'all'")
+
+
 def split_clips_by_frames(
     data: np.ndarray,
     original_num_clips: int,

@@ -371,30 +371,34 @@ def run_cross_method_comparison(
         print("Need at least 2 methods for comparison")
         return
 
-    seeds_per_method = {}
-    dunn_per_method = {}
+    alignment_per_method = {}
 
     for method_name, method_results in all_results.items():
-        seeds = [k for k in method_results.keys() if isinstance(k, int)]
-        seeds_per_method[method_name] = seeds
-        dunn_per_method[method_name] = [
-            method_results[s].get("dunn_index", 0) for s in seeds
-        ]
+        align_sum = method_results.get("alignment_summary", {})
+        if align_sum:
+            alignment_per_method[method_name] = align_sum.get("mean_score", 0.0)
+
+    if not alignment_per_method:
+        print("No alignment data available for cross-method comparison")
+        return
 
     fig, ax = plt.subplots(figsize=(10, 6))
 
-    method_names = list(dunn_per_method.keys())
+    method_names = list(alignment_per_method.keys())
     x_pos = np.arange(len(method_names))
+    scores = [alignment_per_method[m] * 100 for m in method_names]
 
-    means = [np.mean(v) for v in dunn_per_method.values()]
-    stds = [np.std(v) for v in dunn_per_method.values()]
+    colors = ['green' if s >= 90 else 'yellowgreen' if s >= 70 else 'orange' if s >= 50 else 'red' for s in scores]
+    bars = ax.bar(x_pos, scores, color=colors, alpha=0.7, edgecolor='black')
 
-    bars = ax.bar(x_pos, means, yerr=stds, capsize=5, color='steelblue', alpha=0.7, edgecolor='black')
-
+    ax.axhline(y=90, color='green', linestyle='--', alpha=0.5, label='Excellent (90%)')
+    ax.axhline(y=70, color='orange', linestyle='--', alpha=0.5, label='Good (70%)')
     ax.set_xticks(x_pos)
     ax.set_xticklabels(method_names, rotation=45, ha='right', fontsize=11)
-    ax.set_ylabel("Dunn Index", fontsize=12)
-    ax.set_title("Cross-Method Comparison (Dunn Index)", fontsize=14, fontweight='bold')
+    ax.set_ylabel("Mean Alignment Score (%)", fontsize=12)
+    ax.set_ylim(0, 100)
+    ax.set_title("Cross-Method Comparison (Cluster Alignment)", fontsize=14, fontweight='bold')
+    ax.legend(loc='lower right', fontsize=9)
     ax.grid(True, alpha=0.3, axis='y')
 
     plt.tight_layout()
@@ -414,8 +418,6 @@ def run_seed_stability_analysis(
     all_results = load_experiment_results(experiment_dir)
 
     method_names = []
-    dunn_means = []
-    dunn_stds = []
     alignment_scores = []
 
     for method_name, method_results in all_results.items():
@@ -423,51 +425,30 @@ def run_seed_stability_analysis(
         if len(seeds) < 2:
             continue
 
-        dunns = [method_results[s].get("dunn_index", 0) for s in seeds if method_results[s].get("dunn_index")]
-        if dunns:
+        align_sum = method_results.get("alignment_summary", {})
+        if align_sum:
             method_names.append(method_name)
-            dunn_means.append(np.mean(dunns))
-            dunn_stds.append(np.std(dunns))
-
-            align_sum = method_results.get("alignment_summary", {})
             alignment_scores.append(align_sum.get("mean_score", 0.0))
 
-    has_alignment = any(s > 0 for s in alignment_scores)
-    n_plots = 3 if has_alignment else 2
-    fig, axes = plt.subplots(1, n_plots, figsize=(6 * n_plots, 5))
+    if not method_names:
+        print("No alignment data available for seed stability analysis")
+        return
 
-    if method_names:
-        ax1 = axes[0]
-        x_pos = np.arange(len(method_names))
-        ax1.bar(x_pos, dunn_stds, color='coral', alpha=0.7, edgecolor='black')
-        ax1.set_xticks(x_pos)
-        ax1.set_xticklabels(method_names, rotation=45, ha='right', fontsize=10)
-        ax1.set_ylabel("Dunn Std Dev", fontsize=12)
-        ax1.set_title("Dunn Index Stability (Lower = More Stable)", fontsize=14, fontweight='bold')
-        ax1.grid(True, alpha=0.3)
+    fig, ax = plt.subplots(figsize=(10, 6))
 
-        ax2 = axes[1]
-        cv = [s/m if m > 0 else 0 for s, m in zip(dunn_stds, dunn_means)]
-        ax2.bar(x_pos, cv, color='teal', alpha=0.7, edgecolor='black')
-        ax2.set_xticks(x_pos)
-        ax2.set_xticklabels(method_names, rotation=45, ha='right', fontsize=10)
-        ax2.set_ylabel("Coefficient of Variation", fontsize=12)
-        ax2.set_title("Relative Stability (CV = Std/Mean)", fontsize=14, fontweight='bold')
-        ax2.grid(True, alpha=0.3)
+    x_pos = np.arange(len(method_names))
+    colors = ['green' if s >= 0.9 else 'yellowgreen' if s >= 0.7 else 'orange' if s >= 0.5 else 'red' for s in alignment_scores]
+    bars = ax.bar(x_pos, [s * 100 for s in alignment_scores], color=colors, alpha=0.7, edgecolor='black')
 
-        if has_alignment:
-            ax3 = axes[2]
-            colors = ['green' if s >= 0.9 else 'yellowgreen' if s >= 0.7 else 'orange' if s >= 0.5 else 'red' for s in alignment_scores]
-            bars = ax3.bar(x_pos, [s * 100 for s in alignment_scores], color=colors, alpha=0.7, edgecolor='black')
-            ax3.axhline(y=90, color='green', linestyle='--', alpha=0.5, label='Excellent (90%)')
-            ax3.axhline(y=70, color='orange', linestyle='--', alpha=0.5, label='Good (70%)')
-            ax3.set_xticks(x_pos)
-            ax3.set_xticklabels(method_names, rotation=45, ha='right', fontsize=10)
-            ax3.set_ylabel("Mean Alignment Score (%)", fontsize=12)
-            ax3.set_ylim(0, 100)
-            ax3.set_title("Cluster Alignment Across Seeds (Higher = More Consistent)", fontsize=14, fontweight='bold')
-            ax3.legend(loc='lower right', fontsize=9)
-            ax3.grid(True, alpha=0.3)
+    ax.axhline(y=90, color='green', linestyle='--', alpha=0.5, label='Excellent (90%)')
+    ax.axhline(y=70, color='orange', linestyle='--', alpha=0.5, label='Good (70%)')
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(method_names, rotation=45, ha='right', fontsize=10)
+    ax.set_ylabel("Mean Alignment Score (%)", fontsize=12)
+    ax.set_ylim(0, 100)
+    ax.set_title("Cluster Alignment Across Seeds (Higher = More Consistent)", fontsize=14, fontweight='bold')
+    ax.legend(loc='lower right', fontsize=9)
+    ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
     save_path = os.path.join(output_dir, "seed_stability.pdf")

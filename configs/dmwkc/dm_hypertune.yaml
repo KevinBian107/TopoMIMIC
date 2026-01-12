@@ -5,15 +5,15 @@ output_dir: "out/dm_hypertune"
 
 data:
   dm_key: "intention"
-  rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
-  num_clips_total: 800
+  rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/latest_rodent.h5"
+  num_clips_total: 842
   num_clips_eval: 10  # Number of clips for grid search evaluation
 
 # Takens parameters
 takens:
-  auto_estimate: false  # Use AMI + FNN to find optimal tau and m
+  auto_estimate: true  # Use AMI + FNN to find optimal tau and m
   m: 3  # Used when auto_estimate is false
-  tau: 6  # Used when auto_estimate is false
+  tau: 5  # Used when auto_estimate is false
   max_tau: 200
   bins: 64
   m_max: 15
