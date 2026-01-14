@@ -12,11 +12,11 @@ data:
 # Use dm_hypertune to find optimal values
 takens:
   m: 3
-  tau: 5
+  tau: 6
 
 # Discrete Morse parameters
 dm:
-  pers_delta: 0.75
+  pers_delta: 1.0
   k_neighbors: 3
   epsilon: 0.99
   skip: false  # Set to true to load existing results

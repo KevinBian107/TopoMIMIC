@@ -1,4 +1,4 @@
-# Seeing the Boundaries: Topological Clustering of Behavioral Primitives and Transitions
+# Seeing the Boundaries: Topological Clustering of Common Behavioral Transitions
 
 ![Demo](figures/torus_dm_demo.gif)
 > Demonstration of discrete Morse traversal (cycle) on a torus.
@@ -57,25 +57,21 @@ python -m scripts.additional.analyze_transitions
 
 ## Running the Codebase
 
-### Step 1: Hyperparameter Tuning
+### Hyperparameter Tuning
 Find optimal Takens embedding (m, tau) and DM parameters (k_neighbors, pers_delta) first prior to clustering, this is a crtical parameter search for the unsupervised learning method to work:
 ```bash
 python -m scripts.dmwkc.dm_hypertune configs/dmwkc/dm_hypertune.yaml
 ```
 
-We should be looking for:
-- Number of Cycles: Want few (1-3) so we get one dominant persistent cycle, not many redundant interpolations.
-- Cycle Coverage: Want moderate (~40-50%) since we only need the recurrent core, not transient frames that add noise.
-- Mean Cycle Length: Want long cycles (~70-90 frames) close to target_len to minimize resampling distortion.
-- Edge/Cycle Ratio: Want higher ratio indicating surviving cycles are well-supported by persistent edges, not spurious.
+Usually, $k=3$ and $\delta = 1.0$ would be a good combination.
 
-### Step 2: Extract DM Graphs
+### Extract DM Graphs
 Run discrete Morse extraction on all clips:
 ```bash
 python -m scripts.dmwkc.dm_pipeline configs/dmwkc/dm_pipeline.yaml
 ```
 
-### Step 3: Run Benchmark Experiment
+### Run Benchmark Experiment
 Run all clustering methods with integrated seeds and auto-generated labels.yaml:
 ```bash
 python -m scripts.benchmark.experiment configs/benchmark/experiment.yaml
@@ -83,16 +79,10 @@ python -m scripts.benchmark.experiment configs/benchmark/experiment.yaml
 
 This runs all enabled methods (vanilla_kmeans, pca_kmeans, umap_kmeans, w2_kmeans, spectral, arhmm, slds).
 
-### Step 4: Analysis
+### Analysis
 Generate variance heatmaps, cross-method comparison, and seed stability analysis:
 ```bash
 python -m scripts.benchmark.analysis configs/benchmark/analysis.yaml
-```
-
-## Segmentation on Novel Clips
-To run segmentation on the 500 frame scale on novel clips:
-```bash
-python -m scripts.experiment.segmentation configs/experiment/segmentation.yaml
 ```
 
 ## Rendering
@@ -104,41 +94,6 @@ python -m scripts.additional.extract_filled_space configs/additional/extract_fil
 To render cycles for visualization:
 ```bash
 python -m scripts.additional.render_cycle configs/additional/render_cycle.yaml
-```
-
-## Project Structure
-
-```
-scripts/
-├── benchmark/
-│   ├── methods.py      # All clustering + KPMS method implementations
-│   ├── experiment.py   # Unified experiment runner
-│   ├── analysis.py     # Variance heatmaps, cross-method comparison
-│   └── alignment.py    # Hungarian algorithm for cross-seed cluster alignment
-├── dmwkc/
-│   ├── dm_pipeline.py  # DM graph extraction pipeline
-│   └── dm_hypertune.py # Hyperparameter tuning for DM
-├── experiment/
-│   └── segmentation.py       # Novel clip segmentation
-└── additional/
-    ├── render_for_label.py      # Render videos for annotation
-    ├── render_cycle.py          # Render cycle visualizations
-    ├── extract_filled_space.py  # Extract filled space clips
-    └── analyze_transitions.py   # Behavior transition analysis
-
-configs/
-├── benchmark/
-│   ├── experiment.yaml  # Unified experiment config
-│   └── analysis.yaml    # Analysis config
-├── dmwkc/
-│   ├── dm_pipeline.yaml # DM extraction config
-│   └── dm_hypertune.yaml # Hypertuning config
-├── experiment/
-│   └── segmentation.yaml       # Segmentation config
-└── additional/
-    ├── render_for_label.yaml      # Render for label config
-    ├── render_cycle.yaml          # Render cycle config
-    └── extract_filled_space.yaml  # Extract filled space config
 ```
 
 ## Acknowledgements
