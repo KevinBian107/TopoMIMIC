@@ -57,6 +57,11 @@ python -m scripts.additional.analyze_transitions
 
 ## Running the Codebase
 
+### Method & Codebase Structure
+Refer to the [documentation folder](/docs/) for more detailed information on the method and codebase structure:
+- [our methods](/docs/methods.md)
+- [codebase structure](/docs/codebase_structure.md)
+
 ### Hyperparameter Tuning
 Find optimal Takens embedding (m, tau) and DM parameters (k_neighbors, pers_delta) first prior to clustering, this is a crtical parameter search for the unsupervised learning method to work:
 ```bash
