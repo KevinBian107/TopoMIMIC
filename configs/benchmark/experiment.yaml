@@ -18,13 +18,13 @@ dm:
 clustering:
   min_len: 0
   max_len: 500
-  target_len: 75
+  target_len: 100
   only_max: true
   skip_clips: [80, 187, 267, 392, 456, 491]
 
 # K selection configuration
 k_selection:
-  n_clusters: 6
+  n_clusters: 10
 
 # Seeds for reproducibility (multiple seeds for stability analysis)
 seeds: [0, 123, 234]
