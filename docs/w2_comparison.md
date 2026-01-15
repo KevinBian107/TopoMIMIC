@@ -1,64 +1,6 @@
-# Wasserstein-2 vs Gromov-Wasserstein for Behavioral Clustering
+# Wasserstein-2 & Gromov-Wasserstein
 
 This document compares Gromov-Wasserstein (GW) and Wasserstein-2 (W2) distances for comparing behavioral cycles extracted from the Discrete Morse pipeline. It covers theoretical properties, practical limitations, and empirical findings from our behavioral analysis.
-
----
-
-## Executive Summary
-
-### The Key Finding
-
-**In practice, W2 outperforms GW for behavioral content clustering.** While GW has theoretical advantages for handling speed/phase variations, it fundamentally captures **temporal dynamics (pace/rhythm)** rather than **behavioral content (what behavior is happening)**.
-
-```
-    ╔═══════════════════════════════════════════════════════════════╗
-    ║                    PRACTICAL RECOMMENDATION                   ║
-    ╠═══════════════════════════════════════════════════════════════╣
-    ║                                                               ║
-    ║   Goal: "What behavior is the rodent doing?"                  ║
-    ║   → Use W2 (clusters by behavioral content) ✓                 ║
-    ║                                                               ║
-    ║   Goal: "What is the movement tempo/rhythm?"                  ║
-    ║   → Use GW (clusters by temporal dynamics)                    ║
-    ║                                                               ║
-    ║   Goal: "Behavior clustering with tempo tolerance"            ║
-    ║   → Use FGW with α ≈ 0.2-0.3 (mostly W2)                      ║
-    ║                                                               ║
-    ╚═══════════════════════════════════════════════════════════════╝
-```
-
-### Why GW Underperforms for Behavioral Clustering
-
-GW compares **internal pairwise distances** (structure matrices), which encode the **velocity profile** of the trajectory - how fast it moves through intention space over time. This means:
-
-- **GW clusters by pace**: "slow→fast→slow" patterns group together regardless of behavior
-- **W2 clusters by content**: cycles in similar regions of intention space group together
-
-```
-    Example: GW groups these together (same pace), W2 separates them (different behaviors)
-
-    Clip A: rear → walk → rear          Clip B: groom → run → stand
-
-    Velocity:    ╱╲                      Velocity:    ╱╲
-                ╱  ╲                                 ╱  ╲
-               ╱    ╲                              ╱    ╲
-              slow fast slow                     slow fast slow
-
-    GW: Same rhythm pattern → SAME CLUSTER (wrong for behavioral clustering)
-    W2: Different intention space positions → DIFFERENT CLUSTERS (correct)
-```
-
-### Theoretical vs Practical Trade-offs
-
-| Scenario | W2 | GW | Winner for Behavioral Clustering |
-|----------|----|----|----------------------------------|
-| Same behavior, same speed | ✅ | ✅ | Tie |
-| Same behavior, different speed | ⚠️ | ✅ | GW (in theory) |
-| Different behaviors, same pace | ✅ | ❌ | **W2** |
-| Direction matters (forward/backward) | ✅ | ❌ | **W2** |
-| **Overall for behavioral content** | ✅ | ❌ | **W2** |
-
-The theoretical advantage of GW (speed invariance) is outweighed by its practical disadvantage (loss of semantic content).
 
 ---
 
@@ -91,7 +33,7 @@ frame-by-frame comparison (W2) sees these as different behaviors.
 - **W2**: HIGH distance → Different clusters ❌
 - **GW**: LOW distance → Same cluster ✅
 
-**However**, this theoretical advantage is overshadowed by GW's inability to distinguish different behaviors with similar temporal dynamics (see Issue 5).
+**However**, this theoretical advantage is overshadowed by GW's inability to distinguish different behaviors with similar temporal dynamics (see Characteristics 5).
 
 ---
 
@@ -215,14 +157,14 @@ low distance regardless of where the point clouds are located.
 
 ---
 
-## Issue 1: Different Behavioral Speeds
+## Characteristics 1: Different Behavioral Speeds
 
 ### The Problem with W2
 
 When the same behavior occurs at different speeds, uniform downsampling creates misaligned comparisons.
 
 ```
-                Issue: Same Behavior at Different Speeds
+                Characteristics: Same Behavior at Different Speeds
 
     Clip A (slow rear):               Clip B (fast rear):
 
@@ -285,14 +227,14 @@ This structural similarity is preserved regardless of temporal speed.
 
 ---
 
-## Issue 2: Phase-Shifted Behaviors
+## Characteristics 2: Phase-Shifted Behaviors
 
 ### The Problem with W2
 
 When the same cyclic behavior starts at different phases, W2 sees complete misalignment.
 
 ```
-                 Issue: Phase-Shifted Behaviors
+                 Characteristics: Phase-Shifted Behaviors
 
     Clip A: Walk starting at heel-strike
 
@@ -367,14 +309,14 @@ affect the internal structure comparison.
 
 ---
 
-## Issue 3: Scale and Intensity Variations
+## Characteristics 3: Scale and Intensity Variations
 
 ### The Problem with W2
 
 Different animals may perform the same behavior with different amplitudes.
 
 ```
-              Issue: Same Behavior at Different Intensities
+              Characteristics: Same Behavior at Different Intensities
 
     Clip A: Full rear (torso lifted high)
 
@@ -454,7 +396,7 @@ by comparing relative distances rather than absolute positions.
 
 ---
 
-## Issue 4: When GW Fails - Directional Behaviors
+## Characteristics 4: When GW Fails - Directional Behaviors
 
 ### A Limitation of Pure GW
 
@@ -506,7 +448,7 @@ only compares relative point relationships, not absolute positions.
 
 ---
 
-## Issue 5: GW Clusters by Temporal Dynamics, Not Behavioral Content
+## Characteristics 5: GW Clusters by Temporal Dynamics, Not Behavioral Content
 
 ### The Critical Empirical Finding
 
@@ -839,7 +781,7 @@ Figure 12: FGW interpolates between W2 (position-sensitive) and GW
 α=0.5 providing a good default for behavioral data.
 ```
 
-### How FGW Handles Each Issue
+### How FGW Handles Each Characteristics
 
 | Scenario | W2 | GW | FGW ($\alpha=0.5$) |
 |----------|----|----|-------------------|
@@ -915,102 +857,7 @@ FGW Clustering: {Clip 1, Clip 2}, {Clip 3}, {Clip 4} ✅ (Full rears together, p
 
 ---
 
-## Summary: When to Use Each Distance
-
-### Updated Decision Guide (Based on Empirical Findings)
-
-```
-    ╔═══════════════════════════════════════════════════════════════╗
-    ║           RECOMMENDATION FOR TopoVNL BEHAVIORAL CLUSTERING    ║
-    ╠═══════════════════════════════════════════════════════════════╣
-    ║                                                               ║
-    ║   PRIMARY CHOICE: W2 (Wasserstein-2)                          ║
-    ║   ─────────────────────────────────────────────────────────   ║
-    ║   • Clusters by behavioral CONTENT (what behavior)            ║
-    ║   • Preserves semantic structure of intention space           ║
-    ║   • Distinguishes different behaviors correctly               ║
-    ║                                                               ║
-    ║   ALTERNATIVE: FGW with low α (0.1-0.3)                       ║
-    ║   ─────────────────────────────────────────────────────────   ║
-    ║   • If speed variation is a significant concern               ║
-    ║   • Keep α low to prioritize content over dynamics            ║
-    ║                                                               ║
-    ║   SPECIAL USE CASE: GW (Pure)                                 ║
-    ║   ─────────────────────────────────────────────────────────   ║
-    ║   • Only if clustering by temporal DYNAMICS is the goal       ║
-    ║   • "Group by movement tempo/rhythm, not behavior type"       ║
-    ║                                                               ║
-    ╚═══════════════════════════════════════════════════════════════╝
-```
-
-**Use W2 (RECOMMENDED for behavioral clustering) when**:
-- Goal is to identify **what behavior** is occurring
-- The intention space has **semantic meaning** (nearby points = similar behaviors)
-- **Direction matters** (walk forward vs backward should be different)
-- Behaviors may have **similar temporal dynamics but different content**
-
-**Use GW when**:
-- Goal is to identify **movement style/tempo**, not behavioral content
-- Clustering by **velocity profile** (jerky vs smooth, fast vs slow) is desired
-- Cross-subject comparison where **absolute positions differ but dynamics match**
-- Specifically want to group behaviors with **similar pace patterns**
-
-**Use FGW when**:
-- Want primarily behavioral content with some tolerance for speed variation
-- **Start with α = 0.1-0.2** (mostly W2, slight GW contribution)
-- Increase α only if same behaviors are being split due to speed differences
-
-### Why the Original Recommendation Changed
-
-The original document suggested GW/FGW as preferable based on theoretical properties. However, empirical testing revealed:
-
-1. **GW clusters by pace, not content** - "slow→fast→slow" patterns group together regardless of actual behavior
-2. **Uniform downsampling partially addresses speed variation** - the `target_len` parameter already normalizes trajectory lengths
-3. **Intention space semantics matter** - the learned intention encoding places similar behaviors nearby, which W2 preserves but GW ignores
-
----
-
-## Mathematical Summary
-
-| Property | W2 | GW |
-|----------|----|----|
-| **Compares** | Point positions in shared space | Point relationships (internal distances) |
-| **Requires** | Same coordinate system | Same metric structure (can be different spaces) |
-| **Invariant to** | Translation | Translation, rotation, scaling, reflection |
-| **Complexity** | $O(n^2 \log n)$ | $O(n^3)$ |
-| **Clusters by** | **Behavioral content** (WHERE) | **Temporal dynamics** (HOW FAST) |
-| **Preserves** | Semantic meaning of intention space | Velocity/pace profile |
-| **Good for** | Behavioral content clustering | Movement style clustering |
-| **Fails for** | Extreme speed variation | Different behaviors with same pace |
-
-**FGW combines both**:
-
-$$FGW(X, Y) = \alpha \cdot GW(X, Y) + (1 - \alpha) \cdot W_2(X, Y)$$
-
-For behavioral clustering: use $\alpha \leq 0.3$ (prioritize W2).
-
----
-
-## Key Insight for TopoVNL
-
-### The Tension Between Theory and Practice
-
-**Theoretical view** (original motivation):
-```
-    DM identifies cycles that are topologically significant.
-    GW preserves this topological structure during comparison.
-    Therefore, GW should be preferred.
-```
-
-**Empirical reality**:
-```
-    The intention space encodes behavioral SEMANTICS.
-    W2 preserves these semantics by comparing positions.
-    GW discards semantics, keeping only dynamics.
-    Therefore, W2 produces better behavioral clusters.
-```
-
-### The Two Dimensions of Behavioral Data
+## The Two Dimensions of Behavioral Data
 
 ```
                         Understanding the Data
@@ -1034,29 +881,6 @@ For behavioral clustering: use $\alpha \leq 0.3$ (prioritize W2).
     These are DIFFERENT questions with DIFFERENT correct answers.
 
     ═══════════════════════════════════════════════════════════════════
-```
-
-### Final Recommendation
-
-```
-    ╔═══════════════════════════════════════════════════════════════╗
-    ║                    FINAL RECOMMENDATION                       ║
-    ╠═══════════════════════════════════════════════════════════════╣
-    ║                                                               ║
-    ║  For TopoVNL behavioral clustering pipeline:                  ║
-    ║                                                               ║
-    ║     USE W2 as the primary distance metric                     ║
-    ║                                                               ║
-    ║  Rationale:                                                   ║
-    ║  • The goal is behavioral CONTENT clustering                  ║
-    ║  • The intention space has semantic structure                 ║
-    ║  • W2 preserves this structure; GW discards it                ║
-    ║  • Uniform downsampling already handles most speed variation  ║
-    ║                                                               ║
-    ║  GW is not "wrong" - it answers a different question:         ║
-    ║  "What is the temporal dynamics pattern?"                     ║
-    ║                                                               ║
-    ╚═══════════════════════════════════════════════════════════════╝
 ```
 
 ---
