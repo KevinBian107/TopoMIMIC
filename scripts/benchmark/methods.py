@@ -220,6 +220,40 @@ class W2KMeans(BaseMethod):
         return km.fit_predict(X_mds)
 
 
+class GWKMeans(BaseMethod):
+    """
+    Gromov-Wasserstein based clustering using MDS embedding + KMeans.
+    Requires precomputed GW distance matrix passed via params.
+    """
+    def __init__(self, params: dict = None):
+        super().__init__("gw_kmeans", params)
+        self.mds_components = self.params.get("mds_components", 3)
+
+    @property
+    def method_type(self) -> MethodType:
+        return MethodType.CLUSTERING
+
+    def fit_predict(
+        self,
+        X: np.ndarray,
+        n_clusters: int,
+        seed: int = 0,
+    ) -> np.ndarray:
+        distance_matrix = self.params.get("distance_matrix")
+        if distance_matrix is None:
+            raise ValueError("GWKMeans requires 'distance_matrix' in params")
+
+        mds = MDS(
+            n_components=self.mds_components,
+            dissimilarity='precomputed',
+            random_state=seed,
+            normalized_stress='auto',
+        )
+        X_mds = mds.fit_transform(distance_matrix)
+        km = KMeans(n_clusters=n_clusters, random_state=seed, n_init='auto')
+        return km.fit_predict(X_mds)
+
+
 class SpectralMethod(BaseMethod):
     def __init__(self, params: dict = None):
         super().__init__("spectral", params)
@@ -445,6 +479,7 @@ METHOD_REGISTRY: dict[str, type[BaseMethod]] = {
     "tsne_kmeans": TSNEKMeans,
     "umap_kmeans": UMAPKMeans,
     "w2_kmeans": W2KMeans,
+    "gw_kmeans": GWKMeans,
     "spectral": SpectralMethod,
     "dbscan": DBSCANMethod,
     "arhmm": ARHMMMethod,

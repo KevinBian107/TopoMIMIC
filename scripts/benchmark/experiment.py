@@ -305,6 +305,59 @@ def compute_w2_distance_matrix(
     return D, Dn
 
 
+def compute_gw_distance_matrix(
+    windows: list[tuple[int, np.ndarray]],
+    data: np.ndarray,
+    target_len: int,
+    loss_fun: str = "square_loss",
+    max_iter: int = 1000,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Compute Gromov-Wasserstein distance matrix between all window pairs.
+
+    Args:
+        windows: List of (clip_id, frame_indices) tuples
+        data: Full data array (n_clips, n_frames, n_dim)
+        target_len: Number of frames per window (for uniform weights)
+        loss_fun: GW loss function ("square_loss" or "kl_loss")
+        max_iter: Maximum iterations for GW solver
+
+    Returns:
+        D: Raw GW distance matrix (M, M)
+        Dn: Normalized GW distance matrix (M, M)
+    """
+    if not HAS_OT:
+        raise ImportError("POT library not installed")
+
+    M = len(windows)
+    D = np.zeros((M, M), dtype=float)
+
+    print(f"Computing GW distance matrix for {M} windows...")
+    print(f"  loss_fun={loss_fun}, max_iter={max_iter}")
+
+    structure_matrices = []
+    for clip_id, frames in tqdm(windows, desc="Precomputing structure matrices"):
+        Xi = data[clip_id, frames]
+        Ci = ot.dist(Xi, Xi)
+        structure_matrices.append(Ci)
+
+    w = np.full(target_len, 1.0 / target_len)
+
+    for i in tqdm(range(M), desc="GW distances"):
+        Ci = structure_matrices[i]
+        for j in range(i + 1, M):
+            Cj = structure_matrices[j]
+            val = ot.gromov.gromov_wasserstein2(
+                Ci, Cj, w, w,
+                loss_fun=loss_fun,
+                max_iter=max_iter,
+            )
+            D[i, j] = D[j, i] = val
+
+    Dn = _normalize_dist_matrix(D)
+    return D, Dn
+
+
 def labels_to_cluster_dict(
     labels: np.ndarray,
     windows: list[tuple[int, np.ndarray]],
@@ -423,25 +476,59 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
     X = build_feature_matrix(windows, dm_data)
     print(f"Feature matrix: {X.shape}")
 
-    w2_cache_path = os.path.join(config.output_dir, "w2_distance_matrix.pkl")
-    if os.path.exists(w2_cache_path):
-        print("Loading cached W2 distance matrix...")
-        with open(w2_cache_path, "rb") as f:
-            w2_data = pkl.load(f)
-        D, Dn = w2_data["D"], w2_data["Dn"]
-    else:
-        D, Dn = compute_w2_distance_matrix(
-            windows, dm_data, config.clustering.target_len
-        )
-        with open(w2_cache_path, "wb") as f:
-            pkl.dump({"D": D, "Dn": Dn}, f)
-        print(f"Cached W2 matrix to {w2_cache_path}")
+    D_w2, Dn_w2 = None, None
+    D_gw, Dn_gw = None, None
+
+    w2_needed = any(m.name == "w2_kmeans" and m.enabled for m in config.methods)
+    if w2_needed:
+        w2_cache_path = os.path.join(config.output_dir, "w2_distance_matrix.pkl")
+        if os.path.exists(w2_cache_path):
+            print("Loading cached W2 distance matrix...")
+            with open(w2_cache_path, "rb") as f:
+                w2_data = pkl.load(f)
+            D_w2, Dn_w2 = w2_data["D"], w2_data["Dn"]
+        else:
+            D_w2, Dn_w2 = compute_w2_distance_matrix(
+                windows, dm_data, config.clustering.target_len
+            )
+            with open(w2_cache_path, "wb") as f:
+                pkl.dump({"D": D_w2, "Dn": Dn_w2}, f)
+            print(f"Cached W2 matrix to {w2_cache_path}")
+
+    gw_needed = any(m.name == "gw_kmeans" and m.enabled for m in config.methods)
+    if gw_needed:
+        gw_method = next((m for m in config.methods if m.name == "gw_kmeans"), None)
+        gw_params = gw_method.params if gw_method else {}
+        loss_fun = gw_params.get("loss_fun", "square_loss")
+        max_iter = gw_params.get("max_iter", 1000)
+
+        gw_cache_path = os.path.join(config.output_dir, "gw_distance_matrix.pkl")
+        if os.path.exists(gw_cache_path):
+            print("Loading cached GW distance matrix...")
+            with open(gw_cache_path, "rb") as f:
+                gw_data = pkl.load(f)
+            D_gw, Dn_gw = gw_data["D"], gw_data["Dn"]
+        else:
+            D_gw, Dn_gw = compute_gw_distance_matrix(
+                windows, dm_data, config.clustering.target_len,
+                loss_fun=loss_fun, max_iter=max_iter
+            )
+            with open(gw_cache_path, "wb") as f:
+                pkl.dump({"D": D_gw, "Dn": Dn_gw}, f)
+            print(f"Cached GW matrix to {gw_cache_path}")
 
     print("\n=== Stage 5: Running methods ===")
     enabled_methods = [m for m in config.methods if m.enabled]
     print(f"Enabled methods: {[m.name for m in enabled_methods]}")
 
-    all_results = {}
+    results_path = os.path.join(config.output_dir, "all_results.pkl")
+    if os.path.exists(results_path):
+        with open(results_path, "rb") as f:
+            all_results = pkl.load(f)
+        print(f"Loaded existing results: {list(all_results.keys())}")
+    else:
+        all_results = {}
+
     from datetime import datetime
     experiment_id = f"experiment_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}"
 
@@ -457,7 +544,9 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
         method_results = {}
 
         if method_entry.name == "w2_kmeans":
-            method.params["distance_matrix"] = Dn
+            method.params["distance_matrix"] = Dn_w2
+        elif method_entry.name == "gw_kmeans":
+            method.params["distance_matrix"] = Dn_gw
 
         if method.method_type == MethodType.STATE_SPACE:
             n_clusters_to_use = config.k_selection.n_clusters
@@ -547,10 +636,9 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
 
     print(f"Saved summary to {summary_path}")
 
-    results_path = os.path.join(config.output_dir, "all_results.pkl")
     with open(results_path, "wb") as f:
         pkl.dump(all_results, f)
-    print(f"Saved all results to {results_path}")
+    print(f"Saved all results to {results_path} (methods: {list(all_results.keys())})")
 
     print("\n" + "=" * 60)
     print("Experiment Complete!")

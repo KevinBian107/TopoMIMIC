@@ -24,7 +24,7 @@ clustering:
 
 # K selection configuration
 k_selection:
-  n_clusters: 10
+  n_clusters: 5
 
 # Seeds for reproducibility (multiple seeds for stability analysis)
 seeds: [0, 123, 234]
@@ -59,9 +59,17 @@ methods:
 
   - name: "w2_kmeans"
     type: "clustering"
+    enabled: false
+    params:
+      mds_components: 3
+
+  - name: "gw_kmeans"
+    type: "clustering"
     enabled: true
     params:
       mds_components: 3
+      loss_fun: "square_loss"
+      max_iter: 1000
 
   - name: "spectral"
     type: "clustering"
