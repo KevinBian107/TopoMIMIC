@@ -8,15 +8,23 @@ rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
 behavior_csv: "/home/jovyan/vast/kaiwen/TopoVNL/behavior_book.csv"
 behavior_labels_csv: "/home/jovyan/vast/kaiwen/TopoVNL/behavior_labels.csv"
 
+# Filter to specific methods and seeds (null = all)
+# Example: methods: ["gw_kmeans", "w2_kmeans"]
+# Example: seeds: [0, 123]
+methods: ["w2_kmeans"]
+seeds: [0]
+
 # Analysis modules to run
 run_variance_heatmap: true
 run_mds_analysis: true
 run_cluster_to_label_comparison: true
 run_seed_comparison: true  # Side-by-side plots across seeds
+run_transition_comparison: true  # Side-by-side discovered vs ground truth transitions
 
 # MDS settings
 mds_k_cycles: 50
 mds_s_top: 10
+mds_figsize: [10, 9]  # [width, height]
 # Behaviors to show separately in MDS (null = all behaviors from behavior_labels_csv)
 # Available: Walking, Immobility, Grooming, Orienting, Supported Rear, Unsupported Rear, Left Turn, Right Turn
 mds_behaviors: null
@@ -39,3 +47,7 @@ body_parts:
   - "lower_arm_R"
 
 max_loops: 200
+
+# Transition comparison settings
+transition_window: 5  # Number of frames around transition boundary to include
+max_transition_points: 500  # Max points to display per cluster
