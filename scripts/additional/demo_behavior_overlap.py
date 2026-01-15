@@ -262,17 +262,52 @@ def plot_main_panel(ax, transition_points: dict, all_behavior_points: dict, conf
 
     ax.set_xlabel("PC1", fontsize=12)
     ax.set_ylabel("PC2", fontsize=12)
-    ax.set_title("Transition Clusters in Latent Space", fontsize=14, fontweight='bold')
+    ax.set_title("Transition Clusters", fontsize=14, fontweight='bold')
     ax.legend(loc='upper right', fontsize=9, framealpha=0.95)
     ax.grid(True, alpha=0.3)
 
 
+def plot_density_panel(ax, all_behavior_points: dict):
+    """Plot behavior clusters without transitions - clean view."""
+
+    # Plot each behavior with contour lines only (no fill/shading)
+    for behavior, points in all_behavior_points.items():
+        color = BEHAVIOR_COLORS[behavior]
+
+        # Contour lines only
+        if len(points) > 20:
+            xc, yc, H = compute_density(points, grid_size=50, sigma=1.2)
+            ax.contour(xc, yc, H, levels=4, colors=[color], alpha=0.8, linewidths=1.5)
+
+        # Scatter points
+        points_sub = random_subsample(points, 300)
+        ax.scatter(points_sub[:, 0], points_sub[:, 1], c=color, s=20, alpha=0.6,
+                   edgecolors='white', linewidths=0.3)
+
+        # Label at centroid
+        centroid = points.mean(axis=0)
+        ax.annotate(behavior, centroid, fontsize=11, fontweight='bold', ha='center', va='center',
+                    bbox=dict(boxstyle='round,pad=0.3', facecolor=color, alpha=0.9, edgecolor='white', linewidth=2),
+                    color='white', zorder=10)
+
+    ax.set_xlabel("PC1", fontsize=12)
+    ax.set_ylabel("PC2", fontsize=12)
+    ax.set_title("Behavior Clusters", fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+
+    # Add legend
+    from matplotlib.patches import Patch
+    legend_elements = [Patch(facecolor=BEHAVIOR_COLORS[b], alpha=0.6, label=b) for b in BEHAVIORS]
+    ax.legend(handles=legend_elements, loc='upper right', fontsize=10, framealpha=0.95)
+
+
 def main():
     config = Config()
-    base_dir = Path(__file__).parent
-    config.data_dir = str(base_dir / config.data_dir)
-    config.labels_path = str(base_dir / config.labels_path)
-    config.output_path = str(base_dir / config.output_path)
+    # Go up to project root (scripts/additional -> scripts -> TopoVNL)
+    base_dir = Path(__file__).parent.parent.parent
+    config.data_dir = str(base_dir / "data" / "rodent_ar")
+    config.labels_path = str(base_dir / "behavior_labels.csv")
+    config.output_path = str(base_dir / "out" / "behavior_clusters.png")
     os.makedirs(os.path.dirname(config.output_path), exist_ok=True)
 
     print("Loading data...")
@@ -330,49 +365,59 @@ def main():
         else:
             trans_projected[k] = np.array([])
 
-    # Create figure with GridSpec
-    fig = plt.figure(figsize=config.figsize)
-    gs = GridSpec(3, 4, figure=fig, width_ratios=[1, 1, 1, 1.5], wspace=0.25, hspace=0.3)
+    # Create figure: [small panels] [main transition] [density]
+    fig = plt.figure(figsize=(26, 10))
+    gs = GridSpec(3, 3, figure=fig, width_ratios=[1, 2.5, 2.5], height_ratios=[1, 1, 1],
+                  wspace=0.18, hspace=0.15)
 
-    # Side panels: individual behaviors (left column, stacked)
-    ax_walk = fig.add_subplot(gs[0, 0])
-    ax_immo = fig.add_subplot(gs[1, 0])
-    ax_ori = fig.add_subplot(gs[2, 0])
+    # Store variance for axis labels
+    var_explained = pca.explained_variance_ratio_ * 100
 
-    plot_behavior_panel(ax_walk, behavior_projected["Walking"], "Walking", BEHAVIOR_COLORS["Walking"])
-    plot_behavior_panel(ax_immo, behavior_projected["Immobility"], "Immobility", BEHAVIOR_COLORS["Immobility"])
-    plot_behavior_panel(ax_ori, behavior_projected["Orienting"], "Orienting", BEHAVIOR_COLORS["Orienting"])
+    # Left column: Small behavior panels (stacked vertically)
+    behavior_axes = {}
+    for i, behavior in enumerate(BEHAVIORS):
+        ax = fig.add_subplot(gs[i, 0])
+        plot_behavior_panel(ax, behavior_projected[behavior], behavior, BEHAVIOR_COLORS[behavior])
+        behavior_axes[behavior] = ax
 
-    # Main panel: transition clusters (spans columns 1-3, all rows)
-    ax_main = fig.add_subplot(gs[:, 1:])
+    # Middle: Main transition panel
+    ax_main = fig.add_subplot(gs[:, 1])
     plot_main_panel(ax_main, trans_projected, behavior_projected, config)
 
-    fig.suptitle("Behavioral Transition Clusters", fontsize=16, fontweight='bold', y=0.98)
+    # Right: Behavior density panel
+    ax_density = fig.add_subplot(gs[:, 2])
+    plot_density_panel(ax_density, behavior_projected)
 
-    # Draw arrows from main panel to side panels
-    side_axes = {
-        "Walking": ax_walk,
-        "Immobility": ax_immo,
-        "Orienting": ax_ori,
-    }
+    # Synchronize main and density panel limits
+    x_min = min(ax_main.get_xlim()[0], ax_density.get_xlim()[0])
+    x_max = max(ax_main.get_xlim()[1], ax_density.get_xlim()[1])
+    y_min = min(ax_main.get_ylim()[0], ax_density.get_ylim()[0])
+    y_max = max(ax_main.get_ylim()[1], ax_density.get_ylim()[1])
+    ax_main.set_xlim(x_min, x_max)
+    ax_main.set_ylim(y_min, y_max)
+    ax_density.set_xlim(x_min, x_max)
+    ax_density.set_ylim(y_min, y_max)
 
-    for behavior, side_ax in side_axes.items():
+    # Update axis labels with variance explained
+    ax_main.set_xlabel(f"PC1 ({var_explained[0]:.1f}%)", fontsize=12)
+    ax_main.set_ylabel(f"PC2 ({var_explained[1]:.1f}%)", fontsize=12)
+    ax_density.set_xlabel(f"PC1 ({var_explained[0]:.1f}%)", fontsize=12)
+    ax_density.set_ylabel(f"PC2 ({var_explained[1]:.1f}%)", fontsize=12)
+
+    # Draw arrows from small panels to behavior centroids in main panel
+    for behavior, ax_small in behavior_axes.items():
         color = BEHAVIOR_COLORS[behavior]
-        points = behavior_projected[behavior]
-        centroid = points.mean(axis=0)
-
-        # Arrow from main panel centroid to side panel
+        centroid = behavior_projected[behavior].mean(axis=0)
+        # Arrow from right edge of small panel to centroid location in main panel
         arrow = ConnectionPatch(
-            xyA=(centroid[0], centroid[1]), coordsA=ax_main.transData,
-            xyB=(1.0, 0.5), coordsB=side_ax.transAxes,
-            arrowstyle="-|>",
-            color=color,
-            linewidth=2.5,
-            alpha=0.8,
-            mutation_scale=15,
-            connectionstyle="arc3,rad=-0.2",
+            xyA=(1.0, 0.5), coordsA=ax_small.transAxes,
+            xyB=(centroid[0], centroid[1]), coordsB=ax_main.transData,
+            arrowstyle="-|>", mutation_scale=15,
+            color=color, linewidth=2, alpha=0.7
         )
         fig.add_artist(arrow)
+
+    fig.suptitle("Behavioral Clusters in Latent Space", fontsize=18, fontweight='bold', y=0.98)
 
     plt.savefig(config.output_path, dpi=150, bbox_inches='tight', facecolor='white')
     print(f"\nSaved: {config.output_path}")
