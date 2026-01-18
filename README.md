@@ -87,7 +87,7 @@ This runs all enabled methods (vanilla_kmeans, pca_kmeans, umap_kmeans, w2_kmean
 ### Analysis
 Generate variance heatmaps, cross-method comparison, and seed stability analysis:
 ```bash
-python -m scripts.benchmark.analysis configs/benchmark/analysis.yaml
+python -m scripts.benchmark.analysis.main configs/benchmark/analysis.yaml
 ```
 
 ## Rendering
@@ -99,6 +99,14 @@ python -m scripts.additional.extract_filled_space configs/additional/extract_fil
 To render cycles for visualization:
 ```bash
 python -m scripts.additional.render_cycle configs/additional/render_cycle.yaml
+```
+
+## Demo
+We have the code for illustrative demos:
+
+```bash
+python -m scripts.additional.demo_behavior_overlap
+python -m scripts.additional.demo_torus
 ```
 
 ## Acknowledgements

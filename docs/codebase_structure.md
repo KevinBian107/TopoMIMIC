@@ -566,7 +566,7 @@ python scripts/benchmark/experiment.py configs/benchmark/experiment.yaml
 
 **Step 3: Run Analysis**
 ```bash
-python scripts/benchmark/analysis.py configs/benchmark/analysis.yaml
+python -m scripts.benchmark.analysis.main configs/benchmark/analysis.yaml
 ```
 
 ---

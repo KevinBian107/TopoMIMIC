@@ -27,36 +27,51 @@ from sklearn.decomposition import PCA
 
 np.random.seed(42)
 
-BEHAVIORS = ["Walking", "Immobility", "Orienting"]
+BEHAVIORS = [
+    "Walking",
+    "Immobility",
+    "Orienting",
+    "Grooming",
+    "Rear",
+]
 
 BEHAVIOR_COLORS = {
     "Walking": "#4A90D9",
     "Immobility": "#7BC47F",
     "Orienting": "#F5A623",
+    "Grooming": "#E91E63",
+    "Rear": "#9C27B0",
 }
 
-TRANSITION_COLORS = {
-    ("Immobility", "Walking"): "#E74C3C",
-    ("Orienting", "Walking"): "#9B59B6",
-    ("Immobility", "Orienting"): "#1ABC9C",
+BEHAVIOR_MAPPING = {
+    "Supported Rear": "Rear",
+    "Unsupported Rear": "Rear",
 }
 
-TRANSITION_LABELS = {
-    ("Immobility", "Walking"): "Immobility ↔ Walking",
-    ("Orienting", "Walking"): "Orienting ↔ Walking",
-    ("Immobility", "Orienting"): "Immobility ↔ Orienting",
-}
+TRANSITION_PALETTE = [
+    "#E74C3C", "#9B59B6", "#1ABC9C", "#E67E22", "#3498DB",
+    "#2ECC71", "#F39C12", "#8E44AD", "#16A085", "#C0392B",
+]
+
+
+def get_transition_color(idx: int) -> str:
+    return TRANSITION_PALETTE[idx % len(TRANSITION_PALETTE)]
+
+
+def get_transition_label(trans_key: tuple[str, str]) -> str:
+    return f"{trans_key[0]} ↔ {trans_key[1]}"
 
 
 @dataclass
 class Config:
-    data_dir: str = "data/rodent_ar"
+    data_source: str = "data/rodent_ar_latest.h5"
     labels_path: str = "behavior_labels.csv"
     output_path: str = "out/behavior_clusters.png"
     n_clips: int = 200
     max_points_per_behavior: int = 1000
     max_transition_points: int = 500
     transition_window: int = 5
+    top_k_transitions: int = 3
     figsize: tuple[int, int] = (16, 10)
 
 
@@ -87,8 +102,9 @@ def build_frame_behavior_map(segments: list[dict]) -> dict[int, dict[int, str]]:
         clip_id = get_clip_id(seg["video"])
         if clip_id is None:
             continue
+        behavior = BEHAVIOR_MAPPING.get(seg["behavior"], seg["behavior"])
         for frame in range(seg["start_frame"], min(seg["end_frame"] + 1, 500)):
-            clip_behaviors[clip_id][frame] = seg["behavior"]
+            clip_behaviors[clip_id][frame] = behavior
     return clip_behaviors
 
 
@@ -118,14 +134,27 @@ def find_transition_frames(
     return transitions
 
 
-def load_all_intentions(data_dir: str, clip_ids: list[int]) -> dict[int, np.ndarray]:
-    """Load all intentions without subsampling."""
+def is_consolidated_format(path: str) -> bool:
+    return path.endswith('.h5')
+
+
+def load_all_intentions(data_source: str, clip_ids: list[int]) -> dict[int, np.ndarray]:
+    """Load all intentions from either folder or consolidated H5 format."""
     clip_data = {}
-    for clip_id in clip_ids:
-        path = os.path.join(data_dir, f"clip_{clip_id}.h5")
-        if os.path.exists(path):
-            with h5py.File(path, "r") as f:
-                clip_data[clip_id] = np.array(f["intention"])
+
+    if is_consolidated_format(data_source):
+        with h5py.File(data_source, "r") as f:
+            intention_data = f["intention"]
+            for clip_id in clip_ids:
+                if clip_id < intention_data.shape[0]:
+                    clip_data[clip_id] = np.array(intention_data[clip_id])
+    else:
+        for clip_id in clip_ids:
+            path = os.path.join(data_source, f"clip_{clip_id}.h5")
+            if os.path.exists(path):
+                with h5py.File(path, "r") as f:
+                    clip_data[clip_id] = np.array(f["intention"])
+
     return clip_data
 
 
@@ -191,7 +220,13 @@ def plot_behavior_panel(ax, points: np.ndarray, behavior: str, color: str):
         spine.set_linewidth(2)
 
 
-def plot_main_panel(ax, transition_points: dict, all_behavior_points: dict, config: Config):
+def plot_main_panel(
+    ax,
+    transition_points: dict,
+    all_behavior_points: dict,
+    transition_colors: dict[tuple[str, str], str],
+    config: Config,
+):
     """Plot main panel with transition clusters."""
 
     # First draw faded behavior backgrounds
@@ -211,8 +246,8 @@ def plot_main_panel(ax, transition_points: dict, all_behavior_points: dict, conf
         if len(points) == 0:
             continue
 
-        color = TRANSITION_COLORS.get(trans_key, "#888888")
-        label = TRANSITION_LABELS.get(trans_key, f"{trans_key[0]} ↔ {trans_key[1]}")
+        color = transition_colors.get(trans_key, "#888888")
+        label = get_transition_label(trans_key)
 
         points_sub = random_subsample(points, config.max_transition_points)
 
@@ -239,15 +274,10 @@ def plot_main_panel(ax, transition_points: dict, all_behavior_points: dict, conf
                 if dist < 3.0 and dist > 0.01:
                     offset += (diff / dist) * 1.2
 
-        # Ensure minimum offset
+        # Ensure minimum offset with random direction fallback
         if np.linalg.norm(offset) < 0.5:
-            # Use fixed offsets as fallback
-            fallback = {
-                ("Immobility", "Walking"): np.array([0, 1.2]),
-                ("Orienting", "Walking"): np.array([0, -1.2]),
-                ("Immobility", "Orienting"): np.array([1.2, 0]),
-            }
-            offset = fallback.get(trans_key, np.array([0, 0]))
+            angle = hash(trans_key) % 360 * np.pi / 180
+            offset = np.array([np.cos(angle), np.sin(angle)]) * 1.2
 
         label_pos = centroid + offset
 
@@ -270,6 +300,9 @@ def plot_main_panel(ax, transition_points: dict, all_behavior_points: dict, conf
 def plot_density_panel(ax, all_behavior_points: dict):
     """Plot behavior clusters without transitions - clean view."""
 
+    # Compute all centroids first for label placement
+    centroids = {b: pts.mean(axis=0) for b, pts in all_behavior_points.items() if len(pts) > 0}
+
     # Plot each behavior with contour lines only (no fill/shading)
     for behavior, points in all_behavior_points.items():
         color = BEHAVIOR_COLORS[behavior]
@@ -284,10 +317,25 @@ def plot_density_panel(ax, all_behavior_points: dict):
         ax.scatter(points_sub[:, 0], points_sub[:, 1], c=color, s=20, alpha=0.6,
                    edgecolors='white', linewidths=0.3)
 
-        # Label at centroid
-        centroid = points.mean(axis=0)
-        ax.annotate(behavior, centroid, fontsize=11, fontweight='bold', ha='center', va='center',
-                    bbox=dict(boxstyle='round,pad=0.3', facecolor=color, alpha=0.9, edgecolor='white', linewidth=2),
+    # Add labels with offset to avoid overlap
+    for behavior, points in all_behavior_points.items():
+        if len(points) == 0:
+            continue
+        color = BEHAVIOR_COLORS[behavior]
+        centroid = centroids[behavior]
+
+        # Compute offset: push label away from other centroids
+        offset = np.array([0.0, 0.0])
+        for other_beh, other_cent in centroids.items():
+            if other_beh != behavior:
+                diff = centroid - other_cent
+                dist = np.linalg.norm(diff)
+                if dist < 2.0 and dist > 0.01:
+                    offset += (diff / dist) * 0.3
+
+        label_pos = centroid + offset
+        ax.annotate(behavior, label_pos, fontsize=10, fontweight='bold', ha='center', va='center',
+                    bbox=dict(boxstyle='round,pad=0.2', facecolor=color, alpha=0.9, edgecolor='white', linewidth=1.5),
                     color='white', zorder=10)
 
     ax.set_xlabel("PC1", fontsize=12)
@@ -298,31 +346,40 @@ def plot_density_panel(ax, all_behavior_points: dict):
     # Add legend
     from matplotlib.patches import Patch
     legend_elements = [Patch(facecolor=BEHAVIOR_COLORS[b], alpha=0.6, label=b) for b in BEHAVIORS]
-    ax.legend(handles=legend_elements, loc='upper right', fontsize=10, framealpha=0.95)
+    ax.legend(handles=legend_elements, loc='upper right', fontsize=9, framealpha=0.95)
 
 
 def main():
     config = Config()
     # Go up to project root (scripts/additional -> scripts -> TopoVNL)
     base_dir = Path(__file__).parent.parent.parent
-    config.data_dir = str(base_dir / "data" / "rodent_ar")
+    config.data_source = str(base_dir / "data" / "rodent_ar_latest.h5")
     config.labels_path = str(base_dir / "behavior_labels.csv")
     config.output_path = str(base_dir / "out" / "behavior_clusters.png")
     os.makedirs(os.path.dirname(config.output_path), exist_ok=True)
 
-    print("Loading data...")
+    print(f"Loading data from: {config.data_source}")
     segments = load_behavior_labels(config.labels_path)
     clip_behaviors = build_frame_behavior_map(segments)
 
     clips_to_load = sorted(clip_behaviors.keys())[:config.n_clips]
-    clip_data = load_all_intentions(config.data_dir, clips_to_load)
+    clip_data = load_all_intentions(config.data_source, clips_to_load)
     print(f"Loaded {len(clip_data)} clips")
 
-    # Find transition frames
+    # Find transition frames and get top K
     print("Finding transitions...")
-    trans_frames = find_transition_frames(clip_behaviors, config.transition_window)
-    for key, frames in trans_frames.items():
-        print(f"  {key[0]} <-> {key[1]}: {len(frames)} frames")
+    all_trans_frames = find_transition_frames(clip_behaviors, config.transition_window)
+
+    # Sort by count and take top K
+    sorted_transitions = sorted(all_trans_frames.items(), key=lambda x: len(x[1]), reverse=True)
+    top_k = sorted_transitions[:config.top_k_transitions]
+    trans_frames = dict(top_k)
+
+    print(f"Top {config.top_k_transitions} transitions:")
+    transition_colors = {}
+    for idx, (key, frames) in enumerate(top_k):
+        transition_colors[key] = get_transition_color(idx)
+        print(f"  {idx+1}. {key[0]} <-> {key[1]}: {len(frames)} frames")
 
     # Collect all points by behavior
     behavior_intentions = {b: [] for b in BEHAVIORS}
@@ -366,9 +423,10 @@ def main():
             trans_projected[k] = np.array([])
 
     # Create figure: [small panels] [main transition] [density]
-    fig = plt.figure(figsize=(26, 10))
-    gs = GridSpec(3, 3, figure=fig, width_ratios=[1, 2.5, 2.5], height_ratios=[1, 1, 1],
-                  wspace=0.18, hspace=0.15)
+    n_behaviors = len(BEHAVIORS)
+    fig = plt.figure(figsize=(26, max(10, n_behaviors * 2)))
+    gs = GridSpec(n_behaviors, 3, figure=fig, width_ratios=[1, 2.5, 2.5],
+                  height_ratios=[1] * n_behaviors, wspace=0.18, hspace=0.15)
 
     # Store variance for axis labels
     var_explained = pca.explained_variance_ratio_ * 100
@@ -382,7 +440,7 @@ def main():
 
     # Middle: Main transition panel
     ax_main = fig.add_subplot(gs[:, 1])
-    plot_main_panel(ax_main, trans_projected, behavior_projected, config)
+    plot_main_panel(ax_main, trans_projected, behavior_projected, transition_colors, config)
 
     # Right: Behavior density panel
     ax_density = fig.add_subplot(gs[:, 2])
