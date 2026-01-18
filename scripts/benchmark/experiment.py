@@ -257,6 +257,42 @@ def prepare_windows_for_clustering(
     return windows, cleaned_loops
 
 
+def prepare_all_frames_for_clustering(
+    data: np.ndarray,
+    clustering_cfg: ClusteringConfig,
+) -> list[tuple[int, np.ndarray]]:
+    """
+    Prepare windows using all frames from each clip (baseline).
+
+    Instead of using topologically-discovered cycles, this function creates
+    one window per clip using all available frames, uniformly downsampled
+    to target_len.
+
+    Args:
+        data: Full data array (n_clips, n_frames, n_dim)
+        clustering_cfg: Clustering configuration
+
+    Returns:
+        List of (clip_id, frame_indices) tuples, one per clip
+    """
+    windows = []
+    n_clips = len(data)
+
+    for clip_id in range(n_clips):
+        if clip_id in clustering_cfg.skip_clips:
+            continue
+
+        clip_len = len(data[clip_id])
+        all_frames = np.arange(clip_len)
+        sampled = _uniform_downsample(all_frames, clustering_cfg.target_len)
+
+        if sampled is not None:
+            windows.append((clip_id, sampled))
+
+    print(f"[all_frames baseline] Created {len(windows)} windows (1 per clip)")
+    return windows
+
+
 def build_feature_matrix(
     windows: list[tuple[int, np.ndarray]],
     data: np.ndarray,
@@ -468,7 +504,7 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
     windows, cleaned_loops = prepare_windows_for_clustering(
         all_cycle_dm, dm_data, config.clustering
     )
-    print(f"Prepared {len(windows)} windows")
+    print(f"Prepared {len(windows)} windows (from topological cycles)")
 
     if len(windows) == 0:
         raise RuntimeError("No valid windows for clustering")
@@ -476,8 +512,18 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
     X = build_feature_matrix(windows, dm_data)
     print(f"Feature matrix: {X.shape}")
 
+    baseline_needed = any(m.name == "w2_kmeans_baseline" and m.enabled for m in config.methods)
+    windows_baseline = None
+    X_baseline = None
+    if baseline_needed:
+        print("\n=== Stage 4b: Preparing baseline windows (all frames) ===")
+        windows_baseline = prepare_all_frames_for_clustering(dm_data, config.clustering)
+        X_baseline = build_feature_matrix(windows_baseline, dm_data)
+        print(f"Baseline feature matrix: {X_baseline.shape}")
+
     D_w2, Dn_w2 = None, None
     D_gw, Dn_gw = None, None
+    D_w2_baseline, Dn_w2_baseline = None, None
 
     w2_needed = any(m.name == "w2_kmeans" and m.enabled for m in config.methods)
     if w2_needed:
@@ -494,6 +540,22 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
             with open(w2_cache_path, "wb") as f:
                 pkl.dump({"D": D_w2, "Dn": Dn_w2}, f)
             print(f"Cached W2 matrix to {w2_cache_path}")
+
+    if baseline_needed:
+        w2_baseline_cache_path = os.path.join(config.output_dir, "w2_distance_matrix_baseline.pkl")
+        if os.path.exists(w2_baseline_cache_path):
+            print("Loading cached W2 baseline distance matrix...")
+            with open(w2_baseline_cache_path, "rb") as f:
+                w2_data = pkl.load(f)
+            D_w2_baseline, Dn_w2_baseline = w2_data["D"], w2_data["Dn"]
+        else:
+            print("Computing W2 baseline distance matrix (all frames)...")
+            D_w2_baseline, Dn_w2_baseline = compute_w2_distance_matrix(
+                windows_baseline, dm_data, config.clustering.target_len
+            )
+            with open(w2_baseline_cache_path, "wb") as f:
+                pkl.dump({"D": D_w2_baseline, "Dn": Dn_w2_baseline}, f)
+            print(f"Cached W2 baseline matrix to {w2_baseline_cache_path}")
 
     gw_needed = any(m.name == "gw_kmeans" and m.enabled for m in config.methods)
     if gw_needed:
@@ -545,8 +607,13 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
 
         if method_entry.name == "w2_kmeans":
             method.params["distance_matrix"] = Dn_w2
+        elif method_entry.name == "w2_kmeans_baseline":
+            method.params["distance_matrix"] = Dn_w2_baseline
         elif method_entry.name == "gw_kmeans":
             method.params["distance_matrix"] = Dn_gw
+
+        current_windows = windows_baseline if method_entry.name == "w2_kmeans_baseline" else windows
+        current_X = X_baseline if method_entry.name == "w2_kmeans_baseline" else X
 
         if method.method_type == MethodType.STATE_SPACE:
             n_clusters_to_use = config.k_selection.n_clusters
@@ -564,8 +631,8 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
                 print(f"  Seed {seed}: complete")
         else:
             for seed in config.seeds:
-                labels = method.fit_predict(X, config.k_selection.n_clusters, seed)
-                cluster_dict = labels_to_cluster_dict(labels, windows)
+                labels = method.fit_predict(current_X, config.k_selection.n_clusters, seed)
+                cluster_dict = labels_to_cluster_dict(labels, current_windows)
 
                 method_results[seed] = {
                     "n_clusters": config.k_selection.n_clusters,
