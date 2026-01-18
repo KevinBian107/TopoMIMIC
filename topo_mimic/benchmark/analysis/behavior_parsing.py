@@ -8,9 +8,45 @@ class TurnDirection(Enum):
     LEFT = "left"
     RIGHT = "right"
     STRAIGHT = "straight"
+    NON_DETERMINISTIC = "non-deterministic"
 
     def __str__(self) -> str:
         return self.value
+
+    def __lt__(self, other):
+        if isinstance(other, TurnDirection):
+            return self.value < other.value
+        return NotImplemented
+
+    def __le__(self, other):
+        if isinstance(other, TurnDirection):
+            return self.value <= other.value
+        return NotImplemented
+
+    def __gt__(self, other):
+        if isinstance(other, TurnDirection):
+            return self.value > other.value
+        return NotImplemented
+
+    def __ge__(self, other):
+        if isinstance(other, TurnDirection):
+            return self.value >= other.value
+        return NotImplemented
+
+
+def parse_turn_direction(value: str | None) -> TurnDirection:
+    """Parse user-assigned turn direction string to TurnDirection enum."""
+    if not value:
+        return TurnDirection.STRAIGHT
+    value_lower = value.lower().strip()
+    if value_lower in ("left", "l"):
+        return TurnDirection.LEFT
+    elif value_lower in ("right", "r"):
+        return TurnDirection.RIGHT
+    elif value_lower in ("non-deterministic", "nondeterministic", "nd"):
+        return TurnDirection.NON_DETERMINISTIC
+    else:
+        return TurnDirection.STRAIGHT
 
 
 BEHAVIOR_NAME_MAP = {
@@ -158,6 +194,8 @@ def turn_direction_to_string(turn: TurnDirection) -> str:
         return "L"
     elif turn == TurnDirection.RIGHT:
         return "R"
+    elif turn == TurnDirection.NON_DETERMINISTIC:
+        return "ND"
     else:
         return "S"
 

@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from .behavior_parsing import parse_cluster_label
+from .behavior_parsing import parse_cluster_label, parse_turn_direction, turn_direction_to_string
 from .ground_truth import find_gt_transition_frames, TransitionSegment
 from .data_loading import load_qpos, QPOS_BODY_NAMES, get_body_part_indices
 
@@ -167,10 +167,11 @@ def compute_gt_frames_variance(
 def compute_javd_table(
     cluster_dict: dict,
     cluster_labels: dict[int, str],
-    behavior_labels_csv: str,
-    rodent_rollout_dir: str,
-    output_dir: str,
-    body_parts: list[str],
+    turn_directions: dict[int, str] = None,
+    behavior_labels_csv: str = "",
+    rodent_rollout_dir: str = "",
+    output_dir: str = "",
+    body_parts: list[str] = None,
     top_k: int = 5,
     max_loops: int = 200,
     method_name: str = "",
@@ -214,6 +215,9 @@ def compute_javd_table(
     """
     os.makedirs(output_dir, exist_ok=True)
 
+    if turn_directions is None:
+        turn_directions = {}
+
     transition_clusters = []
     for cid, label in cluster_labels.items():
         parsed = parse_cluster_label(label, merge_rear=merge_rear)
@@ -224,11 +228,23 @@ def compute_javd_table(
         if len(parsed.primitives) < 2:
             continue
 
+        user_turn = turn_directions.get(cid, "")
+        if user_turn:
+            user_turn_enum = parse_turn_direction(user_turn)
+            parsed.from_turn = user_turn_enum
+            parsed.to_turn = user_turn_enum
+
+        turn_prefix = ""
+        if user_turn:
+            turn_short = turn_direction_to_string(parsed.from_turn)
+            turn_prefix = f"[{turn_short}] "
+
         transition_clusters.append({
             "cid": cid,
             "label": label,
             "parsed": parsed,
             "primitives": parsed.primitives,
+            "turn_prefix": turn_prefix,
         })
 
     if not transition_clusters:
@@ -244,7 +260,8 @@ def compute_javd_table(
     for tc in tqdm(transition_clusters, desc="    Computing JAVD"):
         cid = tc["cid"]
         primitives = tc["primitives"]
-        gt_label = f"{primitives[0]} <-> {primitives[1]}"
+        turn_prefix = tc["turn_prefix"]
+        gt_label = f"{turn_prefix}{primitives[0]} <-> {primitives[1]}"
 
         entries = cluster_dict.get(cid, [])
         if not entries:

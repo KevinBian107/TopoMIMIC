@@ -14,6 +14,7 @@ from .behavior_parsing import (
     TurnDirection,
     ParsedLabel,
     parse_cluster_label,
+    parse_turn_direction,
     turn_direction_to_string,
 )
 from .ground_truth import (
@@ -252,9 +253,10 @@ def _plot_transition_groups(
 def plot_transition_cluster_comparison(
     cluster_dict: dict,
     cluster_labels: dict[int, str],
-    behavior_labels_csv: str,
-    rodent_rollout_dir: str,
-    output_dir: str,
+    turn_directions: dict[int, str] = None,
+    behavior_labels_csv: str = "",
+    rodent_rollout_dir: str = "",
+    output_dir: str = "",
     transition_window: int = 5,
     max_points: int = 500,
     method_name: str = "",
@@ -274,6 +276,9 @@ def plot_transition_cluster_comparison(
     os.makedirs(output_dir, exist_ok=True)
     np.random.seed(42)
 
+    if turn_directions is None:
+        turn_directions = {}
+
     clip_behaviors = load_behavior_segments_multilabel(behavior_labels_csv, merge_rear)
     if not clip_behaviors:
         print("    No behavior segments loaded, skipping transition comparison")
@@ -282,6 +287,7 @@ def plot_transition_cluster_comparison(
     grouped_clusters = defaultdict(lambda: {
         "cluster_ids": [],
         "original_labels": [],
+        "turn_directions": [],
         "parsed": None,
     })
 
@@ -292,9 +298,16 @@ def plot_transition_cluster_comparison(
         if parsed.comparison_type == "single":
             continue
 
-        gt_key = parsed.gt_key
+        user_turn = turn_directions.get(cid, "")
+        if user_turn:
+            user_turn_enum = parse_turn_direction(user_turn)
+            parsed.from_turn = user_turn_enum
+            parsed.to_turn = user_turn_enum
+
+        gt_key = parsed.gt_key_with_turns
         grouped_clusters[gt_key]["cluster_ids"].append(cid)
         grouped_clusters[gt_key]["original_labels"].append(label)
+        grouped_clusters[gt_key]["turn_directions"].append(user_turn)
         grouped_clusters[gt_key]["parsed"] = parsed
 
     if not grouped_clusters:
@@ -333,13 +346,19 @@ def plot_transition_cluster_comparison(
         for gt_key, group_info in sorted(grouped_clusters.items()):
             cluster_ids = group_info["cluster_ids"]
             original_labels = group_info["original_labels"]
+            user_turns = group_info["turn_directions"]
             parsed = group_info["parsed"]
 
             comparison_type = parsed.comparison_type
             primitives = parsed.primitives
             compositional = parsed.compositional
 
-            display_label = original_labels[0]
+            turn_prefix = ""
+            if user_turns and user_turns[0]:
+                turn_short = turn_direction_to_string(parsed.from_turn)
+                turn_prefix = f"[{turn_short}] "
+
+            display_label = f"{turn_prefix}{original_labels[0]}"
             if len(cluster_ids) > 1:
                 display_label = f"{display_label} (+{len(cluster_ids)-1} more)"
 
@@ -367,12 +386,23 @@ def plot_transition_cluster_comparison(
                     primitives,
                     short_threshold=short_threshold,
                     merge_rear=merge_rear,
+                    include_turn_direction=True,
                 )
                 gt_frames = []
+                gt_turn_prefix = ""
+                if user_turns and user_turns[0]:
+                    target_turn = parsed.from_turn
+                    matching_transitions = [
+                        t for t in gt_transitions
+                        if t.from_turn == target_turn or t.to_turn == target_turn
+                    ]
+                    if matching_transitions:
+                        gt_transitions = matching_transitions
+                        gt_turn_prefix = f"[{turn_direction_to_string(target_turn)}] "
                 for t in gt_transitions:
                     for f in t.all_frames:
                         gt_frames.append((t.clip_id, f))
-                gt_label = f"{primitives[0]} <-> {primitives[1]}"
+                gt_label = f"{gt_turn_prefix}{primitives[0]} <-> {primitives[1]}"
             else:
                 all_behaviors = primitives + compositional
                 gt_frames = find_gt_intersection_frames(clip_behaviors, all_behaviors, merge_rear)
@@ -537,8 +567,9 @@ def render_gt_transition_grid(
 def plot_variance_heatmap(
     cluster_dict: dict,
     cluster_labels: dict[int, str],
-    rodent_rollout_dir: str,
-    output_dir: str,
+    turn_directions: dict[int, str] = None,
+    rodent_rollout_dir: str = "",
+    output_dir: str = "",
     body_parts: list[str] = None,
     max_loops: int = 200,
     figsize: tuple[int, int] = (12, 8),
@@ -602,7 +633,19 @@ def plot_variance_heatmap(
                 combined = np.concatenate(all_qpos_by_body[bp])
                 variance_matrix[row_idx, col_idx] = np.var(combined)
 
-    cluster_names = [cluster_labels.get(cid, f"C{cid}").replace("_", " ") for cid in cluster_ids]
+    if turn_directions is None:
+        turn_directions = {}
+
+    def get_cluster_display_name(cid: int) -> str:
+        label = cluster_labels.get(cid, f"C{cid}").replace("_", " ")
+        turn = turn_directions.get(cid, "")
+        if turn:
+            turn_short = {"left": "L", "right": "R", "straight": "S", "non-deterministic": "ND"}.get(turn.lower(), "")
+            if turn_short:
+                label = f"[{turn_short}] {label}"
+        return label
+
+    cluster_names = [get_cluster_display_name(cid) for cid in cluster_ids]
     body_labels = [bp.replace("_", " ") for bp in valid_body_parts]
 
     fig, ax = plt.subplots(1, 1, figsize=figsize)

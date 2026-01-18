@@ -2076,9 +2076,10 @@ def plot_cluster_subspace_mds(
 def plot_cluster_subspace_mds_separate(
     cluster_cycles_by_id: dict,
     cluster_labels: dict,
-    target_clusters: list,
-    rodent_rollout_dir: str,
-    behavior_csv_path: str,
+    turn_directions: dict = None,
+    target_clusters: list = None,
+    rodent_rollout_dir: str = "",
+    behavior_csv_path: str = "",
     behaviors: list[str] | None = None,
     k_cycles: int = 5,
     s_top: int = 10,
@@ -2118,6 +2119,20 @@ def plot_cluster_subspace_mds_separate(
         Tuple of (MDS coordinates, labels, types)
     """
     rng = np.random.default_rng(seed)
+
+    if turn_directions is None:
+        turn_directions = {}
+    if target_clusters is None:
+        target_clusters = list(cluster_cycles_by_id.keys())
+
+    def get_cluster_display_name(cid: int) -> str:
+        label = cluster_labels.get(cid, f"C{cid}")
+        turn = turn_directions.get(cid, "")
+        if turn:
+            turn_short = {"left": "L", "right": "R", "straight": "S", "non-deterministic": "ND"}.get(turn.lower(), "")
+            if turn_short:
+                label = f"[{turn_short}] {label}"
+        return label
 
     def load_qpos(clip_id):
         roll = load_rollout_from_source(int(clip_id), rodent_rollout_dir)
@@ -2211,7 +2226,7 @@ def plot_cluster_subspace_mds_separate(
 
         key = f"cycle_{cid}"
         bases[key] = U[:, :s_use]
-        labels_pretty[key] = f"{cluster_labels[cid]}"
+        labels_pretty[key] = get_cluster_display_name(cid)
         types[key] = "cycle"
         s_global = s_use if s_global is None else min(s_global, s_use)
 

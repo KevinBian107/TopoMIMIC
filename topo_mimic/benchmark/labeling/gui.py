@@ -380,7 +380,7 @@ class LabelingGUI:
                     with gr.Row():
                         turn_dropdown = gr.Dropdown(
                             label="Turn Direction",
-                            choices=["", "left", "right", "straight"],
+                            choices=["", "left", "right", "straight", "non-deterministic"],
                             value="",
                             interactive=True,
                         )

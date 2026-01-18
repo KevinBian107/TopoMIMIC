@@ -24,16 +24,20 @@ from .javd import compute_javd_table
 def plot_variance_heatmaps_side_by_side(
     cluster_dicts: dict[int, dict],
     cluster_labels_per_seed: dict[int, dict[int, str]],
-    rodent_rollout_dir: str,
-    output_dir: str,
-    body_parts: list[str],
-    max_loops: int,
-    method_name: str,
+    turn_directions_per_seed: dict[int, dict[int, str]] = None,
+    rodent_rollout_dir: str = "",
+    output_dir: str = "",
+    body_parts: list[str] = None,
+    max_loops: int = 200,
+    method_name: str = "",
 ) -> None:
     """Plot variance heatmaps for multiple seeds side by side."""
     import matplotlib.pyplot as plt
     from tqdm import tqdm
     from .data_loading import load_qpos, QPOS_BODY_NAMES
+
+    if turn_directions_per_seed is None:
+        turn_directions_per_seed = {}
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -68,6 +72,7 @@ def plot_variance_heatmaps_side_by_side(
     for ax_idx, seed in enumerate(seeds):
         cluster_dict = cluster_dicts[seed]
         cluster_labels = cluster_labels_per_seed.get(seed, {})
+        turn_directions = turn_directions_per_seed.get(seed, {})
 
         cluster_ids = sorted(cluster_dict.keys())
         if cluster_labels:
@@ -107,7 +112,16 @@ def plot_variance_heatmaps_side_by_side(
                     combined = np.concatenate(all_qpos_by_body[bp])
                     variance_matrix[row_idx, col_idx] = np.var(combined)
 
-        cluster_names = [cluster_labels.get(cid, f"C{cid}").replace("_", " ") for cid in cluster_ids]
+        def get_cluster_display_name(cid: int) -> str:
+            label = cluster_labels.get(cid, f"C{cid}").replace("_", " ")
+            turn = turn_directions.get(cid, "")
+            if turn:
+                turn_short = {"left": "L", "right": "R", "straight": "S", "non-deterministic": "ND"}.get(turn.lower(), "")
+                if turn_short:
+                    label = f"[{turn_short}] {label}"
+            return label
+
+        cluster_names = [get_cluster_display_name(cid) for cid in cluster_ids]
         body_labels = [bp.replace("_", " ") for bp in valid_body_parts]
 
         ax = axes[ax_idx]
@@ -192,6 +206,7 @@ def run_analysis(config: AnalysisConfig) -> None:
 
         cluster_dicts = {}
         cluster_labels_per_seed = {}
+        turn_directions_per_seed = {}
 
         for seed in seeds:
             result = method_results.get(seed, {})
@@ -202,10 +217,11 @@ def run_analysis(config: AnalysisConfig) -> None:
                 continue
 
             cluster_dicts[seed] = cluster_dict
-            cluster_labels = load_labels_yaml(method_dir, seed)
+            cluster_labels, turn_directions = load_labels_yaml(method_dir, seed)
             if not cluster_labels:
                 cluster_labels = {i: f"C{i}" for i in cluster_dict.keys()}
             cluster_labels_per_seed[seed] = cluster_labels
+            turn_directions_per_seed[seed] = turn_directions
 
             seed_output_dir = os.path.join(method_output_dir, f"seed_{seed}")
             os.makedirs(seed_output_dir, exist_ok=True)
@@ -217,6 +233,7 @@ def run_analysis(config: AnalysisConfig) -> None:
                 plot_variance_heatmap(
                     cluster_dict=cluster_dict,
                     cluster_labels=cluster_labels,
+                    turn_directions=turn_directions,
                     rodent_rollout_dir=config.rodent_rollout_dir,
                     output_dir=seed_output_dir,
                     body_parts=config.body_parts,
@@ -238,6 +255,7 @@ def run_analysis(config: AnalysisConfig) -> None:
                         plot_cluster_subspace_mds_separate(
                             cluster_cycles_by_id=cluster_dict,
                             cluster_labels=cluster_labels,
+                            turn_directions=turn_directions,
                             target_clusters=target_clusters,
                             rodent_rollout_dir=config.rodent_rollout_dir,
                             behavior_csv_path=config.behavior_labels_csv,
@@ -258,6 +276,7 @@ def run_analysis(config: AnalysisConfig) -> None:
                         plot_transition_cluster_comparison(
                             cluster_dict=cluster_dict,
                             cluster_labels=cluster_labels,
+                            turn_directions=turn_directions,
                             behavior_labels_csv=config.behavior_labels_csv,
                             rodent_rollout_dir=config.rodent_rollout_dir,
                             output_dir=seed_output_dir,
@@ -277,6 +296,7 @@ def run_analysis(config: AnalysisConfig) -> None:
                         compute_javd_table(
                             cluster_dict=cluster_dict,
                             cluster_labels=cluster_labels,
+                            turn_directions=turn_directions,
                             behavior_labels_csv=config.behavior_labels_csv,
                             rodent_rollout_dir=config.rodent_rollout_dir,
                             output_dir=seed_output_dir,
@@ -301,6 +321,7 @@ def run_analysis(config: AnalysisConfig) -> None:
             plot_variance_heatmaps_side_by_side(
                 cluster_dicts=cluster_dicts,
                 cluster_labels_per_seed=cluster_labels_per_seed,
+                turn_directions_per_seed=turn_directions_per_seed,
                 rodent_rollout_dir=config.rodent_rollout_dir,
                 output_dir=method_output_dir,
                 body_parts=config.body_parts,

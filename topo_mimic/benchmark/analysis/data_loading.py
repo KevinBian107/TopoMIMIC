@@ -63,16 +63,34 @@ def load_cluster_dict(method_dir: str, seed: int = 0) -> dict:
     return {}
 
 
-def load_labels_yaml(method_dir: str, seed: int = 0) -> dict[int, str]:
+def load_labels_yaml(
+    method_dir: str,
+    seed: int = 0,
+) -> tuple[dict[int, str], dict[int, str]]:
+    """
+    Load cluster labels and turn directions from YAML file.
+
+    Args:
+        method_dir: Path to method output directory
+        seed: Random seed
+
+    Returns:
+        Tuple of (labels, turn_directions) where both are {cluster_id: value}
+    """
     labels_path = os.path.join(method_dir, f"labels_seed_{seed}.yaml")
     if not os.path.exists(labels_path):
-        return {}
+        return {}, {}
 
     with open(labels_path, "r") as f:
         data = yaml.safe_load(f)
 
     labels = data.get("labels", {})
-    return {int(k): v for k, v in labels.items() if v}
+    turn_directions = data.get("turn_directions", {})
+
+    labels_out = {int(k): v for k, v in labels.items() if v}
+    turns_out = {int(k): v for k, v in turn_directions.items() if v}
+
+    return labels_out, turns_out
 
 
 def load_qpos(clip_id: int, rodent_rollout_dir: str) -> np.ndarray:
