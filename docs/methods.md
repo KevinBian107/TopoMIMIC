@@ -532,25 +532,25 @@ similar transition patterns.
 
 **Step 1: Extract DM Cycles**
 ```bash
-python scripts/dmwkc/dm_pipeline.py configs/dmwkc/dm_pipeline.yaml
+python -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline.yaml
 ```
 Output: `out/dm_pipeline_ar/{all_cycle_dm.pkl, all_G_sm.pkl}`
 
 **Step 2a: Run W2 + KMeans (Primary)**
 ```bash
-python scripts/benchmark/experiment.py configs/benchmark/experiment.yaml
+python -m topo_mimic.benchmark.experiment configs/benchmark/experiment.yaml
 ```
 With `methods.w2_kmeans.enabled: true`
 
 **Step 2b: Run Feature-based Methods (Alternatives)**
 ```bash
-python scripts/benchmark/experiment.py configs/benchmark/experiment.yaml
+python -m topo_mimic.benchmark.experiment configs/benchmark/experiment.yaml
 ```
 With `methods.pca_kmeans.enabled: true`, etc.
 
 **Step 3: Analyze Results**
 ```bash
-python -m scripts.benchmark.analysis.main configs/benchmark/analysis.yaml
+python -m topo_mimic.benchmark.analysis.main configs/benchmark/analysis.yaml
 ```
 Output: Variance heatmaps, MDS plots in `out/analysis_output/`
 

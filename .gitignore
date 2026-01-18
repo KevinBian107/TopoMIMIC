@@ -13,4 +13,7 @@ PCD-Graph-Recon-DM/
 # out figures
 out/
 
+# labeling framework
+.gradio
+
 __pycache__

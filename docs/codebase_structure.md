@@ -33,108 +33,133 @@ topological analysis to behavioral clustering results.
 ```
 TopoVNL/
 │
-├── vnl_tda/                    # Core analysis library
-│   ├── pipelines/              # Analysis pipelines
-│   │   ├── tda/                # Topological data analysis
-│   │   │   └── skeletonization/  # DM graph & clustering
-│   │   ├── gaitcycle/          # Gait-specific utilities
-│   │   └── animate_reduction/  # Manifold visualization
-│   └── utils/                  # Shared utilities
+├── topo_mimic/                # Core analysis library
+│   ├── dmwk/                  # Discrete Morse + W2 + KMeans
+│   │   ├── utils/             # Data loading & rendering
+│   │   ├── skeletonization/   # DM graph & clustering
+│   │   ├── gaitcycle/         # Gait-specific utilities
+│   │   └── xml/               # MuJoCo XML assets
+│   └── benchmark/             # Benchmarking experiments
+│       ├── analysis/          # Result analysis & viz
+│       └── labeling/          # Automatic labeling
 │
-├── PCD-Graph-Recon-DM/         # Discrete Morse C++ backend
-│   ├── dmpcd/                  # Python bindings
-│   │   ├── pcd/                # Point cloud DM methods
-│   │   ├── baseline/           # Baseline DM methods
-│   │   └── code/               # C++ executables
-│   └── data/                   # Example datasets
+├── PCD-Graph-Recon-DM/        # Discrete Morse C++ backend
+│   ├── dmpcd/                 # Python bindings
+│   │   ├── pcd/               # Point cloud DM methods
+│   │   ├── baseline/          # Baseline DM methods
+│   │   └── code/              # C++ executables
+│   └── data/                  # Example datasets
 │
-├── scripts/                    # Runnable scripts
-│   ├── dmwkc/                  # DM + W2 + KMeans clustering
-│   ├── benchmark/              # Benchmarking experiments
-│   └── additional/             # Extra analysis utilities
+├── scripts/                   # Standalone utility scripts
+│   ├── render_cycle.py        # Cycle rendering
+│   ├── render_for_label.py    # Label rendering
+│   ├── demo_torus.py          # Torus DM demo
+│   └── ...                    # Other utilities
 │
-├── configs/                    # YAML configurations
-│   ├── dmwkc/                  # DM pipeline configs
-│   └── benchmark/              # Experiment configs
+├── configs/                   # YAML configurations
+│   ├── dmwk/                  # DM pipeline configs
+│   ├── benchmark/             # Experiment configs
+│   └── scripts/               # Script configs
 │
-├── notebooks/                  # Jupyter notebooks
-│   ├── discrete_morse.ipynb    # Main DM workflow
-│   ├── persistent_homology.ipynb
-│   └── projection.ipynb
+├── notebooks/                 # Jupyter notebooks
+│   ├── discrete_morse.ipynb   # Main DM workflow
+│   └── persistent_homology.ipynb
 │
-├── data/                       # Input data (Mimic-MJX rollouts)
-├── out/                        # Output results
-└── docs/                       # Documentation
+├── data/                      # Input data (Mimic-MJX rollouts)
+├── out/                       # Output results
+└── docs/                      # Documentation
 
 Figure 2: Directory tree showing the organization of source code,
-configurations, and data. The vnl_tda package contains the core
-analysis logic while scripts/ provides entry points.
+configurations, and data. The topo_mimic package contains the core
+analysis logic while scripts/ provides utility entry points.
 ```
 
 ---
 
-## Core Library: vnl_tda/
+## Core Library: topo_mimic/
 
-The `vnl_tda` package contains all core analysis functionality.
+The `topo_mimic` package contains all core analysis functionality.
 
 ### Module Hierarchy
 
 ```
-vnl_tda/
+topo_mimic/
 ├── __init__.py
 │
-├── pipelines/
+├── dmwk/                              # Discrete Morse + W2 + KMeans
+│   ├── __init__.py
+│   ├── dm_pipeline.py                 # Main DM extraction pipeline
+│   ├── dm_hypertune.py                # Hyperparameter tuning
 │   │
-│   ├── tda/
-│   │   └── skeletonization/
-│   │       ├── skeletonization.py   # DM graph extraction
-│   │       ├── preprocess.py        # Takens embedding params
-│   │       ├── postprocess.py       # W2 clustering & chunking
-│   │       ├── plotting.py          # Visualization functions
-│   │       └── rendering.py         # Video generation
+│   ├── utils/
+│   │   ├── load_utils.py              # Data loading (HDF5)
+│   │   └── rendering.py               # MuJoCo rendering
+│   │
+│   ├── skeletonization/
+│   │   ├── skeletonization.py         # DM graph extraction
+│   │   ├── preprocess.py              # Takens embedding params
+│   │   ├── postprocess.py             # W2 clustering & chunking
+│   │   ├── plotting.py                # Visualization functions
+│   │   ├── rendering.py               # Video generation
+│   │   └── homology.py                # Homology-based analysis
 │   │
 │   ├── gaitcycle/
-│   │   ├── gait_intention.py        # Gait-specific analysis
-│   │   └── utils.py                 # Time window utilities
+│   │   ├── gait_intention.py          # Gait-specific analysis
+│   │   └── utils.py                   # Time window utilities
 │   │
-│   └── animate_reduction/
-│       └── rendering_manifold.py    # Manifold animations
+│   └── xml/                           # MuJoCo assets
+│       ├── rodent.xml
+│       └── assets/                    # .obj mesh files
 │
-└── utils/
-    ├── load_utils.py               # Data loading (HDF5)
-    └── rendering.py                # MuJoCo rendering
+└── benchmark/
+    ├── __init__.py
+    ├── experiment.py                  # Unified experiment runner
+    ├── methods.py                     # Clustering method registry
+    │
+    ├── analysis/
+    │   ├── main.py                    # Analysis entry point
+    │   ├── data_loading.py            # Result loading utilities
+    │   ├── visualization.py           # Transition comparisons
+    │   ├── javd.py                    # JAVD computation
+    │   ├── ground_truth.py            # GT extraction
+    │   └── behavior_parsing.py        # Label parsing
+    │
+    └── labeling/
+        ├── main.py                    # Labeling entry point
+        ├── core.py                    # Labeling logic
+        └── gui.py                     # Gradio GUI
 
-Figure 3: Module structure within vnl_tda. The skeletonization
-subpackage is the core of the TDA pipeline, handling everything
-from DM extraction to cluster visualization.
+Figure 3: Module structure within topo_mimic. The dmwk subpackage
+is the core of the TDA pipeline, handling everything from DM
+extraction to cluster visualization.
 ```
 
 ### Key Modules Explained
 
 ```
-                    vnl_tda.pipelines.tda
+                    topo_mimic.dmwk
 ┌────────────────────────────────────────────────────────────────┐
 │                                                                │
-│   skeletonization.py                                           │
+│   skeletonization/skeletonization.py                           │
 │   ├── extract_skeleton_pcd_dm()    # Main DM extraction        │
 │   ├── extract_cycles_from_dm_graph()                           │
 │   └── _weighted_rips_cocycle_ripser()  # PH-based cycles       │
 │                                                                │
-│   preprocess.py                                                │
+│   skeletonization/preprocess.py                                │
 │   ├── estimate_delay_embedding_params()  # Find m, τ           │
 │   └── takens_points()              # Build delay embedding     │
 │                                                                │
-│   postprocess.py                                               │
+│   skeletonization/postprocess.py                               │
 │   ├── cluster_vpath_with_wasserstein2d_fixedlen_kmeans()       │
 │   ├── compute_w2_distance_matrix() (via experiment.py)         │
 │   └── chunk_loops_by_clustered_vpath()                         │
 │                                                                │
-│   plotting.py                                                  │
+│   skeletonization/plotting.py                                  │
 │   ├── plot_dimo()                  # Visualize DM graph        │
 │   ├── plot_cluster_subspace_mds()  # MDS analysis              │
 │   └── compare_clusters_axis_motion_with_union()                │
 │                                                                │
-│   rendering.py                                                 │
+│   skeletonization/rendering.py                                 │
 │   ├── render_grid_clusters_side_by_side()                      │
 │   └── render_clip_grid()                                       │
 │                                                                │
@@ -200,7 +225,7 @@ The C++ components must be compiled before use:
 
 ---
 
-## Scripts: Entry Points
+## Scripts: Utility Entry Points
 
 ### Script Organization
 
@@ -208,40 +233,17 @@ The C++ components must be compiled before use:
 scripts/
 │
 ├── __init__.py
-│
-├── dmwkc/                          # DM + W2 + KMeans Clustering
-│   ├── __init__.py
-│   ├── dm_pipeline.py              # Main DM extraction pipeline
-│   └── dm_hypertune.py             # Hyperparameter tuning
-│
-├── benchmark/                      # Benchmarking Framework
-│   ├── __init__.py
-│   ├── experiment.py               # Unified experiment runner
-│   ├── methods.py                  # Clustering method registry
-│   └── analysis.py                 # Result analysis & viz
-│
-└── additional/                     # Extra Utilities
-    ├── __init__.py
-    ├── extract_filled_space.py
-    ├── render_cycle.py
-    ├── render_for_label.py
-    ├── demo_torus.py
-    ├── analyze_transitions.py
-    ├── demo_behavior_overlap.py
-    └── analyze_cycle_persistence.py
+├── extract_filled_space.py          # Space extraction
+├── render_cycle.py                  # Cycle rendering
+├── render_for_label.py              # Label rendering
+├── demo_torus.py                    # Torus DM demo
+├── analyze_transitions.py           # Transition analysis
+├── demo_behavior_overlap.py         # Behavior overlap demo
+└── analyze_cycle_persistence.py     # Cycle persistence
 
-Figure 6: Script organization. The dmwkc/ folder contains the main
-pipeline while benchmark/ provides the experimental framework for
-comparing different clustering methods.
+Figure 6: Script organization. Standalone utilities for
+rendering, demos, and analysis.
 ```
-
-### Key Scripts
-
-**dm_pipeline.py** - Entry point for discrete Morse extraction. Loads intention data, applies Takens embedding, runs DM reconstruction, extracts cycles, and saves results.
-
-**experiment.py** - Unified benchmarking runner. Loads pre-computed DM cycles, builds distance matrices (W2 or feature-based), runs clustering methods, generates videos, and saves labeled results.
-
-**analysis.py** - Post-experiment analysis. Generates variance heatmaps, MDS projections, and cross-seed comparisons.
 
 ---
 
@@ -252,21 +254,22 @@ comparing different clustering methods.
 ```
 configs/
 │
-├── dmwkc/
+├── dmwk/
 │   ├── dm_pipeline.yaml            # DM extraction settings
 │   └── dm_hypertune.yaml           # Hyperparameter search
 │
 ├── benchmark/
 │   ├── experiment.yaml             # Method comparison
-│   └── analysis.yaml               # Analysis settings
+│   ├── analysis.yaml               # Analysis settings
+│   └── labeling.yaml               # Labeling settings
 │
-└── additional/
+└── scripts/
     ├── render_cycle.yaml
     ├── render_for_label.yaml
     └── extract_filled_space.yaml
 
 Figure 7: Configuration files organized by pipeline stage.
-Each YAML file defines parameters for its corresponding script.
+Each YAML file defines parameters for its corresponding module.
 ```
 
 ### Configuration Hierarchy
@@ -493,8 +496,6 @@ readable (pkl) and human-annotatable (yaml) formats.
 
 **persistent_homology.ipynb** - Alternative TDA approach using Ripser for persistence diagrams and cocycle extraction.
 
-**projection.ipynb** - Dimensionality reduction visualizations with PCA, t-SNE, and UMAP embeddings.
-
 ---
 
 ## Summary Diagram
@@ -508,12 +509,12 @@ readable (pkl) and human-annotatable (yaml) formats.
 │  └───────┬───────┘                                                      │
 │          │                                                              │
 │          ▼                                                              │
-│  ┌───────────────┐   vnl_tda/utils/load_utils.py                        │
+│  ┌───────────────┐   topo_mimic/dmwk/utils/load_utils.py                │
 │  │  Data Loader  │   get_aggregate_data(), load_rollout_from_source()   │
 │  └───────┬───────┘                                                      │
 │          │                                                              │
 │          ▼                                                              │
-│  ┌───────────────┐   vnl_tda/pipelines/tda/skeletonization/             │
+│  ┌───────────────┐   topo_mimic/dmwk/skeletonization/                   │
 │  │    Takens     │   preprocess.py                                      │
 │  │   Embedding   │   estimate_delay_embedding_params(), takens_points() │
 │  └───────┬───────┘                                                      │
@@ -526,19 +527,19 @@ readable (pkl) and human-annotatable (yaml) formats.
 │  └───────┬───────┘                                                      │
 │          │                                                              │
 │          ▼                                                              │
-│  ┌───────────────┐   vnl_tda/pipelines/tda/skeletonization/             │
+│  ┌───────────────┐   topo_mimic/dmwk/skeletonization/                   │
 │  │    Cycle      │   skeletonization.py                                 │
 │  │  Extraction   │   extract_skeleton_pcd_dm()                          │
 │  └───────┬───────┘                                                      │
 │          │                                                              │
 │          ▼                                                              │
-│  ┌───────────────┐   scripts/benchmark/experiment.py                    │
+│  ┌───────────────┐   topo_mimic/benchmark/experiment.py                 │
 │  │  Clustering   │   compute_w2_distance_matrix()                       │
-│  │   Methods     │   scripts/benchmark/methods.py                       │
+│  │   Methods     │   topo_mimic/benchmark/methods.py                    │
 │  └───────┬───────┘                                                      │
 │          │                                                              │
 │          ▼                                                              │
-│  ┌───────────────┐   vnl_tda/pipelines/tda/skeletonization/             │
+│  ┌───────────────┐   topo_mimic/dmwk/skeletonization/                   │
 │  │ Visualization │   plotting.py, rendering.py                          │
 │  │  & Analysis   │                                                      │
 │  └───────────────┘                                                      │
@@ -556,17 +557,17 @@ the relevant source files.
 
 **Step 1: Run DM Extraction**
 ```bash
-python scripts/dmwkc/dm_pipeline.py configs/dmwkc/dm_pipeline.yaml
+python -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline.yaml
 ```
 
 **Step 2: Run Benchmark Experiments**
 ```bash
-python scripts/benchmark/experiment.py configs/benchmark/experiment.yaml
+python -m topo_mimic.benchmark.experiment configs/benchmark/experiment.yaml
 ```
 
 **Step 3: Run Analysis**
 ```bash
-python -m scripts.benchmark.analysis.main configs/benchmark/analysis.yaml
+python -m topo_mimic.benchmark.analysis.main configs/benchmark/analysis.yaml
 ```
 
 ---

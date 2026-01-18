@@ -7,7 +7,7 @@ rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
 behavior_labels_csv: "/home/jovyan/vast/kaiwen/TopoVNL/behavior_labels.csv"
 
 # Method and seed to label (can be overridden via CLI)
-method: "w2_kmeans"
+method: "w2_kmeans_baseline"
 seed: 0
 
 # GT extraction parameters
@@ -37,4 +37,4 @@ launch_gui: true              # Launch Gradio GUI after computing recommendation
 # GUI parameters (if launch_gui: true)
 gui:
   port: 7860                   # Gradio server port
-  share: false                 # Create public URL
+  share: true                 # Create public URL
