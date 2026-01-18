@@ -347,19 +347,22 @@ def compute_javd_table(
 
     prefix = f"{method_name}_seed{seed}" if method_name else f"seed{seed}"
 
-    javd_path = os.path.join(output_dir, f"{prefix}_javd_table.csv")
+    javd_output_dir = os.path.join(output_dir, "javd")
+    os.makedirs(javd_output_dir, exist_ok=True)
+
+    javd_path = os.path.join(javd_output_dir, f"{prefix}_javd_table.csv")
     df_javd.to_csv(javd_path, float_format="%.6f")
     print(f"    Saved JAVD (absolute difference) table to {javd_path}")
 
-    gt_path = os.path.join(output_dir, f"{prefix}_gt_variance_table.csv")
+    gt_path = os.path.join(javd_output_dir, f"{prefix}_gt_variance_table.csv")
     df_gt.to_csv(gt_path, float_format="%.6f")
     print(f"    Saved GT variance table to {gt_path}")
 
-    disc_path = os.path.join(output_dir, f"{prefix}_discovered_variance_table.csv")
+    disc_path = os.path.join(javd_output_dir, f"{prefix}_discovered_variance_table.csv")
     df_disc.to_csv(disc_path, float_format="%.6f")
     print(f"    Saved Discovered variance table to {disc_path}")
 
-    ratio_sim_path = os.path.join(output_dir, f"{prefix}_ratio_similarity.csv")
+    ratio_sim_path = os.path.join(javd_output_dir, f"{prefix}_ratio_similarity.csv")
     df_ratio_sim.to_csv(ratio_sim_path, index=False, float_format="%.4f")
     print(f"    Saved variance ratio similarity to {ratio_sim_path}")
 
@@ -374,7 +377,7 @@ def compute_javd_table(
         })
     df_counts = pd.DataFrame(sample_counts)
 
-    counts_path = os.path.join(output_dir, f"{prefix}_sample_counts.csv")
+    counts_path = os.path.join(javd_output_dir, f"{prefix}_sample_counts.csv")
     df_counts.to_csv(counts_path, index=False)
     print(f"    Saved sample counts to {counts_path}")
 
@@ -413,16 +416,6 @@ def compute_javd_table(
     print(f"    Overall Mean GT Variance: {overall_gt:.6f}")
     print(f"    Overall Mean Discovered Variance: {overall_disc:.6f}")
     print(f"    Overall Mean Ratio Similarity: {overall_ratio_sim:.4f} (1.0 = perfect ratio preservation)")
-
-    if all_gt_transitions_for_render:
-        from .transition_ranking import count_transition_variants, print_transition_ranking, save_transition_ranking
-
-        print(f"\n    === GT Transition Variant Ranking (with turn directions) ===")
-        variants = count_transition_variants(all_gt_transitions_for_render)
-        print_transition_ranking(variants, top_k=30, show_base_totals=True)
-
-        variant_ranking_path = os.path.join(output_dir, f"{prefix}_gt_transition_variants.csv")
-        save_transition_ranking(variants, variant_ranking_path)
 
     if render_gt and all_gt_transitions_for_render:
         from .visualization import render_gt_transition_grid

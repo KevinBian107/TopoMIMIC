@@ -23,7 +23,6 @@ class AnalysisConfig:
     run_seed_comparison: bool = True
     run_transition_comparison: bool = True
     run_javd_analysis: bool = True
-    run_diversity_analysis: bool = True
     run_transition_ranking: bool = True
     render_gt_transitions: bool = False
 
@@ -76,7 +75,6 @@ def load_config(config_path: str | Path) -> AnalysisConfig:
         run_seed_comparison=cfg.get("run_seed_comparison", True),
         run_transition_comparison=cfg.get("run_transition_comparison", True),
         run_javd_analysis=cfg.get("run_javd_analysis", True),
-        run_diversity_analysis=cfg.get("run_diversity_analysis", True),
         run_transition_ranking=cfg.get("run_transition_ranking", True),
         render_gt_transitions=cfg.get("render_gt_transitions", False),
         top_k_variance_joints=cfg.get("top_k_variance_joints", 5),
