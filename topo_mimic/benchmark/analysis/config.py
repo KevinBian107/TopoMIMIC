@@ -24,6 +24,7 @@ class AnalysisConfig:
     run_transition_comparison: bool = True
     run_javd_analysis: bool = True
     run_transition_ranking: bool = True
+    run_transition_graph: bool = False
     render_gt_transitions: bool = False
 
     top_k_variance_joints: int = 5
@@ -44,6 +45,11 @@ class AnalysisConfig:
     short_behavior_threshold: int = 10
     merge_rear: bool = True
     max_gap_between_segments: int = 10
+
+    transition_graph_k: int = 3
+    transition_graph_gt_top_k: int = 10
+    transition_graph_layout: str = "spring"
+    transition_graph_figsize: tuple[float, float] = (16, 7)
 
     def __post_init__(self):
         if self.body_parts is None:
@@ -76,6 +82,7 @@ def load_config(config_path: str | Path) -> AnalysisConfig:
         run_transition_comparison=cfg.get("run_transition_comparison", True),
         run_javd_analysis=cfg.get("run_javd_analysis", True),
         run_transition_ranking=cfg.get("run_transition_ranking", True),
+        run_transition_graph=cfg.get("run_transition_graph", False),
         render_gt_transitions=cfg.get("render_gt_transitions", False),
         top_k_variance_joints=cfg.get("top_k_variance_joints", 5),
         gt_render_max_samples=cfg.get("gt_render_max_samples", 5),
@@ -92,4 +99,8 @@ def load_config(config_path: str | Path) -> AnalysisConfig:
         short_behavior_threshold=cfg.get("short_behavior_threshold", 10),
         merge_rear=cfg.get("merge_rear", True),
         max_gap_between_segments=cfg.get("max_gap_between_segments", 10),
+        transition_graph_k=cfg.get("transition_graph_k", 3),
+        transition_graph_gt_top_k=cfg.get("transition_graph_gt_top_k", 10),
+        transition_graph_layout=cfg.get("transition_graph_layout", "spring"),
+        transition_graph_figsize=tuple(cfg.get("transition_graph_figsize", [16, 7])),
     )

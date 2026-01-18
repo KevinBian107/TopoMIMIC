@@ -19,8 +19,9 @@ run_variance_heatmap: false
 run_mds_analysis: false
 run_cluster_to_label_comparison: false
 run_seed_comparison: false  # Side-by-side plots across seeds
-run_transition_comparison: true  # Side-by-side discovered vs ground truth transitions
-run_javd_analysis: true  # Joint Angle Variance Difference analysis
+run_transition_comparison: false  # Side-by-side discovered vs ground truth transitions
+run_javd_analysis: false  # Joint Angle Variance Difference analysis
+run_transition_graph: true  # k-NN graph of transition clusters based on W2 distance
 render_gt_transitions: false  # Render GT transition videos in grid format
 
 # JAVD settings
@@ -64,3 +65,9 @@ short_behavior_threshold: 10  # Max frames for intermediate behavior to be bridg
 max_gap_between_segments: 10  # Max gap between consecutive behavior segments to count as transition
 merge_rear: true  # Merge Supported Rear and Unsupported Rear into single "Rear" category
 run_transition_ranking: true  # Generate transition variant rankings (with turn directions)
+
+# Transition graph settings
+transition_graph_k: 3  # k for k-NN graph
+transition_graph_gt_top_k: 10  # Number of top GT transition types to include (by frequency)
+transition_graph_layout: "spring"  # Layout algorithm: spring, kamada_kawai, spectral
+transition_graph_figsize: [16, 7]  # [width, height]

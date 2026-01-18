@@ -17,6 +17,7 @@ from .transition_ranking import run_transition_ranking_analysis
 from .visualization import (
     plot_transition_cluster_comparison,
     plot_variance_heatmap,
+    plot_transition_graph,
 )
 from .javd import compute_javd_table
 
@@ -315,6 +316,29 @@ def run_analysis(config: AnalysisConfig) -> None:
                         )
                     except Exception as e:
                         print(f"    JAVD analysis failed: {e}")
+
+            if config.run_transition_graph:
+                if os.path.exists(config.behavior_labels_csv):
+                    print(f"    Running transition graph analysis...")
+                    try:
+                        plot_transition_graph(
+                            cluster_dict=cluster_dict,
+                            cluster_labels=cluster_labels,
+                            turn_directions=turn_directions,
+                            behavior_labels_csv=config.behavior_labels_csv,
+                            rodent_rollout_dir=config.rodent_rollout_dir,
+                            output_dir=seed_output_dir,
+                            k_neighbors=config.transition_graph_k,
+                            gt_top_k=config.transition_graph_gt_top_k,
+                            layout=config.transition_graph_layout,
+                            figsize=config.transition_graph_figsize,
+                            method_name=method_name,
+                            seed=seed,
+                            short_threshold=config.short_behavior_threshold,
+                            merge_rear=config.merge_rear,
+                        )
+                    except Exception as e:
+                        print(f"    Transition graph analysis failed: {e}")
 
         if config.run_seed_comparison and len(cluster_dicts) > 1:
             print(f"  Running side-by-side seed comparison...")

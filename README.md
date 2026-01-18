@@ -93,6 +93,9 @@ launch_gui: true
 
 The GUI displays each cluster's video row individually (extracted from the grid video) alongside label recommendations, allowing you to assign labels and save them to `labels_seed_{seed}.yaml`.
 
+![Autoassign](/figures/autoassign.png)
+> Example of autoassigning labels
+
 ### Analysis
 Generate variance heatmaps, cross-method comparison, and seed stability analysis:
 ```bash

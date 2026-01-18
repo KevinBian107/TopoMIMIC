@@ -675,3 +675,358 @@ def plot_variance_heatmap(
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     plt.close()
     print(f"Saved variance heatmap to {save_path}")
+
+
+def compute_w2_distance_gaussian(
+    points1: np.ndarray,
+    points2: np.ndarray,
+) -> float:
+    """
+    Compute W2 distance between two point sets using Gaussian approximation.
+
+    W2²(P, Q) = ||μ_P - μ_Q||² + trace(Σ_P + Σ_Q - 2(Σ_P^{1/2} Σ_Q Σ_P^{1/2})^{1/2})
+    """
+    if len(points1) < 2 or len(points2) < 2:
+        return np.inf
+
+    mu1 = np.mean(points1, axis=0)
+    mu2 = np.mean(points2, axis=0)
+
+    cov1 = np.cov(points1.T)
+    cov2 = np.cov(points2.T)
+
+    if cov1.ndim == 0:
+        cov1 = np.array([[cov1]])
+    if cov2.ndim == 0:
+        cov2 = np.array([[cov2]])
+
+    mean_diff = np.sum((mu1 - mu2) ** 2)
+
+    try:
+        sqrt_cov1 = np.linalg.cholesky(cov1 + np.eye(cov1.shape[0]) * 1e-6)
+        product = sqrt_cov1 @ cov2 @ sqrt_cov1.T
+        eigvals = np.linalg.eigvalsh(product)
+        eigvals = np.maximum(eigvals, 0)
+        sqrt_product = np.sum(np.sqrt(eigvals))
+
+        trace_term = np.trace(cov1) + np.trace(cov2) - 2 * sqrt_product
+        trace_term = max(trace_term, 0)
+
+        w2_squared = mean_diff + trace_term
+        return np.sqrt(w2_squared)
+    except np.linalg.LinAlgError:
+        return np.sqrt(mean_diff)
+
+
+def plot_transition_graph(
+    cluster_dict: dict,
+    cluster_labels: dict[int, str],
+    turn_directions: dict[int, str] = None,
+    behavior_labels_csv: str = "",
+    rodent_rollout_dir: str = "",
+    output_dir: str = "",
+    k_neighbors: int = 3,
+    gt_top_k: int = 10,
+    layout: str = "spring",
+    figsize: tuple[float, float] = (16, 7),
+    method_name: str = "",
+    seed: int = 0,
+    short_threshold: int = 10,
+    merge_rear: bool = True,
+) -> None:
+    """
+    Create k-NN transition graphs comparing discovered clusters vs GT.
+
+    Nodes are transition clusters (with turn directions as separate nodes).
+    Edges connect k nearest neighbors based on W2 distance of intention distributions.
+
+    Args:
+        gt_top_k: Number of top GT transition types to include (by frequency)
+    """
+    import networkx as nx
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    if turn_directions is None:
+        turn_directions = {}
+
+    discovered_nodes = {}
+    for cid, label in cluster_labels.items():
+        parsed = parse_cluster_label(label, merge_rear=merge_rear)
+        if parsed is None:
+            continue
+        if parsed.comparison_type != "transition":
+            continue
+        if len(parsed.primitives) < 2:
+            continue
+
+        user_turn = turn_directions.get(cid, "")
+        if user_turn:
+            turn_enum = parse_turn_direction(user_turn)
+            turn_short = turn_direction_to_string(turn_enum)
+            node_label = f"[{turn_short}] {parsed.primitives[0]} <-> {parsed.primitives[1]}"
+        else:
+            node_label = f"{parsed.primitives[0]} <-> {parsed.primitives[1]}"
+
+        entries = cluster_dict.get(cid, [])
+        if not entries:
+            continue
+
+        discovered_nodes[cid] = {
+            "label": node_label,
+            "entries": entries,
+            "primitives": parsed.primitives,
+            "turn": user_turn,
+        }
+
+    if len(discovered_nodes) < 2:
+        print("    Not enough transition clusters for graph, skipping")
+        return
+
+    print(f"    Loading intention data for {len(discovered_nodes)} discovered clusters...")
+    intention_cache = {}
+    all_clip_ids = set()
+    for cid, info in discovered_nodes.items():
+        for clip_id, _ in info["entries"]:
+            all_clip_ids.add(int(clip_id))
+
+    for clip_id in tqdm(sorted(all_clip_ids), desc="    Loading intentions"):
+        try:
+            intention_cache[clip_id] = load_intention(clip_id, rodent_rollout_dir)
+        except Exception:
+            pass
+
+    discovered_features = {}
+    for cid, info in discovered_nodes.items():
+        features = []
+        for clip_id, frames in info["entries"]:
+            clip_id = int(clip_id)
+            if clip_id not in intention_cache:
+                continue
+            intention = intention_cache[clip_id]
+            frames = np.asarray(frames, dtype=int)
+            frames = frames[frames < len(intention)]
+            if len(frames) > 0:
+                features.append(intention[frames])
+        if features:
+            discovered_features[cid] = np.vstack(features)
+
+    if len(discovered_features) < 2:
+        print("    Not enough clusters with features, skipping")
+        return
+
+    from .behavior_parsing import PRIMITIVE_BEHAVIORS
+    from itertools import combinations
+
+    all_primitives = list(PRIMITIVE_BEHAVIORS)
+    if merge_rear:
+        all_primitives = [p for p in all_primitives if p not in {"Supported Rear", "Unsupported Rear"}]
+        if "Rear" not in all_primitives:
+            all_primitives.append("Rear")
+
+    print(f"    Loading all GT transitions for {len(all_primitives)} behaviors...")
+    all_gt_transitions = []
+    for b1, b2 in combinations(all_primitives, 2):
+        transitions = find_gt_transition_frames(
+            behavior_labels_csv,
+            [b1, b2],
+            short_threshold=short_threshold,
+            merge_rear=merge_rear,
+            include_turn_direction=True,
+        )
+        all_gt_transitions.extend(transitions)
+
+    gt_nodes = defaultdict(list)
+    for t in all_gt_transitions:
+        turn = t.from_turn if t.from_turn != TurnDirection.STRAIGHT else t.to_turn
+        turn_short = turn_direction_to_string(turn)
+        behaviors_sorted = tuple(sorted([t.from_behavior, t.to_behavior]))
+        if turn == TurnDirection.STRAIGHT:
+            node_label = f"{behaviors_sorted[0]} <-> {behaviors_sorted[1]}"
+        else:
+            node_label = f"[{turn_short}] {behaviors_sorted[0]} <-> {behaviors_sorted[1]}"
+        gt_nodes[node_label].append(t)
+
+    gt_node_counts = {label: len(transitions) for label, transitions in gt_nodes.items()}
+    top_gt_labels = sorted(gt_node_counts.keys(), key=lambda x: gt_node_counts[x], reverse=True)[:gt_top_k]
+    gt_nodes = {label: gt_nodes[label] for label in top_gt_labels}
+
+    print(f"    Selected top {len(gt_nodes)} GT transition types (by frequency)")
+
+    for t in all_gt_transitions:
+        if t.clip_id not in intention_cache:
+            try:
+                intention_cache[t.clip_id] = load_intention(t.clip_id, rodent_rollout_dir)
+            except Exception:
+                pass
+
+    gt_features = {}
+    for node_label, transitions in gt_nodes.items():
+        features = []
+        for t in transitions:
+            if t.clip_id not in intention_cache:
+                continue
+            intention = intention_cache[t.clip_id]
+            for frame in t.all_frames:
+                if frame < len(intention):
+                    features.append(intention[frame])
+        if features:
+            gt_features[node_label] = np.array(features)
+
+    if len(gt_features) < 2:
+        print("    Not enough GT nodes with features, skipping")
+        return
+
+    print(f"    Computing W2 distances for {len(discovered_features)} discovered nodes...")
+    disc_cids = list(discovered_features.keys())
+    disc_n = len(disc_cids)
+    disc_dist_matrix = np.zeros((disc_n, disc_n))
+    for i in range(disc_n):
+        for j in range(i + 1, disc_n):
+            d = compute_w2_distance_gaussian(
+                discovered_features[disc_cids[i]],
+                discovered_features[disc_cids[j]]
+            )
+            disc_dist_matrix[i, j] = d
+            disc_dist_matrix[j, i] = d
+
+    print(f"    Computing W2 distances for {len(gt_features)} GT nodes...")
+    gt_labels = list(gt_features.keys())
+    gt_n = len(gt_labels)
+    gt_dist_matrix = np.zeros((gt_n, gt_n))
+    for i in range(gt_n):
+        for j in range(i + 1, gt_n):
+            d = compute_w2_distance_gaussian(
+                gt_features[gt_labels[i]],
+                gt_features[gt_labels[j]]
+            )
+            gt_dist_matrix[i, j] = d
+            gt_dist_matrix[j, i] = d
+
+    def build_knn_graph(labels, dist_matrix, node_info, k):
+        G = nx.Graph()
+        n = len(labels)
+        for i, label in enumerate(labels):
+            if isinstance(label, int):
+                display_label = node_info[label]["label"]
+            else:
+                display_label = label
+            G.add_node(i, label=display_label)
+
+        k_actual = min(k, n - 1)
+        for i in range(n):
+            distances = dist_matrix[i].copy()
+            distances[i] = np.inf
+            nearest = np.argsort(distances)[:k_actual]
+            for j in nearest:
+                if not G.has_edge(i, j):
+                    G.add_edge(i, j, weight=distances[j])
+        return G
+
+    G_disc = build_knn_graph(disc_cids, disc_dist_matrix, discovered_nodes, k_neighbors)
+    G_gt = build_knn_graph(gt_labels, gt_dist_matrix, {}, k_neighbors)
+
+    fig, axes = plt.subplots(1, 2, figsize=figsize)
+
+    def get_layout(G, layout_name):
+        if layout_name == "spring":
+            return nx.spring_layout(G, seed=42, k=2)
+        elif layout_name == "kamada_kawai":
+            return nx.kamada_kawai_layout(G)
+        elif layout_name == "spectral":
+            return nx.spectral_layout(G)
+        else:
+            return nx.spring_layout(G, seed=42)
+
+    behavior_colors = {
+        "Walking": "#3498DB",
+        "Rear": "#E74C3C",
+        "Immobility": "#95A5A6",
+        "Orienting": "#9B59B6",
+        "Grooming": "#2ECC71",
+    }
+
+    def get_node_color(label):
+        for behavior, color in behavior_colors.items():
+            if behavior in label:
+                return color
+        return "#F39C12"
+
+    ax = axes[0]
+    pos_disc = get_layout(G_disc, layout)
+    node_colors_disc = [get_node_color(G_disc.nodes[n]["label"]) for n in G_disc.nodes()]
+    node_labels_disc = {n: G_disc.nodes[n]["label"] for n in G_disc.nodes()}
+
+    edges = G_disc.edges(data=True)
+    if edges:
+        weights = [e[2].get("weight", 1) for e in edges]
+        max_w = max(weights) if weights else 1
+        edge_widths = [2.0 * (1 - w / max_w) + 0.5 for w in weights]
+    else:
+        edge_widths = []
+
+    nx.draw_networkx_edges(G_disc, pos_disc, ax=ax, width=edge_widths, alpha=0.6, edge_color="#888888")
+    nx.draw_networkx_nodes(G_disc, pos_disc, ax=ax, node_color=node_colors_disc,
+                           node_size=800, edgecolors="white", linewidths=2)
+
+    for node, (x, y) in pos_disc.items():
+        label = node_labels_disc[node]
+        ax.annotate(label, (x, y), fontsize=8, ha="center", va="center",
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8))
+
+    ax.set_title(f"Discovered Clusters (k={k_neighbors})", fontsize=13, fontweight="bold")
+    ax.axis("off")
+
+    ax = axes[1]
+    pos_gt = get_layout(G_gt, layout)
+    node_colors_gt = [get_node_color(G_gt.nodes[n]["label"]) for n in G_gt.nodes()]
+    node_labels_gt = {n: G_gt.nodes[n]["label"] for n in G_gt.nodes()}
+
+    edges = G_gt.edges(data=True)
+    if edges:
+        weights = [e[2].get("weight", 1) for e in edges]
+        max_w = max(weights) if weights else 1
+        edge_widths = [2.0 * (1 - w / max_w) + 0.5 for w in weights]
+    else:
+        edge_widths = []
+
+    nx.draw_networkx_edges(G_gt, pos_gt, ax=ax, width=edge_widths, alpha=0.6, edge_color="#888888")
+    nx.draw_networkx_nodes(G_gt, pos_gt, ax=ax, node_color=node_colors_gt,
+                           node_size=800, edgecolors="white", linewidths=2)
+
+    for node, (x, y) in pos_gt.items():
+        label = node_labels_gt[node]
+        ax.annotate(label, (x, y), fontsize=8, ha="center", va="center",
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8))
+
+    ax.set_title(f"Ground Truth (k={k_neighbors})", fontsize=13, fontweight="bold")
+    ax.axis("off")
+
+    title = f"Transition Cluster k-NN Graph (W2 Distance)"
+    if method_name:
+        title = f"{method_name} seed {seed}: {title}"
+    fig.suptitle(title, fontsize=14, fontweight="bold")
+
+    plt.tight_layout()
+
+    graph_dir = os.path.join(output_dir, "transition_graph")
+    os.makedirs(graph_dir, exist_ok=True)
+
+    prefix = f"{method_name}_seed{seed}" if method_name else f"seed{seed}"
+    save_path = os.path.join(graph_dir, f"{prefix}_transition_knn_graph.pdf")
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
+    plt.close()
+    print(f"    Saved transition graph to {save_path}")
+
+    disc_dist_df_data = []
+    for i, cid_i in enumerate(disc_cids):
+        row = {"Cluster": discovered_nodes[cid_i]["label"]}
+        for j, cid_j in enumerate(disc_cids):
+            row[discovered_nodes[cid_j]["label"]] = disc_dist_matrix[i, j]
+        disc_dist_df_data.append(row)
+
+    import pandas as pd
+    disc_dist_df = pd.DataFrame(disc_dist_df_data).set_index("Cluster")
+    disc_dist_path = os.path.join(graph_dir, f"{prefix}_discovered_w2_distances.csv")
+    disc_dist_df.to_csv(disc_dist_path, float_format="%.4f")
+    print(f"    Saved discovered W2 distance matrix to {disc_dist_path}")
