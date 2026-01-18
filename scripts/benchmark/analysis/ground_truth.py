@@ -419,3 +419,41 @@ def find_gt_intersection_frames(
                 intersections.append((clip_id, frame))
 
     return intersections
+
+
+def find_pure_behavior_segments(
+    csv_path: str,
+    target_behaviors: list[str],
+    min_length: int = 30,
+    merge_rear: bool = True,
+) -> list[BehaviorSegment]:
+    """
+    Find segments of pure behaviors (not transitions).
+
+    This is useful for non-transition behaviors like grooming that involve
+    movement but are not behavioral transitions.
+
+    Args:
+        csv_path: Path to behavior_labels.csv
+        target_behaviors: List of behavior names to extract (e.g., ["Grooming"])
+        min_length: Minimum segment length in frames
+        merge_rear: Whether to merge rear categories
+
+    Returns:
+        List of BehaviorSegment for the target behaviors
+    """
+    segments, _ = load_behavior_segments(csv_path, merge_rear=merge_rear)
+
+    target_set = set()
+    for b in target_behaviors:
+        normalized = normalize_behavior_name(b)
+        if merge_rear:
+            normalized = merge_rear_category(normalized)
+        target_set.add(normalized)
+
+    pure_segments = []
+    for seg in segments:
+        if seg.behavior in target_set and seg.length >= min_length:
+            pure_segments.append(seg)
+
+    return pure_segments
