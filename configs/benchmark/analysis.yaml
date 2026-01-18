@@ -21,7 +21,6 @@ run_cluster_to_label_comparison: false
 run_seed_comparison: false  # Side-by-side plots across seeds
 run_transition_comparison: true  # Side-by-side discovered vs ground truth transitions
 run_javd_analysis: true  # Joint Angle Variance Difference analysis
-run_diversity_analysis: true  # Cluster diversity metrics (transition coverage, turn sensitivity)
 render_gt_transitions: false  # Render GT transition videos in grid format
 
 # JAVD settings

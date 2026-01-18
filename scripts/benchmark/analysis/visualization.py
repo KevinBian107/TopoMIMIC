@@ -235,13 +235,15 @@ def _plot_transition_groups(
 
         plt.tight_layout(rect=[0, 0, 1, 0.95])
 
+        transitions_dir = os.path.join(output_dir, "transitions")
+        os.makedirs(transitions_dir, exist_ok=True)
+
         safe_group = group_name.replace(" ", "_").replace("/", "-")
         save_path = os.path.join(
-            output_dir,
+            transitions_dir,
             f"{method_name}_seed{seed}_transitions_{feature_type}_{safe_group}.pdf" if method_name else f"transitions_{feature_type}_{safe_group}.pdf"
         )
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
-        plt.savefig(save_path.replace(".pdf", ".png"), dpi=150, bbox_inches="tight")
         plt.close()
 
         print(f"    Saved {group_name} [{feature_type}] ({len(group_data)} transitions) to {save_path}")
@@ -509,8 +511,11 @@ def render_gt_transition_grid(
 
     cluster_labels = {i: label for i, label in enumerate(sorted(gt_frames_by_transition.keys()))}
 
+    videos_dir = os.path.join(output_dir, "videos")
+    os.makedirs(videos_dir, exist_ok=True)
+
     prefix = f"{method_name}_seed{seed}" if method_name else f"seed{seed}"
-    out_path = os.path.join(output_dir, f"{prefix}_gt_transitions.mp4")
+    out_path = os.path.join(videos_dir, f"{prefix}_gt_transitions.mp4")
 
     try:
         render_grid_clusters_side_by_side(
@@ -620,8 +625,10 @@ def plot_variance_heatmap(
 
     plt.tight_layout()
 
-    save_path = os.path.join(output_dir, f"{method_name}_variance_heatmap.pdf" if method_name else "variance_heatmap.pdf")
+    variance_dir = os.path.join(output_dir, "variance")
+    os.makedirs(variance_dir, exist_ok=True)
+
+    save_path = os.path.join(variance_dir, f"{method_name}_variance_heatmap.pdf" if method_name else "variance_heatmap.pdf")
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
-    plt.savefig(save_path.replace(".pdf", ".png"), dpi=150, bbox_inches="tight")
     plt.close()
     print(f"Saved variance heatmap to {save_path}")

@@ -19,12 +19,6 @@ from .visualization import (
     plot_variance_heatmap,
 )
 from .javd import compute_javd_table
-from .cluster_diversity import (
-    compute_cluster_diversity,
-    get_gt_transition_types,
-    print_diversity_metrics,
-    save_diversity_metrics,
-)
 
 
 def plot_variance_heatmaps_side_by_side(
@@ -137,9 +131,11 @@ def plot_variance_heatmaps_side_by_side(
 
     plt.tight_layout(rect=[0, 0, 0.9, 0.95])
 
-    save_path = os.path.join(output_dir, f"{method_name}_variance_heatmap_seeds.pdf" if method_name else "variance_heatmap_seeds.pdf")
+    variance_dir = os.path.join(output_dir, "variance")
+    os.makedirs(variance_dir, exist_ok=True)
+
+    save_path = os.path.join(variance_dir, f"{method_name}_variance_heatmap_seeds.pdf" if method_name else "variance_heatmap_seeds.pdf")
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
-    plt.savefig(save_path.replace(".pdf", ".png"), dpi=150, bbox_inches="tight")
     plt.close()
     print(f"Saved side-by-side variance heatmaps to {save_path}")
 
@@ -235,8 +231,10 @@ def run_analysis(config: AnalysisConfig) -> None:
                         from vnl_tda.pipelines.tda.skeletonization.plotting import (
                             plot_cluster_subspace_mds_separate,
                         )
+                        mds_dir = os.path.join(seed_output_dir, "mds")
+                        os.makedirs(mds_dir, exist_ok=True)
                         target_clusters = list(cluster_dict.keys())
-                        mds_save_path = os.path.join(seed_output_dir, f"{method_name}_seed{seed}_mds_separate.pdf")
+                        mds_save_path = os.path.join(mds_dir, f"{method_name}_seed{seed}_mds_separate.pdf")
                         plot_cluster_subspace_mds_separate(
                             cluster_cycles_by_id=cluster_dict,
                             cluster_labels=cluster_labels,
@@ -297,29 +295,6 @@ def run_analysis(config: AnalysisConfig) -> None:
                         )
                     except Exception as e:
                         print(f"    JAVD analysis failed: {e}")
-
-            if config.run_diversity_analysis:
-                if os.path.exists(config.behavior_labels_csv):
-                    print(f"    Running cluster diversity analysis...")
-                    try:
-                        gt_transitions = get_gt_transition_types(
-                            config.behavior_labels_csv,
-                            merge_rear=config.merge_rear,
-                        )
-                        diversity_metrics = compute_cluster_diversity(
-                            cluster_labels=cluster_labels,
-                            gt_transition_types=gt_transitions,
-                            merge_rear=config.merge_rear,
-                        )
-                        print_diversity_metrics(diversity_metrics, method_name, seed)
-                        save_diversity_metrics(
-                            diversity_metrics,
-                            seed_output_dir,
-                            method_name,
-                            seed,
-                        )
-                    except Exception as e:
-                        print(f"    Diversity analysis failed: {e}")
 
         if config.run_seed_comparison and len(cluster_dicts) > 1:
             print(f"  Running side-by-side seed comparison...")
