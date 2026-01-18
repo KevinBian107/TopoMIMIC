@@ -82,6 +82,20 @@ python -m scripts.benchmark.experiment configs/benchmark/experiment.yaml
 
 This runs all enabled methods (vanilla_kmeans, pca_kmeans, umap_kmeans, w2_kmeans, spectral, arhmm, slds).
 
+### Cluster Labeling
+After running the benchmark experiment, label the clusters using the automatic label assignment pipeline:
+```bash
+python -m scripts.benchmark.labeling.main configs/benchmark/labeling.yaml
+```
+
+This computes W2 distances between cluster cycles and ground truth transition windows, then generates label recommendations. To launch the interactive GUI for manual labeling:
+```yaml
+# In configs/benchmark/labeling.yaml
+launch_gui: true
+```
+
+The GUI displays each cluster's video row individually (extracted from the grid video) alongside label recommendations, allowing you to assign labels and save them to `labels_seed_{seed}.yaml`.
+
 ### Analysis
 Generate variance heatmaps, cross-method comparison, and seed stability analysis:
 ```bash

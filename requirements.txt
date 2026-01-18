@@ -6,3 +6,4 @@ ripser
 gudhi
 seaborn
 keypoint-moseq[cuda]
+gradio
