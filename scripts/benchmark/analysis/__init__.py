@@ -42,6 +42,13 @@ from .data_loading import (
     load_experiment_results,
 )
 from .javd import compute_javd_table
+from .cluster_diversity import (
+    DiversityMetrics,
+    compute_cluster_diversity,
+    get_gt_transition_types,
+    print_diversity_metrics,
+    save_diversity_metrics,
+)
 from .visualization import (
     plot_transition_cluster_comparison,
     plot_variance_heatmap,
@@ -74,6 +81,11 @@ __all__ = [
     "load_intention",
     "load_experiment_results",
     "compute_javd_table",
+    "DiversityMetrics",
+    "compute_cluster_diversity",
+    "get_gt_transition_types",
+    "print_diversity_metrics",
+    "save_diversity_metrics",
     "plot_transition_cluster_comparison",
     "plot_variance_heatmap",
     "run_analysis",
