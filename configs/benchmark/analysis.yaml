@@ -57,5 +57,10 @@ body_parts:
 max_loops: 200
 
 # Transition comparison settings
-transition_window: 5  # Number of frames around transition boundary to include
 max_transition_points: 500  # Max points to display per cluster
+
+# New transition analysis settings
+short_behavior_threshold: 10  # Max frames for intermediate behavior to be bridged (e.g., rear->walk->orienting(8 frames)->walk becomes rear->walk)
+max_gap_between_segments: 10  # Max gap between consecutive behavior segments to count as transition
+merge_rear: true  # Merge Supported Rear and Unsupported Rear into single "Rear" category
+run_transition_ranking: true  # Generate transition variant rankings (with turn directions)

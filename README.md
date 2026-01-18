@@ -87,7 +87,7 @@ This runs all enabled methods (vanilla_kmeans, pca_kmeans, umap_kmeans, w2_kmean
 ### Analysis
 Generate variance heatmaps, cross-method comparison, and seed stability analysis:
 ```bash
-python -m scripts.benchmark.analysis configs/benchmark/analysis.yaml
+python -m scripts.benchmark.analysis.main configs/benchmark/analysis.yaml
 ```
 
 ## Rendering

@@ -550,7 +550,7 @@ With `methods.pca_kmeans.enabled: true`, etc.
 
 **Step 3: Analyze Results**
 ```bash
-python scripts/benchmark/analysis.py configs/benchmark/analysis.yaml
+python -m scripts.benchmark.analysis.main configs/benchmark/analysis.yaml
 ```
 Output: Variance heatmaps, MDS plots in `out/analysis_output/`
 
