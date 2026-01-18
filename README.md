@@ -101,6 +101,14 @@ To render cycles for visualization:
 python -m scripts.additional.render_cycle configs/additional/render_cycle.yaml
 ```
 
+## Demo
+We have the code for illustrative demos:
+
+```bash
+python -m scripts.additional.demo_behavior_overlap
+python -m scripts.additional.demo_torus
+```
+
 ## Acknowledgements
 - This codebase is adapted from the [MIMIC-MJX](https://mimic-mjx.talmolab.org/) package.
 - The discrete Morse graph construction was done using [PCD-Graph-Recon-DM](https://github.com/lucasjmagee/PCD-Graph-Recon-DM/tree/main).
