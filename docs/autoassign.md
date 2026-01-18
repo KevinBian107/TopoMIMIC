@@ -38,7 +38,7 @@ Gradio-based interface for reviewing recommendations and manually assigning labe
 ### Command Line
 
 ```bash
-python -m scripts.benchmark.labeling.main configs/benchmark/labeling.yaml
+python -m topo_mimic.benchmark.labeling.main configs/benchmark/labeling.yaml
 ```
 
 ### Configuration
@@ -60,7 +60,7 @@ Key settings in `configs/benchmark/labeling.yaml`:
 Set `launch_gui: true` in the config, or launch standalone:
 
 ```python
-from scripts.benchmark.labeling.gui import launch_gui_standalone
+from topo_mimic.benchmark.labeling.gui import launch_gui_standalone
 
 launch_gui_standalone(
     experiment_dir="out/benchmark_experiment",
@@ -103,7 +103,7 @@ out/benchmark_experiment/{method}/
 The analysis pipeline automatically loads labels from `labels_seed_{seed}.yaml`. After using the labeling module (either accepting recommendations or manually assigning via GUI), run the analysis:
 
 ```bash
-python -m scripts.benchmark.analysis.main configs/benchmark/analysis.yaml
+python -m topo_mimic.benchmark.analysis.main configs/benchmark/analysis.yaml
 ```
 
 ## Transition Type Format

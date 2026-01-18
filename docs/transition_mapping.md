@@ -183,7 +183,7 @@ analysis_output/
 
 ## Module Structure
 
-The analysis code is organized in `scripts/benchmark/analysis/`:
+The analysis code is organized in `topo_mimic/benchmark/analysis/`:
 
 ```
 analysis/
