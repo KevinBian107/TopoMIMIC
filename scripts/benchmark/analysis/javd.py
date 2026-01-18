@@ -12,6 +12,56 @@ from .ground_truth import find_gt_transition_frames, TransitionSegment
 from .data_loading import load_qpos, QPOS_BODY_NAMES, get_body_part_indices
 
 
+def compute_variance_ratio_similarity(
+    gt_variance: dict[str, float],
+    disc_variance: dict[str, float],
+    joints: list[str],
+) -> float:
+    """
+    Compute cosine similarity between normalized variance profiles.
+
+    Normalizes each profile to sum to 1, then computes cosine similarity.
+    This measures whether the relative proportions (ratios) between joints
+    are preserved, regardless of absolute magnitude differences.
+
+    Example:
+        GT:   [0.05, 0.03, 0.02] → normalized: [0.50, 0.30, 0.20]
+        Disc: [0.01, 0.006, 0.004] → normalized: [0.50, 0.30, 0.20]
+        Cosine similarity = 1.0 (perfect ratio preservation)
+
+    Args:
+        gt_variance: Dict mapping joint name to GT variance
+        disc_variance: Dict mapping joint name to discovered variance
+        joints: List of joint names to compare
+
+    Returns:
+        Cosine similarity (0 to 1), or NaN if insufficient data
+    """
+    if len(joints) < 2:
+        return np.nan
+
+    gt_values = np.array([gt_variance.get(j, 0.0) for j in joints])
+    disc_values = np.array([disc_variance.get(j, 0.0) for j in joints])
+
+    gt_sum = gt_values.sum()
+    disc_sum = disc_values.sum()
+
+    if gt_sum == 0 or disc_sum == 0:
+        return np.nan
+
+    gt_norm = gt_values / gt_sum
+    disc_norm = disc_values / disc_sum
+
+    dot_product = np.dot(gt_norm, disc_norm)
+    gt_mag = np.linalg.norm(gt_norm)
+    disc_mag = np.linalg.norm(disc_norm)
+
+    if gt_mag == 0 or disc_mag == 0:
+        return np.nan
+
+    return dot_product / (gt_mag * disc_mag)
+
+
 def compute_frames_variance(
     frames_list: list[tuple[int, np.ndarray]],
     rodent_rollout_dir: str,
@@ -228,26 +278,25 @@ def compute_javd_table(
         top_joints = [joint for joint, _ in sorted_gt_joints[:top_k] if gt_variance[joint] > 0]
 
         javd_for_cluster = {}
-        javd_norm_for_cluster = {}
         gt_var_for_cluster = {}
         disc_var_for_cluster = {}
         for joint in top_joints:
             var_disc = discovered_variance.get(joint, 0.0)
             var_gt = gt_variance.get(joint, 0.0)
             javd_for_cluster[joint] = abs(var_disc - var_gt)
-            if var_gt > 0:
-                javd_norm_for_cluster[joint] = abs(var_disc - var_gt) / var_gt
-            else:
-                javd_norm_for_cluster[joint] = np.nan
             gt_var_for_cluster[joint] = var_gt
             disc_var_for_cluster[joint] = var_disc
             all_top_joints.add(joint)
 
+        ratio_sim = compute_variance_ratio_similarity(
+            gt_variance, discovered_variance, top_joints
+        )
+
         javd_data[gt_label] = {
             "javd": javd_for_cluster,
-            "javd_norm": javd_norm_for_cluster,
             "gt_var": gt_var_for_cluster,
             "disc_var": disc_var_for_cluster,
+            "ratio_similarity": ratio_sim,
             "top_joints": top_joints,
             "cid": cid,
             "n_discovered_frames": n_discovered_frames,
@@ -285,19 +334,22 @@ def compute_javd_table(
         return df
 
     df_javd = build_variance_table("javd")
-    df_javd_norm = build_variance_table("javd_norm")
     df_gt = build_variance_table("gt_var")
     df_disc = build_variance_table("disc_var")
+
+    ratio_sim_data = []
+    for cluster_name in cluster_labels_list:
+        ratio_sim_data.append({
+            "Transition": cluster_name,
+            "Ratio Similarity": javd_data[cluster_name]["ratio_similarity"],
+        })
+    df_ratio_sim = pd.DataFrame(ratio_sim_data)
 
     prefix = f"{method_name}_seed{seed}" if method_name else f"seed{seed}"
 
     javd_path = os.path.join(output_dir, f"{prefix}_javd_table.csv")
     df_javd.to_csv(javd_path, float_format="%.6f")
-    print(f"    Saved JAVD (difference) table to {javd_path}")
-
-    javd_norm_path = os.path.join(output_dir, f"{prefix}_javd_normalized_table.csv")
-    df_javd_norm.to_csv(javd_norm_path, float_format="%.6f")
-    print(f"    Saved JAVD (normalized) table to {javd_norm_path}")
+    print(f"    Saved JAVD (absolute difference) table to {javd_path}")
 
     gt_path = os.path.join(output_dir, f"{prefix}_gt_variance_table.csv")
     df_gt.to_csv(gt_path, float_format="%.6f")
@@ -306,6 +358,10 @@ def compute_javd_table(
     disc_path = os.path.join(output_dir, f"{prefix}_discovered_variance_table.csv")
     df_disc.to_csv(disc_path, float_format="%.6f")
     print(f"    Saved Discovered variance table to {disc_path}")
+
+    ratio_sim_path = os.path.join(output_dir, f"{prefix}_ratio_similarity.csv")
+    df_ratio_sim.to_csv(ratio_sim_path, index=False, float_format="%.4f")
+    print(f"    Saved variance ratio similarity to {ratio_sim_path}")
 
     sample_counts = []
     for cluster_name in cluster_labels_list:
@@ -336,24 +392,27 @@ def compute_javd_table(
     print(f"\n    === JAVD Table (|Discovered - GT|) ({method_name} seed {seed}) ===")
     print(df_javd.to_string(float_format=lambda x: f"{x:.4f}" if pd.notna(x) else ""))
 
-    print(f"\n    === JAVD Normalized Table (|Disc - GT| / GT) ({method_name} seed {seed}) ===")
-    print(df_javd_norm.to_string(float_format=lambda x: f"{x:.4f}" if pd.notna(x) else ""))
-
     print(f"\n    === GT Variance Table ({method_name} seed {seed}) ===")
     print(df_gt.to_string(float_format=lambda x: f"{x:.4f}" if pd.notna(x) else ""))
 
     print(f"\n    === Discovered Variance Table ({method_name} seed {seed}) ===")
     print(df_disc.to_string(float_format=lambda x: f"{x:.4f}" if pd.notna(x) else ""))
+
+    print(f"\n    === Variance Ratio Similarity ({method_name} seed {seed}) ===")
+    print("    Cosine similarity of normalized variance profiles (1.0 = identical ratios)")
+    print("    Comparing: Discovered variance proportions vs GT variance proportions")
+    print("    (Normalized by sum, so [0.05, 0.03, 0.02] and [0.01, 0.006, 0.004] both become [0.5, 0.3, 0.2])")
+    print(df_ratio_sim.to_string(index=False, float_format=lambda x: f"{x:.4f}" if pd.notna(x) else ""))
     print()
 
     overall_javd = df_javd.loc["Average", "Average"]
-    overall_javd_norm = df_javd_norm.loc["Average", "Average"]
     overall_gt = df_gt.loc["Average", "Average"]
     overall_disc = df_disc.loc["Average", "Average"]
-    print(f"    Overall Mean JAVD: {overall_javd:.6f}")
-    print(f"    Overall Mean JAVD (normalized): {overall_javd_norm:.4f} ({overall_javd_norm*100:.1f}%)")
+    overall_ratio_sim = df_ratio_sim["Ratio Similarity"].mean()
+    print(f"    Overall Mean JAVD (absolute): {overall_javd:.6f}")
     print(f"    Overall Mean GT Variance: {overall_gt:.6f}")
     print(f"    Overall Mean Discovered Variance: {overall_disc:.6f}")
+    print(f"    Overall Mean Ratio Similarity: {overall_ratio_sim:.4f} (1.0 = perfect ratio preservation)")
 
     if all_gt_transitions_for_render:
         from .transition_ranking import count_transition_variants, print_transition_ranking, save_transition_ranking
