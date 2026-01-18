@@ -27,10 +27,12 @@ from sklearn.decomposition import PCA
 from tqdm import tqdm
 
 from vnl_tda.utils.load_utils import load_rollout_from_source, get_aggregate_data
+from vnl_tda.utils.rendering import render_from_saved_rollout
 from vnl_tda.pipelines.tda.skeletonization.plotting import (
     plot_cluster_subspace_mds_separate,
     _compare_clusters_axis_motion_with_union,
 )
+from vnl_tda.pipelines.tda.skeletonization.rendering import render_grid_clusters_side_by_side
 
 
 QPOS_BODY_NAMES = [
@@ -66,7 +68,13 @@ class AnalysisConfig:
     run_cluster_to_label_comparison: bool = True
     run_seed_comparison: bool = True
     run_transition_comparison: bool = True
+    run_javd_analysis: bool = True
+    render_gt_transitions: bool = False
 
+    top_k_variance_joints: int = 5
+    gt_render_max_samples: int = 5
+    gt_render_framerate: int = 30
+    gt_render_target_size: tuple[int, int] = (320, 240)
     mds_k_cycles: int = 50
     mds_s_top: int = 10
     mds_behaviors: list[str] = None
@@ -107,6 +115,12 @@ def load_config(config_path: str) -> AnalysisConfig:
         run_cluster_to_label_comparison=cfg.get("run_cluster_to_label_comparison", True),
         run_seed_comparison=cfg.get("run_seed_comparison", True),
         run_transition_comparison=cfg.get("run_transition_comparison", True),
+        run_javd_analysis=cfg.get("run_javd_analysis", True),
+        render_gt_transitions=cfg.get("render_gt_transitions", False),
+        top_k_variance_joints=cfg.get("top_k_variance_joints", 5),
+        gt_render_max_samples=cfg.get("gt_render_max_samples", 5),
+        gt_render_framerate=cfg.get("gt_render_framerate", 30),
+        gt_render_target_size=tuple(cfg.get("gt_render_target_size", [320, 240])),
         mds_k_cycles=cfg.get("mds_k_cycles", 50),
         mds_s_top=cfg.get("mds_s_top", 10),
         mds_behaviors=cfg.get("mds_behaviors", None),
@@ -305,11 +319,101 @@ def load_behavior_segments_multilabel(csv_path: str) -> dict[int, dict[int, set[
     return {k: dict(v) for k, v in clip_behaviors.items()}
 
 
+def find_gt_transition_frames_from_segments(
+    csv_path: str,
+    primitives: list[str],
+    max_gap: int = 10,
+    balance_segments: bool = True,
+) -> list[tuple[int, int]]:
+    """
+    Find GT transition frames from consecutive behavior segments.
+
+    A transition is identified when two segments of the target behaviors
+    occur consecutively (with minimal gap). Returns frames from BOTH
+    segments, with optional balancing to match segment lengths.
+
+    Args:
+        csv_path: Path to behavior_labels.csv
+        primitives: List of two primitive behaviors (e.g., ["Walking", "Immobility"])
+        max_gap: Maximum allowed gap between consecutive segments to count as transition
+        balance_segments: If True, truncate longer segment to match shorter one's length
+
+    Returns:
+        List of (clip_id, frame) tuples for frames in both segments
+    """
+    if len(primitives) < 2:
+        return []
+
+    b1 = normalize_behavior_name(primitives[0])
+    b2 = normalize_behavior_name(primitives[1])
+    target_pair = tuple(sorted([b1, b2]))
+
+    df = pd.read_csv(csv_path)
+
+    segments_by_clip = defaultdict(list)
+    for _, row in df.iterrows():
+        start_frame = int(row["Start_Frame"])
+        end_frame = int(row["End_Frame"])
+        if start_frame == end_frame == 0:
+            continue
+
+        video = str(row["Video"])
+        clip_id = int(video.replace("clip_", "").replace(".mp4", ""))
+        behavior = normalize_behavior_name(str(row["Behavior"]))
+
+        if behavior in PRIMITIVE_BEHAVIORS:
+            segments_by_clip[clip_id].append({
+                "behavior": behavior,
+                "start": start_frame,
+                "end": end_frame,
+            })
+
+    transitions = []
+
+    for clip_id, segments in segments_by_clip.items():
+        segments = sorted(segments, key=lambda x: x["start"])
+
+        for i in range(len(segments) - 1):
+            seg_a = segments[i]
+            seg_b = segments[i + 1]
+
+            pair = tuple(sorted([seg_a["behavior"], seg_b["behavior"]]))
+            if pair != target_pair:
+                continue
+
+            gap = seg_b["start"] - seg_a["end"]
+            if gap > max_gap:
+                continue
+
+            len_a = seg_a["end"] - seg_a["start"] + 1
+            len_b = seg_b["end"] - seg_b["start"] + 1
+
+            if balance_segments:
+                min_len = min(len_a, len_b)
+                a_start = seg_a["end"] - min_len + 1
+                a_end = seg_a["end"]
+                b_start = seg_b["start"]
+                b_end = seg_b["start"] + min_len - 1
+            else:
+                a_start = seg_a["start"]
+                a_end = seg_a["end"]
+                b_start = seg_b["start"]
+                b_end = seg_b["end"]
+
+            for f in range(a_start, a_end + 1):
+                transitions.append((clip_id, f))
+            for f in range(b_start, b_end + 1):
+                transitions.append((clip_id, f))
+
+    return list(set(transitions))
+
+
 def find_gt_transition_frames(
     clip_behaviors: dict[int, dict[int, set[str]]],
     primitives: list[str],
     window: int = 5,
 ) -> list[tuple[int, int]]:
+    """Legacy function - kept for compatibility but may have issues with sparse labels."""
     if len(primitives) < 2:
         return []
 
@@ -850,6 +954,465 @@ def plot_variance_heatmap(
     print(f"Saved variance heatmap to {save_path}")
 
 
+def compute_frames_variance(
+    frames_list: list[tuple[int, np.ndarray]],
+    rodent_rollout_dir: str,
+    body_parts: list[str],
+    max_loops: int = 200,
+) -> dict[str, float]:
+    """
+    Compute variance for each body part from discovered cluster frames.
+
+    Args:
+        frames_list: List of (clip_id, frame_indices) tuples
+        rodent_rollout_dir: Path to rollout data
+        body_parts: List of body part names to compute variance for
+        max_loops: Maximum number of entries to process
+
+    Returns:
+        Dict mapping body part name to variance value
+    """
+    body_indices = []
+    valid_body_parts = []
+    for bp in body_parts:
+        if bp in QPOS_BODY_NAMES:
+            body_indices.append(QPOS_BODY_NAMES.index(bp))
+            valid_body_parts.append(bp)
+
+    all_qpos_by_body = {bp: [] for bp in valid_body_parts}
+
+    for i, (clip_id, frames) in enumerate(frames_list):
+        if i >= max_loops:
+            break
+
+        try:
+            qpos = load_qpos(clip_id, rodent_rollout_dir)
+        except Exception:
+            continue
+
+        frames = np.asarray(frames, dtype=int)
+        frames = frames[frames < len(qpos)]
+
+        if len(frames) < 1:
+            continue
+
+        for bp, body_idx in zip(valid_body_parts, body_indices):
+            if body_idx < qpos.shape[1]:
+                all_qpos_by_body[bp].append(qpos[frames, body_idx])
+
+    variance_dict = {}
+    for bp in valid_body_parts:
+        if all_qpos_by_body[bp]:
+            combined = np.concatenate(all_qpos_by_body[bp])
+            variance_dict[bp] = float(np.var(combined))
+        else:
+            variance_dict[bp] = 0.0
+
+    return variance_dict
+
+
+def compute_gt_frames_variance(
+    gt_frames: list[tuple[int, int]],
+    rodent_rollout_dir: str,
+    body_parts: list[str],
+) -> dict[str, float]:
+    """
+    Compute variance for each body part from GT transition frames.
+
+    Args:
+        gt_frames: List of (clip_id, frame) tuples
+        rodent_rollout_dir: Path to rollout data
+        body_parts: List of body part names to compute variance for
+
+    Returns:
+        Dict mapping body part name to variance value
+    """
+    body_indices = []
+    valid_body_parts = []
+    for bp in body_parts:
+        if bp in QPOS_BODY_NAMES:
+            body_indices.append(QPOS_BODY_NAMES.index(bp))
+            valid_body_parts.append(bp)
+
+    all_qpos_by_body = {bp: [] for bp in valid_body_parts}
+    qpos_cache = {}
+
+    for clip_id, frame in gt_frames:
+        clip_id = int(clip_id)
+        if clip_id not in qpos_cache:
+            try:
+                qpos_cache[clip_id] = load_qpos(clip_id, rodent_rollout_dir)
+            except Exception:
+                continue
+
+        qpos = qpos_cache[clip_id]
+        if frame >= len(qpos):
+            continue
+
+        for bp, body_idx in zip(valid_body_parts, body_indices):
+            if body_idx < qpos.shape[1]:
+                all_qpos_by_body[bp].append(qpos[frame, body_idx])
+
+    variance_dict = {}
+    for bp in valid_body_parts:
+        if all_qpos_by_body[bp]:
+            values = np.array(all_qpos_by_body[bp])
+            variance_dict[bp] = float(np.var(values))
+        else:
+            variance_dict[bp] = 0.0
+
+    return variance_dict
+
+
+def render_gt_transition_grid(
+    gt_frames_by_transition: dict[str, list[tuple[int, int]]],
+    rodent_rollout_dir: str,
+    output_dir: str,
+    max_samples: int = 5,
+    framerate: int = 30,
+    target_size: tuple[int, int] = (320, 240),
+    method_name: str = "",
+    seed: int = 0,
+) -> None:
+    """
+    Render GT transition frames in a grid video.
+
+    Each transition includes all frames from both consecutive behavior segments.
+
+    Args:
+        gt_frames_by_transition: Dict mapping transition label to list of (clip_id, frame)
+        rodent_rollout_dir: Path to rollout data
+        output_dir: Directory to save output videos
+        max_samples: Maximum samples per transition type
+        framerate: Video framerate
+        target_size: (width, height) per tile
+        method_name: Name for output filename
+        seed: Seed for output filename
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    cluster_dict_format = {}
+    for i, (transition_label, frames) in enumerate(sorted(gt_frames_by_transition.items())):
+        grouped_by_clip = defaultdict(list)
+        for clip_id, frame in frames:
+            grouped_by_clip[clip_id].append(frame)
+
+        entries = []
+        for clip_id, frame_list in grouped_by_clip.items():
+            frame_arr = np.array(sorted(set(frame_list)), dtype=int)
+            entries.append((clip_id, frame_arr))
+
+        if max_samples and len(entries) > max_samples:
+            np.random.seed(42)
+            indices = np.random.choice(len(entries), max_samples, replace=False)
+            entries = [entries[j] for j in indices]
+
+        cluster_dict_format[i] = entries
+
+    if not cluster_dict_format:
+        print("    No GT transitions to render")
+        return
+
+    print(f"    Loading GT transition frames for rendering...")
+    cluster_chunks = {}
+    cluster_clip_ids = {}
+
+    for cid, entries in tqdm(cluster_dict_format.items(), desc="    Rendering GT"):
+        cluster_chunks[cid] = []
+        cluster_clip_ids[cid] = []
+
+        for clip_id, frames in entries:
+            try:
+                rollout = load_rollout_from_source(clip_id, rodent_rollout_dir)
+                full_frames = render_from_saved_rollout(rollout)
+                T = len(full_frames)
+
+                valid_frames = sorted([f for f in frames if 0 <= f < T])
+                if valid_frames:
+                    chunk = [full_frames[f] for f in valid_frames]
+                    cluster_chunks[cid].append(chunk)
+                    cluster_clip_ids[cid].append(clip_id)
+            except Exception:
+                continue
+
+    cluster_labels = {i: label for i, label in enumerate(sorted(gt_frames_by_transition.keys()))}
+
+    prefix = f"{method_name}_seed{seed}" if method_name else f"seed{seed}"
+    out_path = os.path.join(output_dir, f"{prefix}_gt_transitions.mp4")
+
+    try:
+        render_grid_clusters_side_by_side(
+            cluster_chunks=cluster_chunks,
+            out_path=out_path,
+            framerate=framerate,
+            max_samples_per_cluster=max_samples,
+            target_size=target_size,
+            title=f"GT Transitions ({method_name} seed {seed})" if method_name else "GT Transitions",
+            per_tile_labels=True,
+            cluster_labels=cluster_labels,
+            cluster_clip_ids=cluster_clip_ids,
+        )
+        print(f"    Saved GT transition video to {out_path}")
+    except Exception as e:
+        print(f"    Failed to render GT transitions: {e}")
+
+
+def compute_javd_table(
+    cluster_dict: dict,
+    cluster_labels: dict[int, str],
+    behavior_labels_csv: str,
+    rodent_rollout_dir: str,
+    output_dir: str,
+    body_parts: list[str],
+    top_k: int = 5,
+    transition_window: int = 5,
+    max_loops: int = 200,
+    method_name: str = "",
+    seed: int = 0,
+    render_gt: bool = False,
+    gt_render_max_samples: int = 5,
+    gt_render_framerate: int = 30,
+    gt_render_target_size: tuple[int, int] = (320, 240),
+) -> pd.DataFrame | None:
+    """
+    Compute JAVD (Joint Angle Variance Difference) table for transition clusters.
+
+    Compares variance in joint angles between discovered transition clusters
+    and ground truth transition frames. For each cluster, identifies the top K
+    highest-variance joints from GT and computes the variance difference.
+
+    Args:
+        cluster_dict: Dict mapping cluster_id to list of (clip_id, frames)
+        cluster_labels: Dict mapping cluster_id to label string
+        behavior_labels_csv: Path to behavior labels CSV file
+        rodent_rollout_dir: Path to rollout data
+        output_dir: Directory to save output files
+        body_parts: List of body part names to analyze
+        top_k: Number of top variance joints to consider per cluster
+        transition_window: Window size for finding GT transition frames
+        max_loops: Maximum entries to process per cluster
+        method_name: Name of the method for output filenames
+        seed: Seed value for output filenames
+        render_gt: Whether to render GT transition videos
+        gt_render_max_samples: Max samples per transition for rendering
+        gt_render_framerate: Video framerate for GT rendering
+        gt_render_target_size: Target tile size for GT rendering
+
+    Returns:
+        DataFrame with JAVD table, or None if no transition clusters found
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    clip_behaviors = load_behavior_segments_multilabel(behavior_labels_csv)
+    if not clip_behaviors:
+        print("    No behavior segments loaded, skipping JAVD analysis")
+        return None
+
+    transition_clusters = []
+    for cid, label in cluster_labels.items():
+        parsed = parse_cluster_label(label)
+        if parsed is None:
+            continue
+        if parsed.comparison_type != "transition":
+            continue
+        if len(parsed.primitives) < 2:
+            continue
+
+        transition_clusters.append({
+            "cid": cid,
+            "label": label,
+            "parsed": parsed,
+            "primitives": parsed.primitives,
+        })
+
+    if not transition_clusters:
+        print("    No transition clusters found, skipping JAVD analysis")
+        return None
+
+    print(f"    Found {len(transition_clusters)} transition clusters for JAVD analysis")
+
+    javd_data = {}
+    all_top_joints = set()
+    gt_frames_by_transition = {}
+
+    for tc in tqdm(transition_clusters, desc="    Computing JAVD"):
+        cid = tc["cid"]
+        primitives = tc["primitives"]
+        gt_label = f"{primitives[0]} <-> {primitives[1]}"
+
+        entries = cluster_dict.get(cid, [])
+        if not entries:
+            continue
+
+        gt_frames = find_gt_transition_frames_from_segments(
+            behavior_labels_csv, primitives, max_gap=10
+        )
+        if not gt_frames:
+            continue
+
+        if gt_label not in gt_frames_by_transition:
+            gt_frames_by_transition[gt_label] = []
+        gt_frames_by_transition[gt_label].extend(gt_frames)
+
+        n_discovered_frames = sum(len(frames) for _, frames in entries[:max_loops])
+        n_gt_frames = len(gt_frames)
+
+        discovered_variance = compute_frames_variance(
+            entries, rodent_rollout_dir, body_parts, max_loops
+        )
+        gt_variance = compute_gt_frames_variance(
+            gt_frames, rodent_rollout_dir, body_parts
+        )
+
+        sorted_gt_joints = sorted(
+            gt_variance.items(), key=lambda x: x[1], reverse=True
+        )
+        top_joints = [joint for joint, _ in sorted_gt_joints[:top_k] if gt_variance[joint] > 0]
+
+        javd_for_cluster = {}
+        javd_norm_for_cluster = {}
+        gt_var_for_cluster = {}
+        disc_var_for_cluster = {}
+        for joint in top_joints:
+            var_disc = discovered_variance.get(joint, 0.0)
+            var_gt = gt_variance.get(joint, 0.0)
+            javd_for_cluster[joint] = abs(var_disc - var_gt)
+            if var_gt > 0:
+                javd_norm_for_cluster[joint] = abs(var_disc - var_gt) / var_gt
+            else:
+                javd_norm_for_cluster[joint] = np.nan
+            gt_var_for_cluster[joint] = var_gt
+            disc_var_for_cluster[joint] = var_disc
+            all_top_joints.add(joint)
+
+        javd_data[gt_label] = {
+            "javd": javd_for_cluster,
+            "javd_norm": javd_norm_for_cluster,
+            "gt_var": gt_var_for_cluster,
+            "disc_var": disc_var_for_cluster,
+            "top_joints": top_joints,
+            "cid": cid,
+            "n_discovered_frames": n_discovered_frames,
+            "n_gt_frames": n_gt_frames,
+        }
+
+    if not javd_data:
+        print("    No valid JAVD data computed")
+        return None
+
+    all_joints_list = sorted(all_top_joints)
+    cluster_labels_list = sorted(javd_data.keys())
+
+    def build_variance_table(data_key: str) -> pd.DataFrame:
+        table_data = []
+        for joint in all_joints_list:
+            row = {"Joint": joint}
+            for cluster_name in cluster_labels_list:
+                cluster_info = javd_data[cluster_name]
+                if joint in cluster_info[data_key]:
+                    row[cluster_name] = cluster_info[data_key][joint]
+                else:
+                    row[cluster_name] = np.nan
+            table_data.append(row)
+
+        df = pd.DataFrame(table_data)
+        df = df.set_index("Joint")
+
+        row_means = df.mean(axis=1, skipna=True)
+        df["Average"] = row_means
+
+        col_means = df.mean(axis=0, skipna=True)
+        avg_row = pd.DataFrame([col_means], index=["Average"])
+        df = pd.concat([df, avg_row])
+        return df
+
+    df_javd = build_variance_table("javd")
+    df_javd_norm = build_variance_table("javd_norm")
+    df_gt = build_variance_table("gt_var")
+    df_disc = build_variance_table("disc_var")
+
+    prefix = f"{method_name}_seed{seed}" if method_name else f"seed{seed}"
+
+    javd_path = os.path.join(output_dir, f"{prefix}_javd_table.csv")
+    df_javd.to_csv(javd_path, float_format="%.6f")
+    print(f"    Saved JAVD (difference) table to {javd_path}")
+
+    javd_norm_path = os.path.join(output_dir, f"{prefix}_javd_normalized_table.csv")
+    df_javd_norm.to_csv(javd_norm_path, float_format="%.6f")
+    print(f"    Saved JAVD (normalized) table to {javd_norm_path}")
+
+    gt_path = os.path.join(output_dir, f"{prefix}_gt_variance_table.csv")
+    df_gt.to_csv(gt_path, float_format="%.6f")
+    print(f"    Saved GT variance table to {gt_path}")
+
+    disc_path = os.path.join(output_dir, f"{prefix}_discovered_variance_table.csv")
+    df_disc.to_csv(disc_path, float_format="%.6f")
+    print(f"    Saved Discovered variance table to {disc_path}")
+
+    sample_counts = []
+    for cluster_name in cluster_labels_list:
+        info = javd_data[cluster_name]
+        sample_counts.append({
+            "Transition": cluster_name,
+            "GT Frames": info["n_gt_frames"],
+            "Discovered Frames": info["n_discovered_frames"],
+            "Cluster ID": info["cid"],
+        })
+    df_counts = pd.DataFrame(sample_counts)
+
+    counts_path = os.path.join(output_dir, f"{prefix}_sample_counts.csv")
+    df_counts.to_csv(counts_path, index=False)
+    print(f"    Saved sample counts to {counts_path}")
+
+    print(f"\n    === Sample Counts ({method_name} seed {seed}) ===")
+    print(df_counts.to_string(index=False))
+    print()
+
+    low_sample_transitions = df_counts[
+        (df_counts["GT Frames"] < 50) | (df_counts["Discovered Frames"] < 50)
+    ]["Transition"].tolist()
+    if low_sample_transitions:
+        print(f"    WARNING: Low sample count (<50 frames) for: {low_sample_transitions}")
+        print()
+
+    print(f"\n    === JAVD Table (|Discovered - GT|) ({method_name} seed {seed}) ===")
+    print(df_javd.to_string(float_format=lambda x: f"{x:.4f}" if pd.notna(x) else ""))
+
+    print(f"\n    === JAVD Normalized Table (|Disc - GT| / GT) ({method_name} seed {seed}) ===")
+    print(df_javd_norm.to_string(float_format=lambda x: f"{x:.4f}" if pd.notna(x) else ""))
+
+    print(f"\n    === GT Variance Table ({method_name} seed {seed}) ===")
+    print(df_gt.to_string(float_format=lambda x: f"{x:.4f}" if pd.notna(x) else ""))
+
+    print(f"\n    === Discovered Variance Table ({method_name} seed {seed}) ===")
+    print(df_disc.to_string(float_format=lambda x: f"{x:.4f}" if pd.notna(x) else ""))
+    print()
+
+    overall_javd = df_javd.loc["Average", "Average"]
+    overall_javd_norm = df_javd_norm.loc["Average", "Average"]
+    overall_gt = df_gt.loc["Average", "Average"]
+    overall_disc = df_disc.loc["Average", "Average"]
+    print(f"    Overall Mean JAVD: {overall_javd:.6f}")
+    print(f"    Overall Mean JAVD (normalized): {overall_javd_norm:.4f} ({overall_javd_norm*100:.1f}%)")
+    print(f"    Overall Mean GT Variance: {overall_gt:.6f}")
+    print(f"    Overall Mean Discovered Variance: {overall_disc:.6f}")
+
+    if render_gt and gt_frames_by_transition:
+        print(f"\n    Rendering GT transition videos...")
+        render_gt_transition_grid(
+            gt_frames_by_transition=gt_frames_by_transition,
+            rodent_rollout_dir=rodent_rollout_dir,
+            output_dir=output_dir,
+            max_samples=gt_render_max_samples,
+            framerate=gt_render_framerate,
+            target_size=gt_render_target_size,
+            method_name=method_name,
+            seed=seed,
+        )
+
+    return df_javd
+
+
 def get_ground_truth_frames(
     cluster_label: str,
     behavior_labels: dict[str, list[int]],
@@ -1195,6 +1758,30 @@ def run_analysis(config: AnalysisConfig) -> None:
                         )
                     except Exception as e:
                         print(f"    Transition comparison failed: {e}")
+
+            if config.run_javd_analysis:
+                if os.path.exists(config.behavior_labels_csv):
+                    print(f"    Running JAVD analysis...")
+                    try:
+                        compute_javd_table(
+                            cluster_dict=cluster_dict,
+                            cluster_labels=cluster_labels,
+                            behavior_labels_csv=config.behavior_labels_csv,
+                            rodent_rollout_dir=config.rodent_rollout_dir,
+                            output_dir=seed_output_dir,
+                            body_parts=config.body_parts,
+                            top_k=config.top_k_variance_joints,
+                            transition_window=config.transition_window,
+                            max_loops=config.max_loops,
+                            method_name=method_name,
+                            seed=seed,
+                            render_gt=config.render_gt_transitions,
+                            gt_render_max_samples=config.gt_render_max_samples,
+                            gt_render_framerate=config.gt_render_framerate,
+                            gt_render_target_size=config.gt_render_target_size,
+                        )
+                    except Exception as e:
+                        print(f"    JAVD analysis failed: {e}")
 
         if config.run_seed_comparison and len(cluster_dicts) > 1:
             print(f"  Running side-by-side seed comparison...")

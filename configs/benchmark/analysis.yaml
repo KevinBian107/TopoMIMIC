@@ -15,11 +15,19 @@ methods: ["w2_kmeans"]
 seeds: [0]
 
 # Analysis modules to run
-run_variance_heatmap: true
-run_mds_analysis: true
-run_cluster_to_label_comparison: true
-run_seed_comparison: true  # Side-by-side plots across seeds
+run_variance_heatmap: false
+run_mds_analysis: false
+run_cluster_to_label_comparison: false
+run_seed_comparison: false  # Side-by-side plots across seeds
 run_transition_comparison: true  # Side-by-side discovered vs ground truth transitions
+run_javd_analysis: true  # Joint Angle Variance Difference analysis
+render_gt_transitions: true  # Render GT transition videos in grid format
+
+# JAVD settings
+top_k_variance_joints: 5  # Number of top variance joints per cluster to include
+gt_render_max_samples: 5  # Max samples per transition for video rendering
+gt_render_framerate: 30  # Framerate for GT transition videos
+gt_render_target_size: [320, 240]  # Target tile size for GT rendering
 
 # MDS settings
 mds_k_cycles: 50

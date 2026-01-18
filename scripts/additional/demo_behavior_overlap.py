@@ -50,7 +50,7 @@ TRANSITION_LABELS = {
 
 @dataclass
 class Config:
-    data_dir: str = "data/rodent_ar"
+    data_source: str = "data/rodent_ar_latest.h5"
     labels_path: str = "behavior_labels.csv"
     output_path: str = "out/behavior_clusters.png"
     n_clips: int = 200
@@ -118,14 +118,27 @@ def find_transition_frames(
     return transitions
 
 
-def load_all_intentions(data_dir: str, clip_ids: list[int]) -> dict[int, np.ndarray]:
-    """Load all intentions without subsampling."""
+def is_consolidated_format(path: str) -> bool:
+    return path.endswith('.h5')
+
+
+def load_all_intentions(data_source: str, clip_ids: list[int]) -> dict[int, np.ndarray]:
+    """Load all intentions from either folder or consolidated H5 format."""
     clip_data = {}
-    for clip_id in clip_ids:
-        path = os.path.join(data_dir, f"clip_{clip_id}.h5")
-        if os.path.exists(path):
-            with h5py.File(path, "r") as f:
-                clip_data[clip_id] = np.array(f["intention"])
+
+    if is_consolidated_format(data_source):
+        with h5py.File(data_source, "r") as f:
+            intention_data = f["intention"]
+            for clip_id in clip_ids:
+                if clip_id < intention_data.shape[0]:
+                    clip_data[clip_id] = np.array(intention_data[clip_id])
+    else:
+        for clip_id in clip_ids:
+            path = os.path.join(data_source, f"clip_{clip_id}.h5")
+            if os.path.exists(path):
+                with h5py.File(path, "r") as f:
+                    clip_data[clip_id] = np.array(f["intention"])
+
     return clip_data
 
 
@@ -305,17 +318,17 @@ def main():
     config = Config()
     # Go up to project root (scripts/additional -> scripts -> TopoVNL)
     base_dir = Path(__file__).parent.parent.parent
-    config.data_dir = str(base_dir / "data" / "rodent_ar")
+    config.data_source = str(base_dir / "data" / "rodent_ar_latest.h5")
     config.labels_path = str(base_dir / "behavior_labels.csv")
     config.output_path = str(base_dir / "out" / "behavior_clusters.png")
     os.makedirs(os.path.dirname(config.output_path), exist_ok=True)
 
-    print("Loading data...")
+    print(f"Loading data from: {config.data_source}")
     segments = load_behavior_labels(config.labels_path)
     clip_behaviors = build_frame_behavior_map(segments)
 
     clips_to_load = sorted(clip_behaviors.keys())[:config.n_clips]
-    clip_data = load_all_intentions(config.data_dir, clips_to_load)
+    clip_data = load_all_intentions(config.data_source, clips_to_load)
     print(f"Loaded {len(clip_data)} clips")
 
     # Find transition frames
