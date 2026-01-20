@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["numpy", "h5py", "matplotlib", "scikit-learn", "scipy"]
+# dependencies = ["numpy", "h5py", "matplotlib", "scikit-learn", "scipy", "pyyaml", "umap-learn"]
 # ///
 """
 Visualize transition clusters with individual behavior clusters on the side.
@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import h5py
+import yaml
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.gridspec import GridSpec
@@ -23,6 +24,8 @@ from matplotlib.patches import FancyArrowPatch, ConnectionPatch
 from scipy.ndimage import gaussian_filter
 from scipy.spatial import ConvexHull
 from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
+import umap
 
 
 np.random.seed(42)
@@ -65,14 +68,37 @@ def get_transition_label(trans_key: tuple[str, str]) -> str:
 @dataclass
 class Config:
     data_source: str = "data/rodent_ar_latest.h5"
-    labels_path: str = "behavior_labels.csv"
+    labels_path: str = "data/behavior_labels.csv"
     output_path: str = "out/behavior_clusters.png"
     n_clips: int = 200
     max_points_per_behavior: int = 1000
     max_transition_points: int = 500
     transition_window: int = 5
-    top_k_transitions: int = 3
+    top_k_transitions: int = 2
     figsize: tuple[int, int] = (16, 10)
+    density_only: bool = False
+    show_side_panels: bool = True
+    projection: str = "pca"
+
+    @classmethod
+    def from_yaml(cls, yaml_path: Path, base_dir: Path) -> "Config":
+        with open(yaml_path, "r") as f:
+            data = yaml.safe_load(f)
+        config = cls(
+            data_source=str(base_dir / data.get("data_source", cls.data_source)),
+            labels_path=str(base_dir / data.get("labels_path", cls.labels_path)),
+            output_path=str(base_dir / data.get("output_path", cls.output_path)),
+            n_clips=data.get("n_clips", cls.n_clips),
+            max_points_per_behavior=data.get("max_points_per_behavior", cls.max_points_per_behavior),
+            max_transition_points=data.get("max_transition_points", cls.max_transition_points),
+            transition_window=data.get("transition_window", cls.transition_window),
+            top_k_transitions=data.get("top_k_transitions", cls.top_k_transitions),
+            figsize=tuple(data.get("figsize", cls.figsize)),
+            density_only=data.get("density_only", cls.density_only),
+            show_side_panels=data.get("show_side_panels", cls.show_side_panels),
+            projection=data.get("projection", cls.projection),
+        )
+        return config
 
 
 def load_behavior_labels(labels_path: str) -> list[dict]:
@@ -192,21 +218,17 @@ def compute_density(points: np.ndarray, grid_size: int = 50, sigma: float = 1.2)
     return xc, yc, H
 
 
-def plot_behavior_panel(ax, points: np.ndarray, behavior: str, color: str):
+def plot_behavior_panel(ax, points: np.ndarray, behavior: str, color: str, density_only: bool = False):
     """Plot a single behavior cluster panel."""
-    points_sub = random_subsample(points, 300)
-
-    # Density contour
     if len(points) > 20:
         xc, yc, H = compute_density(points)
-        ax.contourf(xc, yc, H, levels=6, colors=[color], alpha=0.3)
         ax.contour(xc, yc, H, levels=3, colors=[color], alpha=0.7, linewidths=1.5)
 
-    # Points
-    ax.scatter(points_sub[:, 0], points_sub[:, 1], c=color, s=25, alpha=0.7,
-               edgecolors='white', linewidths=0.4)
+    if not density_only:
+        points_sub = random_subsample(points, 300)
+        ax.scatter(points_sub[:, 0], points_sub[:, 1], c=color, s=25, alpha=0.7,
+                   edgecolors='white', linewidths=0.4)
 
-    # Label
     centroid = points.mean(axis=0)
     ax.annotate(behavior, centroid, fontsize=11, fontweight='bold', ha='center', va='center',
                 bbox=dict(boxstyle='round,pad=0.3', facecolor=color, alpha=0.9, edgecolor='white'),
@@ -228,20 +250,17 @@ def plot_main_panel(
     config: Config,
 ):
     """Plot main panel with transition clusters."""
+    if not config.density_only:
+        for behavior, points in all_behavior_points.items():
+            color = BEHAVIOR_COLORS[behavior]
+            points_sub = random_subsample(points, 200)
+            ax.scatter(points_sub[:, 0], points_sub[:, 1], c=color, s=8, alpha=0.15, edgecolors='none')
 
-    # First draw faded behavior backgrounds
-    for behavior, points in all_behavior_points.items():
-        color = BEHAVIOR_COLORS[behavior]
-        points_sub = random_subsample(points, 200)
-        ax.scatter(points_sub[:, 0], points_sub[:, 1], c=color, s=8, alpha=0.15, edgecolors='none')
-
-    # Compute centroids first for label placement
     centroids = {}
     for trans_key, points in transition_points.items():
         if len(points) > 0:
             centroids[trans_key] = points.mean(axis=0)
 
-    # Draw transition clusters prominently
     for trans_key, points in transition_points.items():
         if len(points) == 0:
             continue
@@ -249,17 +268,14 @@ def plot_main_panel(
         color = transition_colors.get(trans_key, "#888888")
         label = get_transition_label(trans_key)
 
-        points_sub = random_subsample(points, config.max_transition_points)
-
-        # Density contour for transition cluster
         if len(points) > 15:
             xc, yc, H = compute_density(points, grid_size=40, sigma=1.0)
-            ax.contourf(xc, yc, H, levels=5, colors=[color], alpha=0.25)
             ax.contour(xc, yc, H, levels=3, colors=[color], alpha=0.7, linewidths=1.5)
 
-        # Points
-        ax.scatter(points_sub[:, 0], points_sub[:, 1], c=color, s=50, alpha=0.8,
-                   edgecolors='white', linewidths=1, label=f"{label} ({len(points)})", zorder=5)
+        if not config.density_only:
+            points_sub = random_subsample(points, config.max_transition_points)
+            ax.scatter(points_sub[:, 0], points_sub[:, 1], c=color, s=50, alpha=0.8,
+                       edgecolors='white', linewidths=1, label=f"{label} ({len(points)})", zorder=5)
 
         # Centroid label with dynamic offset to avoid overlap
         centroid = points.mean(axis=0)
@@ -293,29 +309,34 @@ def plot_main_panel(
     ax.set_xlabel("PC1", fontsize=12)
     ax.set_ylabel("PC2", fontsize=12)
     ax.set_title("Transition Clusters", fontsize=14, fontweight='bold')
-    ax.legend(loc='upper right', fontsize=9, framealpha=0.95)
+    if config.density_only:
+        from matplotlib.patches import Patch
+        legend_elements = [
+            Patch(facecolor=transition_colors.get(k, "#888888"), alpha=0.6,
+                  label=f"{get_transition_label(k)} ({len(v)})")
+            for k, v in transition_points.items() if len(v) > 0
+        ]
+        ax.legend(handles=legend_elements, loc='upper right', fontsize=9, framealpha=0.95)
+    else:
+        ax.legend(loc='upper right', fontsize=9, framealpha=0.95)
     ax.grid(True, alpha=0.3)
 
 
-def plot_density_panel(ax, all_behavior_points: dict):
+def plot_density_panel(ax, all_behavior_points: dict, density_only: bool = False):
     """Plot behavior clusters without transitions - clean view."""
-
-    # Compute all centroids first for label placement
     centroids = {b: pts.mean(axis=0) for b, pts in all_behavior_points.items() if len(pts) > 0}
 
-    # Plot each behavior with contour lines only (no fill/shading)
     for behavior, points in all_behavior_points.items():
         color = BEHAVIOR_COLORS[behavior]
 
-        # Contour lines only
         if len(points) > 20:
             xc, yc, H = compute_density(points, grid_size=50, sigma=1.2)
             ax.contour(xc, yc, H, levels=4, colors=[color], alpha=0.8, linewidths=1.5)
 
-        # Scatter points
-        points_sub = random_subsample(points, 300)
-        ax.scatter(points_sub[:, 0], points_sub[:, 1], c=color, s=20, alpha=0.6,
-                   edgecolors='white', linewidths=0.3)
+        if not density_only:
+            points_sub = random_subsample(points, 300)
+            ax.scatter(points_sub[:, 0], points_sub[:, 1], c=color, s=20, alpha=0.6,
+                       edgecolors='white', linewidths=0.3)
 
     # Add labels with offset to avoid overlap
     for behavior, points in all_behavior_points.items():
@@ -350,12 +371,9 @@ def plot_density_panel(ax, all_behavior_points: dict):
 
 
 def main():
-    config = Config()
-    # Go up to project root (scripts/additional -> scripts -> TopoVNL)
-    base_dir = Path(__file__).parent.parent.parent
-    config.data_source = str(base_dir / "data" / "rodent_ar_latest.h5")
-    config.labels_path = str(base_dir / "behavior_labels.csv")
-    config.output_path = str(base_dir / "out" / "behavior_clusters.png")
+    base_dir = Path(__file__).parent.parent
+    config_path = base_dir / "configs" / "scripts" / "demo_behavior_overlap.yaml"
+    config = Config.from_yaml(config_path, base_dir)
     os.makedirs(os.path.dirname(config.output_path), exist_ok=True)
 
     print(f"Loading data from: {config.data_source}")
@@ -402,49 +420,77 @@ def main():
                 trans_intentions[trans_key].append(clip_data[clip_id][frame_idx])
         trans_intentions[trans_key] = np.array(trans_intentions[trans_key]) if trans_intentions[trans_key] else np.array([])
 
-    # Combine all for PCA
-    all_points = []
-    for b in BEHAVIORS:
-        all_points.append(behavior_intentions[b])
-    all_points = np.vstack(all_points)
+    all_points = np.vstack([behavior_intentions[b] for b in BEHAVIORS])
+    all_trans_points = [v for v in trans_intentions.values() if len(v) > 0]
+    combined_points = np.vstack([all_points] + all_trans_points) if all_trans_points else all_points
 
-    print(f"\nFitting PCA on {len(all_points)} points...")
-    pca = PCA(n_components=2)
-    pca.fit(all_points)
-    print(f"Explained variance: {pca.explained_variance_ratio_}")
+    print(f"\nFitting {config.projection.upper()} on {len(combined_points)} points...")
+    if config.projection == "pca":
+        projector = PCA(n_components=2)
+        projector.fit(combined_points)
+        var_explained = projector.explained_variance_ratio_ * 100
+        print(f"Explained variance: {var_explained}")
+        axis_labels = (f"PC1 ({var_explained[0]:.1f}%)", f"PC2 ({var_explained[1]:.1f}%)")
+        transform_fn = projector.transform
+    elif config.projection == "umap":
+        projector = umap.UMAP(n_components=2, random_state=42)
+        all_embedded = projector.fit_transform(combined_points)
+        axis_labels = ("UMAP1", "UMAP2")
+        transform_fn = projector.transform
+    elif config.projection == "tsne":
+        projector = TSNE(n_components=2, random_state=42, perplexity=min(30, len(combined_points) - 1))
+        all_embedded = projector.fit_transform(combined_points)
+        axis_labels = ("t-SNE1", "t-SNE2")
+        transform_fn = None
+    else:
+        raise ValueError(f"Unknown projection method: {config.projection}")
 
-    # Project all
-    behavior_projected = {b: pca.transform(behavior_intentions[b]) for b in BEHAVIORS}
-    trans_projected = {}
-    for k, v in trans_intentions.items():
-        if len(v) > 0:
-            trans_projected[k] = pca.transform(v)
-        else:
-            trans_projected[k] = np.array([])
+    if config.projection == "tsne":
+        idx = 0
+        behavior_projected = {}
+        for b in BEHAVIORS:
+            n = len(behavior_intentions[b])
+            behavior_projected[b] = all_embedded[idx:idx+n]
+            idx += n
+        trans_projected = {}
+        for k, v in trans_intentions.items():
+            if len(v) > 0:
+                n = len(v)
+                trans_projected[k] = all_embedded[idx:idx+n]
+                idx += n
+            else:
+                trans_projected[k] = np.array([])
+    else:
+        behavior_projected = {b: transform_fn(behavior_intentions[b]) for b in BEHAVIORS}
+        trans_projected = {}
+        for k, v in trans_intentions.items():
+            if len(v) > 0:
+                trans_projected[k] = transform_fn(v)
+            else:
+                trans_projected[k] = np.array([])
 
-    # Create figure: [small panels] [main transition] [density]
     n_behaviors = len(BEHAVIORS)
-    fig = plt.figure(figsize=(26, max(10, n_behaviors * 2)))
-    gs = GridSpec(n_behaviors, 3, figure=fig, width_ratios=[1, 2.5, 2.5],
-                  height_ratios=[1] * n_behaviors, wspace=0.18, hspace=0.15)
 
-    # Store variance for axis labels
-    var_explained = pca.explained_variance_ratio_ * 100
+    if config.show_side_panels:
+        fig = plt.figure(figsize=(26, max(10, n_behaviors * 2)))
+        gs = GridSpec(n_behaviors, 3, figure=fig, width_ratios=[1, 2.5, 2.5],
+                      height_ratios=[1] * n_behaviors, wspace=0.18, hspace=0.15)
+        behavior_axes = {}
+        for i, behavior in enumerate(BEHAVIORS):
+            ax = fig.add_subplot(gs[i, 0])
+            plot_behavior_panel(ax, behavior_projected[behavior], behavior, BEHAVIOR_COLORS[behavior], config.density_only)
+            behavior_axes[behavior] = ax
+        ax_main = fig.add_subplot(gs[:, 1])
+        ax_density = fig.add_subplot(gs[:, 2])
+    else:
+        fig = plt.figure(figsize=(20, 10))
+        gs = GridSpec(1, 2, figure=fig, width_ratios=[1, 1], wspace=0.15)
+        behavior_axes = {}
+        ax_main = fig.add_subplot(gs[0, 0])
+        ax_density = fig.add_subplot(gs[0, 1])
 
-    # Left column: Small behavior panels (stacked vertically)
-    behavior_axes = {}
-    for i, behavior in enumerate(BEHAVIORS):
-        ax = fig.add_subplot(gs[i, 0])
-        plot_behavior_panel(ax, behavior_projected[behavior], behavior, BEHAVIOR_COLORS[behavior])
-        behavior_axes[behavior] = ax
-
-    # Middle: Main transition panel
-    ax_main = fig.add_subplot(gs[:, 1])
     plot_main_panel(ax_main, trans_projected, behavior_projected, transition_colors, config)
-
-    # Right: Behavior density panel
-    ax_density = fig.add_subplot(gs[:, 2])
-    plot_density_panel(ax_density, behavior_projected)
+    plot_density_panel(ax_density, behavior_projected, config.density_only)
 
     # Synchronize main and density panel limits
     x_min = min(ax_main.get_xlim()[0], ax_density.get_xlim()[0])
@@ -456,26 +502,24 @@ def main():
     ax_density.set_xlim(x_min, x_max)
     ax_density.set_ylim(y_min, y_max)
 
-    # Update axis labels with variance explained
-    ax_main.set_xlabel(f"PC1 ({var_explained[0]:.1f}%)", fontsize=12)
-    ax_main.set_ylabel(f"PC2 ({var_explained[1]:.1f}%)", fontsize=12)
-    ax_density.set_xlabel(f"PC1 ({var_explained[0]:.1f}%)", fontsize=12)
-    ax_density.set_ylabel(f"PC2 ({var_explained[1]:.1f}%)", fontsize=12)
+    ax_main.set_xlabel(axis_labels[0], fontsize=12)
+    ax_main.set_ylabel(axis_labels[1], fontsize=12)
+    ax_density.set_xlabel(axis_labels[0], fontsize=12)
+    ax_density.set_ylabel(axis_labels[1], fontsize=12)
 
-    # Draw arrows from small panels to behavior centroids in main panel
-    for behavior, ax_small in behavior_axes.items():
-        color = BEHAVIOR_COLORS[behavior]
-        centroid = behavior_projected[behavior].mean(axis=0)
-        # Arrow from right edge of small panel to centroid location in main panel
-        arrow = ConnectionPatch(
-            xyA=(1.0, 0.5), coordsA=ax_small.transAxes,
-            xyB=(centroid[0], centroid[1]), coordsB=ax_main.transData,
-            arrowstyle="-|>", mutation_scale=15,
-            color=color, linewidth=2, alpha=0.7
-        )
-        fig.add_artist(arrow)
+    if config.show_side_panels:
+        for behavior, ax_small in behavior_axes.items():
+            color = BEHAVIOR_COLORS[behavior]
+            centroid = behavior_projected[behavior].mean(axis=0)
+            arrow = ConnectionPatch(
+                xyA=(1.0, 0.5), coordsA=ax_small.transAxes,
+                xyB=(centroid[0], centroid[1]), coordsB=ax_main.transData,
+                arrowstyle="-|>", mutation_scale=15,
+                color=color, linewidth=2, alpha=0.7
+            )
+            fig.add_artist(arrow)
 
-    fig.suptitle("Behavioral Clusters in Latent Space", fontsize=18, fontweight='bold', y=0.98)
+    fig.suptitle(f"Behavioral Clusters in Latent Space ({config.projection.upper()})", fontsize=18, fontweight='bold', y=0.98)
 
     plt.savefig(config.output_path, dpi=150, bbox_inches='tight', facecolor='white')
     print(f"\nSaved: {config.output_path}")
