@@ -10,6 +10,7 @@ import os
 
 os.environ["MUJOCO_GL"] = "egl"
 os.environ["PYOPENGL_PLATFORM"] = "egl"
+os.environ["JAX_ENABLE_X64"] = "True"
 
 import sys
 import functools
@@ -617,18 +618,35 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
 
         if method.method_type == MethodType.STATE_SPACE:
             n_clusters_to_use = config.k_selection.n_clusters
+
+            skip_set = set(config.clustering.skip_clips)
+            keep_indices = [i for i in range(dm_data.shape[0]) if i not in skip_set]
+            dm_data_filtered = dm_data[keep_indices]
+            print(f"  Filtered {dm_data.shape[0]} -> {dm_data_filtered.shape[0]} clips (skipped {len(skip_set)})")
+
             for seed in config.seeds:
                 seed_dir = os.path.join(method_output_dir, f"seed_{seed}")
                 kpms_result = method.fit(
-                    dm_data, n_clusters_to_use, seed_dir, seed
+                    dm_data_filtered, n_clusters_to_use, seed_dir, seed
                 )
 
+                cluster_dict_filtered = kpms_result.transition_cluster_dict
+                cluster_dict = {
+                    cluster_id: [(keep_indices[clip_id], frames) for clip_id, frames in instances]
+                    for cluster_id, instances in cluster_dict_filtered.items()
+                }
+                stats = kpms_result.transition_stats
+
                 method_results[seed] = {
-                    "n_clusters": n_clusters_to_use,
+                    "n_clusters": len(cluster_dict),
+                    "cluster_dict": cluster_dict,
                     "labels": kpms_result.labels,
+                    "transition_stats": stats,
                 }
 
-                print(f"  Seed {seed}: complete")
+                print(f"  Seed {seed}: {stats['n_sustained_segments']} sustained segments, "
+                      f"{stats['n_transition_types']} transition types, "
+                      f"{len(cluster_dict)} clusters")
         else:
             for seed in config.seeds:
                 labels = method.fit_predict(current_X, config.k_selection.n_clusters, seed)
@@ -712,24 +730,6 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
     print("=" * 60)
 
     return ExperimentResults(results=all_results, config=config)
-
-
-def kpms_labels_to_cluster_dict(
-    labels_list: list[np.ndarray],
-) -> dict[int, list[tuple[int, np.ndarray]]]:
-    cluster_dict = {}
-    for clip_idx, syllables in enumerate(labels_list):
-        syllables = np.asarray(syllables)
-        unique_sylls = np.unique(syllables)
-
-        for syll in unique_sylls:
-            syll = int(syll)
-            frame_indices = np.where(syllables == syll)[0]
-            if syll not in cluster_dict:
-                cluster_dict[syll] = []
-            cluster_dict[syll].append((clip_idx, frame_indices))
-
-    return cluster_dict
 
 
 def main(config_path: str = "configs/benchmark/experiment.yaml"):

@@ -27,7 +27,7 @@ k_selection:
   n_clusters: 10
 
 # Seeds for reproducibility (multiple seeds for stability analysis)
-seeds: [0, 123, 234]
+seeds: [0]
 aggregate_seeds: true
 
 # Methods to run
@@ -65,7 +65,7 @@ methods:
 
   - name: "w2_kmeans_baseline"
     type: "clustering"
-    enabled: true
+    enabled: false
     params:
       mds_components: 3
 
@@ -92,22 +92,29 @@ methods:
       min_samples: 5
 
   # State-space methods (require keypoint-moseq)
+  # Clusters are defined as transitions between sustained syllables
   - name: "arhmm"
     type: "state_space"
-    enabled: false
+    enabled: true
     params:
       latent_dim: 10
       kappa: 10000
       ar_iters: 100
+      min_sustained_duration: 25
+      top_k_transitions: 10
+      min_instances: 1
 
-  - name: "slds"
-    type: "state_space"
-    enabled: false
-    params:
-      latent_dim: 10
-      kappa: 10000
-      ar_iters: 50
-      full_iters: 50
+  # - name: "slds"
+  #   type: "state_space"
+  #   enabled: false
+  #   params:
+  #     latent_dim: 10
+  #     kappa: 10000
+  #     ar_iters: 50
+  #     full_iters: 50
+  #     min_sustained_duration: 50
+  #     top_k_transitions: 10 
+  #     min_instances: 3
 
 # Video rendering settings
 rendering:
