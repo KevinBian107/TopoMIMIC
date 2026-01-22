@@ -513,7 +513,7 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
     X = build_feature_matrix(windows, dm_data)
     print(f"Feature matrix: {X.shape}")
 
-    baseline_needed = any(m.name == "w2_kmeans_baseline" and m.enabled for m in config.methods)
+    baseline_needed = any(m.name == "w2_unif_kmeans" and m.enabled for m in config.methods)
     windows_baseline = None
     X_baseline = None
     if baseline_needed:
@@ -526,7 +526,7 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
     D_gw, Dn_gw = None, None
     D_w2_baseline, Dn_w2_baseline = None, None
 
-    w2_needed = any(m.name == "w2_kmeans" and m.enabled for m in config.methods)
+    w2_needed = any(m.name == "w2_dm_kmeans" and m.enabled for m in config.methods)
     if w2_needed:
         w2_cache_path = os.path.join(config.output_dir, "w2_distance_matrix.pkl")
         if os.path.exists(w2_cache_path):
@@ -558,9 +558,9 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
                 pkl.dump({"D": D_w2_baseline, "Dn": Dn_w2_baseline}, f)
             print(f"Cached W2 baseline matrix to {w2_baseline_cache_path}")
 
-    gw_needed = any(m.name == "gw_kmeans" and m.enabled for m in config.methods)
+    gw_needed = any(m.name == "gw_dm_kmeans" and m.enabled for m in config.methods)
     if gw_needed:
-        gw_method = next((m for m in config.methods if m.name == "gw_kmeans"), None)
+        gw_method = next((m for m in config.methods if m.name == "gw_dm_kmeans"), None)
         gw_params = gw_method.params if gw_method else {}
         loss_fun = gw_params.get("loss_fun", "square_loss")
         max_iter = gw_params.get("max_iter", 1000)
@@ -606,15 +606,15 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
         method = get_method(method_entry.name, method_entry.params)
         method_results = {}
 
-        if method_entry.name == "w2_kmeans":
+        if method_entry.name == "w2_dm_kmeans":
             method.params["distance_matrix"] = Dn_w2
-        elif method_entry.name == "w2_kmeans_baseline":
+        elif method_entry.name == "w2_unif_kmeans":
             method.params["distance_matrix"] = Dn_w2_baseline
-        elif method_entry.name == "gw_kmeans":
+        elif method_entry.name == "gw_dm_kmeans":
             method.params["distance_matrix"] = Dn_gw
 
-        current_windows = windows_baseline if method_entry.name == "w2_kmeans_baseline" else windows
-        current_X = X_baseline if method_entry.name == "w2_kmeans_baseline" else X
+        current_windows = windows_baseline if method_entry.name == "w2_unif_kmeans" else windows
+        current_X = X_baseline if method_entry.name == "w2_unif_kmeans" else X
 
         if method.method_type == MethodType.STATE_SPACE:
             n_clusters_to_use = config.k_selection.n_clusters
