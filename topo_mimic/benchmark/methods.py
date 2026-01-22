@@ -11,15 +11,8 @@ from enum import Enum
 from typing import Any
 
 import numpy as np
-from sklearn.cluster import KMeans, DBSCAN, SpectralClustering
-from sklearn.decomposition import PCA
-from sklearn.manifold import TSNE, MDS
-
-try:
-    import umap
-    HAS_UMAP = True
-except ImportError:
-    HAS_UMAP = False
+from sklearn.cluster import KMeans
+from sklearn.manifold import MDS
 
 try:
     import ot
@@ -302,113 +295,13 @@ class BaseMethod(ABC):
         pass
 
 
-class VanillaKMeans(BaseMethod):
-    def __init__(self, params: dict = None):
-        super().__init__("vanilla_kmeans", params)
-
-    @property
-    def method_type(self) -> MethodType:
-        return MethodType.CLUSTERING
-
-    def fit_predict(
-        self,
-        X: np.ndarray,
-        n_clusters: int,
-        seed: int = 0,
-    ) -> np.ndarray:
-        km = KMeans(n_clusters=n_clusters, random_state=seed, n_init='auto')
-        return km.fit_predict(X)
-
-
-class PCAKMeans(BaseMethod):
-    def __init__(self, params: dict = None):
-        super().__init__("pca_kmeans", params)
-        self.n_components = self.params.get("n_components", 10)
-
-    @property
-    def method_type(self) -> MethodType:
-        return MethodType.CLUSTERING
-
-    def fit_predict(
-        self,
-        X: np.ndarray,
-        n_clusters: int,
-        seed: int = 0,
-    ) -> np.ndarray:
-        n_components = min(self.n_components, X.shape[1], X.shape[0])
-        pca = PCA(n_components=n_components, random_state=seed)
-        X_pca = pca.fit_transform(X)
-        km = KMeans(n_clusters=n_clusters, random_state=seed, n_init='auto')
-        return km.fit_predict(X_pca)
-
-
-class TSNEKMeans(BaseMethod):
-    def __init__(self, params: dict = None):
-        super().__init__("tsne_kmeans", params)
-        self.n_components = self.params.get("n_components", 3)
-        self.perplexity = self.params.get("perplexity", 30)
-
-    @property
-    def method_type(self) -> MethodType:
-        return MethodType.CLUSTERING
-
-    def fit_predict(
-        self,
-        X: np.ndarray,
-        n_clusters: int,
-        seed: int = 0,
-    ) -> np.ndarray:
-        perplexity = min(self.perplexity, X.shape[0] // 4)
-        perplexity = max(5, perplexity)
-        tsne = TSNE(
-            n_components=self.n_components,
-            perplexity=perplexity,
-            random_state=seed,
-        )
-        X_tsne = tsne.fit_transform(X)
-        km = KMeans(n_clusters=n_clusters, random_state=seed, n_init='auto')
-        return km.fit_predict(X_tsne)
-
-
-class UMAPKMeans(BaseMethod):
-    def __init__(self, params: dict = None):
-        super().__init__("umap_kmeans", params)
-        self.n_components = self.params.get("n_components", 3)
-        self.n_neighbors = self.params.get("n_neighbors", 15)
-        self.min_dist = self.params.get("min_dist", 0.1)
-
-    @property
-    def method_type(self) -> MethodType:
-        return MethodType.CLUSTERING
-
-    def fit_predict(
-        self,
-        X: np.ndarray,
-        n_clusters: int,
-        seed: int = 0,
-    ) -> np.ndarray:
-        if not HAS_UMAP:
-            raise ImportError("umap-learn not installed")
-
-        n_neighbors = min(self.n_neighbors, X.shape[0] - 1)
-        reducer = umap.UMAP(
-            n_components=self.n_components,
-            n_neighbors=n_neighbors,
-            min_dist=self.min_dist,
-            random_state=seed,
-        )
-        X_umap = reducer.fit_transform(X)
-        km = KMeans(n_clusters=n_clusters, random_state=seed, n_init='auto')
-        return km.fit_predict(X_umap)
-
-
-class W2KMeans(BaseMethod):
+class W2DMKMeans(BaseMethod):
     """
-    Wasserstein-2 based clustering using MDS embedding + KMeans.
+    Wasserstein-2 based clustering on DM cycles using MDS embedding + KMeans.
     Requires precomputed W2 distance matrix passed via params.
     """
     def __init__(self, params: dict = None):
-        super().__init__("w2_kmeans", params)
+        super().__init__("w2_dm_kmeans", params)
         self.mds_components = self.params.get("mds_components", 3)
 
     @property
@@ -423,7 +316,7 @@ class W2KMeans(BaseMethod):
     ) -> np.ndarray:
         distance_matrix = self.params.get("distance_matrix")
         if distance_matrix is None:
-            raise ValueError("W2KMeans requires 'distance_matrix' in params")
+            raise ValueError("W2DMKMeans requires 'distance_matrix' in params")
 
         mds = MDS(
             n_components=self.mds_components,
@@ -436,17 +329,17 @@ class W2KMeans(BaseMethod):
         return km.fit_predict(X_mds)
 
 
-class W2KMeansBaseline(BaseMethod):
+class W2UnifKMeans(BaseMethod):
     """
-    Baseline: W2 clustering on all frames (not topological cycles).
+    Baseline: W2 clustering on uniformly sampled frames (not DM cycles).
 
-    Same algorithm as W2KMeans but uses windows from all frames
+    Same algorithm as W2DMKMeans but uses windows from all frames
     instead of topologically-discovered cycles. This serves as a
     baseline to evaluate whether topology-based cycle detection
     improves clustering quality.
     """
     def __init__(self, params: dict = None):
-        super().__init__("w2_kmeans_baseline", params)
+        super().__init__("w2_unif_kmeans", params)
         self.mds_components = self.params.get("mds_components", 3)
 
     @property
@@ -461,7 +354,7 @@ class W2KMeansBaseline(BaseMethod):
     ) -> np.ndarray:
         distance_matrix = self.params.get("distance_matrix")
         if distance_matrix is None:
-            raise ValueError("W2KMeansBaseline requires 'distance_matrix' in params")
+            raise ValueError("W2UnifKMeans requires 'distance_matrix' in params")
 
         mds = MDS(
             n_components=self.mds_components,
@@ -474,13 +367,13 @@ class W2KMeansBaseline(BaseMethod):
         return km.fit_predict(X_mds)
 
 
-class GWKMeans(BaseMethod):
+class GWDMKMeans(BaseMethod):
     """
-    Gromov-Wasserstein based clustering using MDS embedding + KMeans.
+    Gromov-Wasserstein based clustering on DM cycles using MDS embedding + KMeans.
     Requires precomputed GW distance matrix passed via params.
     """
     def __init__(self, params: dict = None):
-        super().__init__("gw_kmeans", params)
+        super().__init__("gw_dm_kmeans", params)
         self.mds_components = self.params.get("mds_components", 3)
 
     @property
@@ -495,7 +388,7 @@ class GWKMeans(BaseMethod):
     ) -> np.ndarray:
         distance_matrix = self.params.get("distance_matrix")
         if distance_matrix is None:
-            raise ValueError("GWKMeans requires 'distance_matrix' in params")
+            raise ValueError("GWDMKMeans requires 'distance_matrix' in params")
 
         mds = MDS(
             n_components=self.mds_components,
@@ -508,181 +401,15 @@ class GWKMeans(BaseMethod):
         return km.fit_predict(X_mds)
 
 
-class SpectralMethod(BaseMethod):
+class KPMSIntentionMethod(BaseMethod):
+    """
+    Keypoint-MoSeq based state-space method for intention data.
+
+    Supports both AR-HMM and SLDS model types via the model_type parameter.
+    """
     def __init__(self, params: dict = None):
-        super().__init__("spectral", params)
-        self.affinity = self.params.get("affinity", "nearest_neighbors")
-        self.n_neighbors = self.params.get("n_neighbors", 10)
-
-    @property
-    def method_type(self) -> MethodType:
-        return MethodType.CLUSTERING
-
-    def fit_predict(
-        self,
-        X: np.ndarray,
-        n_clusters: int,
-        seed: int = 0,
-    ) -> np.ndarray:
-        n_neighbors = min(self.n_neighbors, X.shape[0] - 1)
-        sc = SpectralClustering(
-            n_clusters=n_clusters,
-            affinity=self.affinity,
-            n_neighbors=n_neighbors,
-            random_state=seed,
-        )
-        return sc.fit_predict(X)
-
-
-class DBSCANMethod(BaseMethod):
-    def __init__(self, params: dict = None):
-        super().__init__("dbscan", params)
-        self.eps = self.params.get("eps", 0.5)
-        self.min_samples = self.params.get("min_samples", 5)
-
-    @property
-    def method_type(self) -> MethodType:
-        return MethodType.CLUSTERING
-
-    def fit_predict(
-        self,
-        X: np.ndarray,
-        n_clusters: int,
-        seed: int = 0,
-    ) -> np.ndarray:
-        db = DBSCAN(eps=self.eps, min_samples=self.min_samples)
-        return db.fit_predict(X)
-
-
-class ARHMMMethod(BaseMethod):
-    """AR-HMM from keypoint-moseq."""
-    def __init__(self, params: dict = None):
-        super().__init__("arhmm", params)
-        self.latent_dim = self.params.get("latent_dim", 10)
-        self.kappa = self.params.get("kappa", 1e5)
-        self.ar_iters = self.params.get("ar_iters", 50)
-
-    @property
-    def method_type(self) -> MethodType:
-        return MethodType.STATE_SPACE
-
-    def fit_predict(
-        self,
-        X: np.ndarray,
-        n_clusters: int,
-        seed: int = 0,
-    ) -> np.ndarray:
-        raise NotImplementedError("Use fit() for state-space methods")
-
-    def fit(
-        self,
-        data: np.ndarray,
-        n_states: int,
-        project_dir: str,
-        seed: int = 0,
-    ) -> KPMSResult:
-        if not HAS_KPMS:
-            raise ImportError("keypoint-moseq not installed")
-
-        import os
-        import shutil
-        from pathlib import Path
-
-        project_path = Path(project_dir)
-        if project_path.exists():
-            shutil.rmtree(project_path)
-        project_path.mkdir(parents=True, exist_ok=True)
-
-        n_clips, n_frames, n_dim = data.shape
-        coordinates = {}
-        confidences = {}
-
-        for i in range(n_clips):
-            coords = data[i][:, :, np.newaxis].astype(np.float64)
-            coordinates[f"recording_{i:04d}"] = coords
-            confidences[f"recording_{i:04d}"] = np.ones((n_frames, n_dim), dtype=np.float64)
-
-        kpms.setup_project(
-            project_dir,
-            fix_heading=True,
-            bodyparts=['placeholder'],
-            skeleton=[],
-            fps=30,
-            overwrite=True,
-        )
-
-        kpms.update_config(
-            project_dir,
-            fix_heading=False,
-            bodyparts=[f'dim_{i}' for i in range(n_dim)],
-            use_bodyparts=[f'dim_{i}' for i in range(n_dim)],
-            anterior_bodyparts=['dim_0'],
-            posterior_bodyparts=[f'dim_{n_dim-1}'],
-            verbose=False,
-            latent_dim=self.latent_dim,
-            num_states=n_states,
-            kappa=self.kappa,
-        )
-
-        config = kpms.load_config(project_dir)
-        int_data, int_metadata = kpms.format_data(coordinates, confidences, **config)
-
-        model_name = f"arhmm_states{n_states}"
-        model = kpms.init_model(
-            data=int_data,
-            metadata=int_metadata,
-            states=None,
-            **config,
-            seed=jax.random.PRNGKey(seed + n_states),
-        )
-        model = kpms.update_hypparams(model, kappa=self.kappa)
-
-        model = kpms.fit_model(
-            model=model,
-            data=int_data,
-            metadata=int_metadata,
-            project_dir=project_dir,
-            model_name=model_name,
-            ar_only=True,
-            num_iters=self.ar_iters,
-            num_states=n_states,
-            generate_progress_plots=False,
-        )[0]
-
-        kpms.reindex_syllables_in_checkpoint(project_dir, model_name)
-        model_ckpt, _, _, _ = kpms.load_checkpoint(project_dir, model_name)
-        model_ckpt['project_dir'] = project_dir
-        model_ckpt['model_name'] = model_name
-
-        results = kpms.extract_results(model_ckpt, int_metadata, project_dir, model_name)
-
-        rec_names = sorted(results.keys())
-        labels_list = [results[rn]['syllable'] for rn in rec_names]
-
-        cluster_dict, stats = extract_sustained_transitions(
-            labels_list,
-            min_duration=self.params.get("min_sustained_duration", 50),
-            top_k=self.params.get("top_k_transitions", 10),
-            min_instances=self.params.get("min_instances", 3),
-        )
-
-        print_transition_stats(stats)
-
-        return KPMSResult(
-            labels=labels_list,
-            n_states=n_states,
-            method_name=self.name,
-            model=model_ckpt,
-            results=results,
-            transition_cluster_dict=cluster_dict,
-            transition_stats=stats,
-        )
-
-
-class SLDSMethod(BaseMethod):
-    """Switching Linear Dynamical System from keypoint-moseq."""
-    def __init__(self, params: dict = None):
-        super().__init__("slds", params)
+        super().__init__("kpms_intention", params)
+        self.model_type = self.params.get("model_type", "arhmm")
         self.latent_dim = self.params.get("latent_dim", 10)
         self.kappa = self.params.get("kappa", 1e5)
         self.ar_iters = self.params.get("ar_iters", 50)
@@ -752,7 +479,7 @@ class SLDSMethod(BaseMethod):
         config = kpms.load_config(project_dir)
         int_data, int_metadata = kpms.format_data(coordinates, confidences, **config)
 
-        model_name = f"slds_states{n_states}"
+        model_name = f"{self.model_type}_states{n_states}"
         model = kpms.init_model(
             data=int_data,
             metadata=int_metadata,
@@ -774,19 +501,19 @@ class SLDSMethod(BaseMethod):
             generate_progress_plots=False,
         )[0]
 
-        model = kpms.update_hypparams(model, kappa=self.kappa)
-
-        kpms.fit_model(
-            model=model,
-            data=int_data,
-            metadata=int_metadata,
-            project_dir=project_dir,
-            model_name=model_name,
-            ar_only=False,
-            start_iter=self.ar_iters,
-            num_iters=self.full_iters,
-            generate_progress_plots=False,
-        )
+        if self.model_type == "slds":
+            model = kpms.update_hypparams(model, kappa=self.kappa)
+            kpms.fit_model(
+                model=model,
+                data=int_data,
+                metadata=int_metadata,
+                project_dir=project_dir,
+                model_name=model_name,
+                ar_only=False,
+                start_iter=self.ar_iters,
+                num_iters=self.full_iters,
+                generate_progress_plots=False,
+            )
 
         kpms.reindex_syllables_in_checkpoint(project_dir, model_name)
         model_ckpt, _, _, _ = kpms.load_checkpoint(project_dir, model_name)
@@ -819,17 +546,10 @@ class SLDSMethod(BaseMethod):
 
 
 METHOD_REGISTRY: dict[str, type[BaseMethod]] = {
-    "vanilla_kmeans": VanillaKMeans,
-    "pca_kmeans": PCAKMeans,
-    "tsne_kmeans": TSNEKMeans,
-    "umap_kmeans": UMAPKMeans,
-    "w2_kmeans": W2KMeans,
-    "w2_kmeans_baseline": W2KMeansBaseline,
-    "gw_kmeans": GWKMeans,
-    "spectral": SpectralMethod,
-    "dbscan": DBSCANMethod,
-    "arhmm": ARHMMMethod,
-    "slds": SLDSMethod,
+    "w2_dm_kmeans": W2DMKMeans,
+    "w2_unif_kmeans": W2UnifKMeans,
+    "gw_dm_kmeans": GWDMKMeans,
+    "kpms_intention": KPMSIntentionMethod,
 }
 
 

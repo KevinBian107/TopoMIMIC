@@ -1,6 +1,6 @@
 # TopoVNL Methods: A Procedural Guide
 
-This document explains how the main methods work procedurally in TopoVNL. The key insight is that **traversal extraction is shared** across all approaches, while **downstream comparison** can use either W2 distance directly or feature matrix methods.
+This document explains how the main methods work procedurally in TopoVNL. The key insight is that **traversal extraction via Discrete Morse theory** produces topologically meaningful cycles, which are then compared using **Wasserstein distance** for clustering.
 
 ---
 
@@ -9,8 +9,8 @@ This document explains how the main methods work procedurally in TopoVNL. The ke
 ```
                      TopoVNL Two-Stage Pipeline
 
-   STAGE 1: Traversal Extraction (Shared)
-   ══════════════════════════════════════
+   STAGE 1: Traversal Extraction (DM)
+   ══════════════════════════════════
 
    ┌────────────┐    ┌────────────┐    ┌────────────┐    ┌────────────┐
    │   Load     │───▶│   Takens   │───▶│     DM     │───▶│  Extract   │
@@ -24,26 +24,24 @@ This document explains how the main methods work procedurally in TopoVNL. The ke
                      │  (per clip)    │
                      └────────┬───────┘
                               │
-              ┌───────────────┴───────────────┐
-              │                               │
-              ▼                               ▼
-   ┌────────────────────┐        ┌────────────────────┐
-   │   W2 Distance      │        │   Feature Matrix   │
-   │   (Optimal Transp) │        │   (Vectorization)  │
-   └────────────────────┘        └────────────────────┘
-              │                               │
-              ▼                               ▼
-   ┌────────────────────┐        ┌────────────────────┐
-   │   MDS + KMeans     │        │   Dim. Reduction   │
-   │   Clustering       │        │   + Clustering     │
-   └────────────────────┘        └────────────────────┘
+                              ▼
+   STAGE 2: Distance-Based Clustering
+   ═══════════════════════════════════
 
-   STAGE 2: Feature Comparison (Branched)
-   ══════════════════════════════════════
+              ┌────────────────────┐
+              │   W2/GW Distance   │
+              │   (Optimal Transp) │
+              └────────────────────┘
+                        │
+                        ▼
+              ┌────────────────────┐
+              │   MDS + KMeans     │
+              │   Clustering       │
+              └────────────────────┘
 
-Figure 1: The two-stage pipeline. Stage 1 (traversal extraction) is
-identical for all methods. Stage 2 branches into W2-based or feature-
-based comparison approaches.
+Figure 1: The two-stage pipeline. Stage 1 extracts topologically
+meaningful cycles via Discrete Morse theory. Stage 2 clusters
+cycles using W2 or GW distance with MDS embedding.
 ```
 
 ---
@@ -373,41 +371,9 @@ Euclidean space where distances are approximately preserved. KMeans
 then clusters in this embedded space.
 ```
 
-### Option B: Feature Matrix Approach
+### Baseline: Uniform Sampling (W2 Unif)
 
-**Core Idea**: Flatten cycles into fixed-length vectors for standard clustering.
-
-#### Step B1: Build Feature Matrix
-
-1. **Uniform downsample** each cycle to `target_len` frames
-2. **Flatten**: $(target\_len, 16) \to (target\_len \times 16,)$
-3. **Stack** into matrix $X \in \mathbb{R}^{M \times (target\_len \times 16)}$
-
-#### Step B2: Dimensionality Reduction (Optional)
-
-Available methods:
-- **PCA**: Linear projection to top $k$ components
-- **t-SNE**: Nonlinear embedding preserving local structure
-- **UMAP**: Nonlinear embedding preserving global + local structure
-- **None (vanilla)**: Use raw features directly
-
-#### Step B3: Clustering
-
-Apply clustering on reduced features:
-- **KMeans**: Standard centroid-based
-- **Spectral**: Graph-based clustering
-- **DBSCAN**: Density-based clustering
-
-### Comparison: W2 vs Feature Matrix
-
-| Aspect | W2 + MDS | Feature Matrix |
-|--------|----------|----------------|
-| **Compares** | Point distributions | Fixed vectors |
-| **Invariance** | Permutation within window | None (order matters) |
-| **Captures** | Distributional similarity | Point-wise alignment |
-| **Complexity** | $O(T^3)$ per pair | $O(T \cdot D)$ |
-| **Pros** | Robust to phase shifts | Fast, simple |
-| **Cons** | Expensive | Sensitive to alignment |
+As a baseline, we also provide `w2_unif_kmeans` which uses the same W2 + MDS + KMeans pipeline but on **uniformly sampled windows** from all frames instead of topologically-discovered cycles. This helps evaluate whether the DM-based cycle extraction improves clustering quality.
 
 ---
 
@@ -438,20 +404,16 @@ Apply clustering on reduced features:
     Optionally keep only longest cycle (only_max=True)
     Output: all_cycle_dm[clip] = [cycle_frames_1, ...]
                                │
-               ┌───────────────┴───────────────┐
-               │                               │
-               ▼                               ▼
-    OPTION A: W2                    OPTION B: Features
-    1. Uniform sample               1. Uniform sample
-    2. Compute W2 matrix            2. Flatten to vectors
-    3. Normalize matrix             3. Dim reduction
-    4. MDS embedding                4. KMeans clustering
+                               ▼
+    STEP 4: W2/GW DISTANCE CLUSTERING
+    1. Uniform sample cycles to target_len
+    2. Compute W2 or GW distance matrix
+    3. Normalize distance matrix
+    4. MDS embedding to 3D
     5. KMeans clustering
-               │                               │
-               └───────────────┬───────────────┘
                                │
                                ▼
-    STEP 4: CLUSTER ASSIGNMENT
+    STEP 5: CLUSTER ASSIGNMENT
     cluster_dict = {
         0: [(clip_5, frames), (clip_12, frames), ...],
         1: [(clip_3, frames), (clip_7, frames), ...],
@@ -459,15 +421,14 @@ Apply clustering on reduced features:
     }
                                │
                                ▼
-    STEP 5: ANALYSIS & VISUALIZATION
+    STEP 6: ANALYSIS & VISUALIZATION
     • Render cluster videos (MuJoCo)
-    • Variance heatmaps by body part
     • MDS subspace projections
+    • Transition comparisons
     • labels.yaml for manual annotation
 
 Figure 10: Complete pipeline from raw data to behavioral clusters.
-The key branching point is at Step 3, where extracted cycles can be
-compared via W2 distance or feature-based approaches.
+DM cycles are compared via W2 or GW distance for clustering.
 ```
 
 ---
@@ -521,10 +482,9 @@ similar transition patterns.
 - "walk_turn_stay": Mixed locomotion with pauses
 
 **Analysis outputs**:
-1. **Variance heatmaps**: Which body parts vary most per cluster
-2. **MDS projections**: How clusters relate in subspace
-3. **Eigenbase analysis**: How well cycles compress full behavior
-4. **Cluster graph**: W2-based connectivity between clusters
+1. **MDS projections**: How clusters relate in subspace
+2. **Transition comparisons**: Discovered vs ground truth transitions
+3. **Transition graph**: W2-based connectivity between clusters
 
 ---
 
@@ -536,23 +496,20 @@ python -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline.yaml
 ```
 Output: `out/dm_pipeline_ar/{all_cycle_dm.pkl, all_G_sm.pkl}`
 
-**Step 2a: Run W2 + KMeans (Primary)**
+**Step 2: Run W2/GW + KMeans Clustering**
 ```bash
 python -m topo_mimic.benchmark.experiment configs/benchmark/experiment.yaml
 ```
-With `methods.w2_kmeans.enabled: true`
-
-**Step 2b: Run Feature-based Methods (Alternatives)**
-```bash
-python -m topo_mimic.benchmark.experiment configs/benchmark/experiment.yaml
-```
-With `methods.pca_kmeans.enabled: true`, etc.
+Enable methods in config:
+- `w2_dm_kmeans`: W2 distance on DM cycles
+- `gw_dm_kmeans`: Gromov-Wasserstein on DM cycles
+- `w2_unif_kmeans`: W2 on uniform samples (baseline)
 
 **Step 3: Analyze Results**
 ```bash
 python -m topo_mimic.benchmark.analysis.main configs/benchmark/analysis.yaml
 ```
-Output: Variance heatmaps, MDS plots in `out/analysis_output/`
+Output: Transition comparisons, MDS plots in `out/analysis_output/`
 
 ---
 

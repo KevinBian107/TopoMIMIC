@@ -32,44 +32,19 @@ aggregate_seeds: true
 
 # Methods to run
 methods:
-  - name: "vanilla_kmeans"
-    type: "clustering"
-    enabled: false
-
-  - name: "pca_kmeans"
-    type: "clustering"
-    enabled: false
-    params:
-      n_components: 10
-
-  - name: "umap_kmeans"
-    type: "clustering"
-    enabled: false
-    params:
-      n_components: 3
-      n_neighbors: 15
-      min_dist: 0.1
-
-  - name: "tsne_kmeans"
-    type: "clustering"
-    enabled: false
-    params:
-      n_components: 3
-      perplexity: 30
-
-  - name: "w2_kmeans"
+  - name: "w2_dm_kmeans"
     type: "clustering"
     enabled: false
     params:
       mds_components: 3
 
-  - name: "w2_kmeans_baseline"
+  - name: "w2_unif_kmeans"
     type: "clustering"
     enabled: false
     params:
       mds_components: 3
 
-  - name: "gw_kmeans"
+  - name: "gw_dm_kmeans"
     type: "clustering"
     enabled: false
     params:
@@ -77,44 +52,21 @@ methods:
       loss_fun: "square_loss"
       max_iter: 1000
 
-  - name: "spectral"
-    type: "clustering"
-    enabled: false
-    params:
-      affinity: "nearest_neighbors"
-      n_neighbors: 10
-
-  - name: "dbscan"
-    type: "clustering"
-    enabled: false
-    params:
-      eps: 0.5
-      min_samples: 5
-
-  # State-space methods (require keypoint-moseq)
+  # State-space method (requires keypoint-moseq)
   # Clusters are defined as transitions between sustained syllables
-  - name: "arhmm"
+  # model_type: "arhmm" (AR-HMM only) or "slds" (full SLDS with additional iterations)
+  - name: "kpms_intention"
     type: "state_space"
-    enabled: true
+    enabled: false
     params:
+      model_type: "arhmm"
       latent_dim: 10
       kappa: 10000
       ar_iters: 100
+      full_iters: 300
       min_sustained_duration: 25
       top_k_transitions: 10
       min_instances: 1
-
-  # - name: "slds"
-  #   type: "state_space"
-  #   enabled: false
-  #   params:
-  #     latent_dim: 10
-  #     kappa: 10000
-  #     ar_iters: 50
-  #     full_iters: 50
-  #     min_sustained_duration: 50
-  #     top_k_transitions: 10 
-  #     min_instances: 3
 
 # Video rendering settings
 rendering:

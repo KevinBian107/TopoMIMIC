@@ -114,13 +114,12 @@ topo_mimic/
 └── benchmark/
     ├── __init__.py
     ├── experiment.py                  # Unified experiment runner
-    ├── methods.py                     # Clustering method registry
+    ├── methods.py                     # Method registry (W2, GW, KPMS)
     │
     ├── analysis/
     │   ├── main.py                    # Analysis entry point
     │   ├── data_loading.py            # Result loading utilities
     │   ├── visualization.py           # Transition comparisons
-    │   ├── javd.py                    # JAVD computation
     │   ├── ground_truth.py            # GT extraction
     │   └── behavior_parsing.py        # Label parsing
     │
@@ -340,26 +339,21 @@ Each YAML file defines parameters for its corresponding module.
     │                                       │
     └───────────────────────────────────────┘
                          │
-          ┌──────────────┴──────────────┐
-          │                             │
-          ▼                             ▼
-┌─────────────────────┐      ┌─────────────────────┐
-│   Feature Matrix    │      │  W2 Distance Matrix │
-│                     │      │                     │
-│  Flatten cycles     │      │  Earth Mover's      │
-│  into vectors       │      │  Distance between   │
-│                     │      │  cycle windows      │
-└─────────────────────┘      └─────────────────────┘
-          │                             │
-          └──────────────┬──────────────┘
+                         ▼
+    ┌───────────────────────────────────────┐
+    │       W2/GW Distance Matrix           │
+    │                                       │
+    │  Wasserstein-2 or Gromov-Wasserstein  │
+    │  distance between cycle windows       │
+    │                                       │
+    └───────────────────────────────────────┘
                          │
                          ▼
     ┌───────────────────────────────────────┐
-    │           Clustering Methods          │
+    │           MDS + KMeans                │
     │                                       │
-    │  vanilla_kmeans, pca_kmeans,          │
-    │  tsne_kmeans, umap_kmeans,            │
-    │  w2_kmeans, spectral, dbscan          │
+    │  w2_dm_kmeans, gw_dm_kmeans,          │
+    │  w2_unif_kmeans (baseline)            │
     │                                       │
     └───────────────────────────────────────┘
                          │
@@ -367,33 +361,27 @@ Each YAML file defines parameters for its corresponding module.
     ┌───────────────────────────────────────┐
     │        Analysis & Visualization       │
     │                                       │
-    │  Rendered videos, variance heatmaps,  │
-    │  MDS projections, labels.yaml         │
+    │  Rendered videos, MDS projections,    │
+    │  transition comparisons, labels.yaml  │
     │                                       │
     └───────────────────────────────────────┘
 
 Figure 8: Complete data flow from raw rollouts to final cluster
-assignments. The pipeline branches at the comparison stage,
-supporting both W2 distance and feature matrix approaches.
+assignments. DM cycles are compared via W2 or GW distance.
 ```
 
 ---
 
 ## Method Registry
 
-### Available Clustering Methods
+### Available Methods
 
 | Method | Description | Distance Type |
 |--------|-------------|---------------|
-| `vanilla_kmeans` | Direct KMeans on flattened features | Euclidean |
-| `pca_kmeans` | PCA reduction then KMeans | Euclidean |
-| `tsne_kmeans` | t-SNE embedding then KMeans | Euclidean |
-| `umap_kmeans` | UMAP embedding then KMeans | Euclidean |
-| `w2_kmeans` | W2 distance matrix → MDS → KMeans | Wasserstein-2 |
-| `spectral` | Spectral clustering with kNN affinity | Graph-based |
-| `dbscan` | Density-based clustering | Euclidean |
-| `arhmm` | Autoregressive HMM (requires keypoint-moseq) | State-space |
-| `slds` | Switching Linear Dynamical System | State-space |
+| `w2_dm_kmeans` | W2 on DM cycles → MDS → KMeans | Wasserstein-2 |
+| `w2_unif_kmeans` | W2 on uniform frames (baseline) | Wasserstein-2 |
+| `gw_dm_kmeans` | GW on DM cycles → MDS → KMeans | Gromov-Wasserstein |
+| `kpms_intention` | KPMS state-space (AR-HMM or SLDS) | State-space |
 
 ---
 
