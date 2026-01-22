@@ -79,6 +79,71 @@ def random_subsample(points: np.ndarray, max_n: int) -> np.ndarray:
     return points[indices]
 
 
+def compute_density_3d(
+    points: np.ndarray,
+    grid_size: int = 25,
+    sigma: float = 1.2,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Compute 3D density field for isosurface visualization.
+
+    Returns:
+        Tuple of (x_centers, y_centers, z_centers, density_field)
+    """
+    pad = 0.15
+    x_min, x_max = points[:, 0].min(), points[:, 0].max()
+    y_min, y_max = points[:, 1].min(), points[:, 1].max()
+    z_min, z_max = points[:, 2].min(), points[:, 2].max()
+
+    x_edges = np.linspace(
+        x_min - pad * (x_max - x_min),
+        x_max + pad * (x_max - x_min),
+        grid_size,
+    )
+    y_edges = np.linspace(
+        y_min - pad * (y_max - y_min),
+        y_max + pad * (y_max - y_min),
+        grid_size,
+    )
+    z_edges = np.linspace(
+        z_min - pad * (z_max - z_min),
+        z_max + pad * (z_max - z_min),
+        grid_size,
+    )
+
+    H, _ = np.histogramdd(points, bins=[x_edges, y_edges, z_edges])
+    H = gaussian_filter(H, sigma=sigma)
+
+    xc = (x_edges[:-1] + x_edges[1:]) / 2
+    yc = (y_edges[:-1] + y_edges[1:]) / 2
+    zc = (z_edges[:-1] + z_edges[1:]) / 2
+    return xc, yc, zc, H
+
+
+def compute_point_density(
+    points: np.ndarray,
+    k: int = 15,
+) -> np.ndarray:
+    """
+    Compute local density estimate for each point using k-NN distance.
+
+    Returns:
+        Array of density values (higher = denser region)
+    """
+    from sklearn.neighbors import NearestNeighbors
+
+    if len(points) < k + 1:
+        return np.ones(len(points))
+
+    nn = NearestNeighbors(n_neighbors=k + 1)
+    nn.fit(points)
+    distances, _ = nn.kneighbors(points)
+    mean_dist = distances[:, 1:].mean(axis=1)
+    density = 1.0 / (mean_dist + 1e-8)
+    density = (density - density.min()) / (density.max() - density.min() + 1e-8)
+    return density
+
+
 def _plot_transition_groups(
     transition_data: list[dict],
     output_dir: str,
@@ -248,6 +313,207 @@ def _plot_transition_groups(
         plt.close()
 
         print(f"    Saved {group_name} [{feature_type}] ({len(group_data)} transitions) to {save_path}")
+
+
+def _plot_density_contours_3d(
+    ax,
+    points: np.ndarray,
+    color: str,
+    grid_size: int = 50,
+    sigma: float = 1.2,
+    n_levels: int = 4,
+    alpha: float = 0.8,
+    linewidths: float = 2.0,
+) -> None:
+    """
+    Plot 2D density contours projected onto the XY plane in 3D space.
+
+    Similar to 2D density contours but displayed on the "floor" of the 3D plot.
+    """
+    if len(points) < 15:
+        return
+
+    points_2d = points[:, :2]
+    xc, yc, H = compute_density_2d(points_2d, grid_size=grid_size, sigma=sigma)
+
+    if H.max() <= 0:
+        return
+
+    X, Y = np.meshgrid(xc, yc)
+    z_offset = points[:, 2].min() - 0.5 * (points[:, 2].max() - points[:, 2].min() + 1e-6)
+
+    ax.contour(
+        X, Y, H,
+        levels=n_levels,
+        colors=[color],
+        alpha=alpha,
+        zdir='z',
+        offset=z_offset,
+        linewidths=linewidths,
+    )
+
+
+def _plot_transition_groups_3d(
+    transition_data: list[dict],
+    output_dir: str,
+    feature_type: str,
+    method_name: str,
+    seed: int,
+    max_points: int,
+    figsize: tuple[float, float],
+) -> None:
+    """Helper to plot 3D transition groups with density visualization."""
+    if not transition_data:
+        return
+
+    color_palette = [
+        "#E74C3C", "#3498DB", "#2ECC71", "#9B59B6", "#F39C12",
+        "#1ABC9C", "#E91E63", "#00BCD4", "#FF5722", "#795548",
+    ]
+
+    all_frames = []
+    for td in transition_data:
+        all_frames.append(td["cluster_points"])
+        all_frames.append(td["gt_points"])
+    all_points = np.vstack(all_frames)
+
+    pca = PCA(n_components=3)
+    pca.fit(all_points)
+    var_explained = pca.explained_variance_ratio_ * 100
+
+    for td in transition_data:
+        td["cluster_proj_3d"] = pca.transform(td["cluster_points"])
+        td["gt_proj_3d"] = pca.transform(td["gt_points"])
+
+    groups_to_plot = defaultdict(list)
+    for td in transition_data:
+        group = td["behavior_group"] or "Other"
+        groups_to_plot[group].append(td)
+
+    for group_name, group_data in sorted(groups_to_plot.items()):
+        fig = plt.figure(figsize=(figsize[0], figsize[1] * 0.8))
+
+        ax_cluster = fig.add_subplot(1, 2, 1, projection='3d')
+        ax_gt = fig.add_subplot(1, 2, 2, projection='3d')
+
+        label_positions_cluster = []
+        label_positions_gt = []
+
+        for i, td in enumerate(group_data):
+            color = color_palette[i % len(color_palette)]
+
+            cluster_proj = td["cluster_proj_3d"]
+            gt_proj = td["gt_proj_3d"]
+            display_label = td["display_label"]
+            gt_label = td["gt_label"]
+
+            if len(cluster_proj) > 15:
+                density_cluster = compute_point_density(cluster_proj, k=min(15, len(cluster_proj) - 1))
+            else:
+                density_cluster = np.ones(len(cluster_proj))
+
+            if len(gt_proj) > 15:
+                density_gt = compute_point_density(gt_proj, k=min(15, len(gt_proj) - 1))
+            else:
+                density_gt = np.ones(len(gt_proj))
+
+            pts_sub_idx = np.random.choice(len(cluster_proj), min(max_points, len(cluster_proj)), replace=False)
+            pts_sub = cluster_proj[pts_sub_idx]
+            dens_sub = density_cluster[pts_sub_idx]
+            sizes = 25 + 50 * dens_sub
+
+            rgb = plt.matplotlib.colors.to_rgb(color)
+            alphas = 0.4 + 0.5 * dens_sub
+            colors_rgba = np.array([(*rgb, a) for a in alphas])
+
+            ax_cluster.scatter(
+                pts_sub[:, 0], pts_sub[:, 1], pts_sub[:, 2],
+                c=colors_rgba, s=sizes,
+                edgecolors='white', linewidths=0.3,
+            )
+
+            if len(cluster_proj) > 15:
+                _plot_density_contours_3d(ax_cluster, cluster_proj, color)
+
+            centroid = cluster_proj.mean(axis=0)
+            label_positions_cluster.append((centroid, display_label, color))
+
+            pts_sub_idx = np.random.choice(len(gt_proj), min(max_points, len(gt_proj)), replace=False)
+            pts_sub = gt_proj[pts_sub_idx]
+            dens_sub = density_gt[pts_sub_idx]
+            sizes = 25 + 50 * dens_sub
+
+            alphas = 0.4 + 0.5 * dens_sub
+            colors_rgba = np.array([(*rgb, a) for a in alphas])
+
+            ax_gt.scatter(
+                pts_sub[:, 0], pts_sub[:, 1], pts_sub[:, 2],
+                c=colors_rgba, s=sizes,
+                edgecolors='white', linewidths=0.3,
+            )
+
+            if len(gt_proj) > 15:
+                _plot_density_contours_3d(ax_gt, gt_proj, color)
+
+            centroid = gt_proj.mean(axis=0)
+            label_positions_gt.append((centroid, gt_label, color))
+
+        for pos, label, color in label_positions_cluster:
+            ax_cluster.text(
+                pos[0], pos[1], pos[2], label,
+                fontsize=9, fontweight='bold',
+                ha='center', va='center',
+                color='white', zorder=100,
+                bbox=dict(boxstyle='round,pad=0.4', facecolor=color, alpha=0.9,
+                          edgecolor='white', linewidth=1.5),
+            )
+
+        for pos, label, color in label_positions_gt:
+            ax_gt.text(
+                pos[0], pos[1], pos[2], label,
+                fontsize=9, fontweight='bold',
+                ha='center', va='center',
+                color='white', zorder=100,
+                bbox=dict(boxstyle='round,pad=0.4', facecolor=color, alpha=0.9,
+                          edgecolor='white', linewidth=1.5),
+            )
+
+        for ax in [ax_cluster, ax_gt]:
+            ax.set_xlabel(f"PC1 ({var_explained[0]:.1f}%)", fontsize=10)
+            ax.set_ylabel(f"PC2 ({var_explained[1]:.1f}%)", fontsize=10)
+            ax.set_zlabel(f"PC3 ({var_explained[2]:.1f}%)", fontsize=10)
+            ax.tick_params(labelsize=8)
+
+        total_cluster = sum(len(td["cluster_proj_3d"]) for td in group_data)
+        total_gt = sum(len(td["gt_proj_3d"]) for td in group_data)
+
+        ax_cluster.set_title(
+            f"Discovered ({len(group_data)} types, {total_cluster} frames)",
+            fontsize=11, fontweight='bold', pad=5
+        )
+        ax_gt.set_title(
+            f"Ground Truth ({len(group_data)} types, {total_gt} frames)",
+            fontsize=11, fontweight='bold', pad=5
+        )
+
+        feature_label = "Intention" if feature_type == "intention" else "Qpos"
+        title = f"{method_name} (seed {seed}): {group_name} Transitions 3D [{feature_label}]" if method_name else f"{group_name} Transitions 3D [{feature_label}]"
+        fig.suptitle(title, fontsize=13, fontweight='bold', y=0.98)
+
+        fig.subplots_adjust(left=0.02, right=0.98, bottom=0.05, top=0.90, wspace=0.05)
+
+        transitions_dir = os.path.join(output_dir, "transitions_3d")
+        os.makedirs(transitions_dir, exist_ok=True)
+
+        safe_group = group_name.replace(" ", "_").replace("/", "-")
+        save_path = os.path.join(
+            transitions_dir,
+            f"{method_name}_seed{seed}_transitions_3d_{feature_type}_{safe_group}.pdf" if method_name else f"transitions_3d_{feature_type}_{safe_group}.pdf"
+        )
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        plt.close()
+
+        print(f"    Saved {group_name} 3D [{feature_type}] ({len(group_data)} transitions) to {save_path}")
 
 
 def plot_transition_cluster_comparison(
@@ -444,6 +710,10 @@ def plot_transition_cluster_comparison(
                 intention_data, output_dir, "intention",
                 method_name, seed, max_points, figsize
             )
+            _plot_transition_groups_3d(
+                intention_data, output_dir, "intention",
+                method_name, seed, max_points, figsize
+            )
         else:
             print("    No valid intention data for transitions")
 
@@ -452,6 +722,10 @@ def plot_transition_cluster_comparison(
         qpos_data = build_transition_data(qpos_cache, "qpos")
         if qpos_data:
             _plot_transition_groups(
+                qpos_data, output_dir, "qpos",
+                method_name, seed, max_points, figsize
+            )
+            _plot_transition_groups_3d(
                 qpos_data, output_dir, "qpos",
                 method_name, seed, max_points, figsize
             )
