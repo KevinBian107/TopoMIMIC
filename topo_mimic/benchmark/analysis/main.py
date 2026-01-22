@@ -3,6 +3,9 @@
 import os
 import sys
 
+import h5py
+import numpy as np
+
 from .config import AnalysisConfig, load_config
 from .data_loading import (
     load_experiment_results,
@@ -15,6 +18,25 @@ from .visualization import (
     plot_transition_cluster_comparison,
     plot_transition_graph,
 )
+from .metrics import (
+    run_mmd_analysis,
+    plot_mmd_comparison_table,
+)
+
+
+def load_trajectory_data(rodent_rollout_dir: str, data_key: str) -> np.ndarray:
+    """Load trajectory data (qpos or intention) from h5 file."""
+    if rodent_rollout_dir.endswith('.h5'):
+        with h5py.File(rodent_rollout_dir, 'r') as f:
+            available_keys = list(f.keys())
+            if data_key not in available_keys:
+                raise KeyError(
+                    f"Key '{data_key}' not found in h5 file. "
+                    f"Available keys: {available_keys}"
+                )
+            return np.array(f[data_key])
+    else:
+        raise ValueError("Expected .h5 file for rodent_rollout_dir")
 
 
 def run_analysis(config: AnalysisConfig) -> None:
@@ -43,6 +65,21 @@ def run_analysis(config: AnalysisConfig) -> None:
         print(f"Filtering to methods: {config.methods}")
     if config.seeds:
         print(f"Filtering to seeds: {config.seeds}")
+
+    mmd_data = None
+    if config.run_mmd_metrics:
+        print(f"\n=== Loading data for MMD ({config.mmd_data_key}) ===")
+        try:
+            mmd_data = load_trajectory_data(
+                config.rodent_rollout_dir,
+                config.mmd_data_key,
+            )
+            print(f"Loaded data: {mmd_data.shape}")
+        except Exception as e:
+            print(f"Failed to load data: {e}")
+            config.run_mmd_metrics = False
+
+    all_mmd_metrics = {}
 
     for method_name, method_results in all_results.items():
         if config.methods and method_name not in config.methods:
@@ -155,6 +192,43 @@ def run_analysis(config: AnalysisConfig) -> None:
                         )
                     except Exception as e:
                         print(f"    Transition graph analysis failed: {e}")
+
+            if config.run_mmd_metrics and mmd_data is not None:
+                if os.path.exists(config.behavior_labels_csv):
+                    print(f"    Running MMD metrics ({config.mmd_data_key})...")
+                    try:
+                        metrics_dir = os.path.join(seed_output_dir, "mmd_metrics")
+                        mmd_metrics = run_mmd_analysis(
+                            cluster_dict=cluster_dict,
+                            cluster_labels=cluster_labels,
+                            behavior_labels_csv=config.behavior_labels_csv,
+                            data=mmd_data,
+                            output_dir=metrics_dir,
+                            method_name=method_name,
+                            seed=seed,
+                            target_len=config.mmd_target_len,
+                            short_threshold=config.short_behavior_threshold,
+                            merge_rear=config.merge_rear,
+                        )
+                        method_key = f"{method_name}_seed{seed}"
+                        if mmd_metrics:
+                            all_mmd_metrics[method_key] = mmd_metrics
+                    except Exception as e:
+                        print(f"    MMD metrics failed: {e}")
+                        import traceback
+                        traceback.print_exc()
+
+    if config.run_mmd_metrics and all_mmd_metrics:
+        print("\n=== Generating MMD Comparison Table ===")
+        comparison_dir = os.path.join(config.output_dir, "comparison_tables")
+        os.makedirs(comparison_dir, exist_ok=True)
+
+        mmd_table_path = os.path.join(comparison_dir, "mmd_comparison.pdf")
+        plot_mmd_comparison_table(
+            all_mmd_metrics,
+            mmd_table_path,
+            title="MMD Distance by Method and Transition Type",
+        )
 
     print("\n" + "=" * 60)
     print("Analysis Complete!")

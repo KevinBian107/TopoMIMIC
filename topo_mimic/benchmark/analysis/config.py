@@ -20,7 +20,11 @@ class AnalysisConfig:
     run_transition_comparison: bool = True
     run_transition_ranking: bool = True
     run_transition_graph: bool = False
+    run_mmd_metrics: bool = False
     render_gt_transitions: bool = False
+
+    mmd_data_key: str = "intention"
+    mmd_target_len: int = 100
 
     gt_render_max_samples: int = 5
     gt_render_framerate: int = 30
@@ -58,7 +62,10 @@ def load_config(config_path: str | Path) -> AnalysisConfig:
         run_transition_comparison=cfg.get("run_transition_comparison", True),
         run_transition_ranking=cfg.get("run_transition_ranking", True),
         run_transition_graph=cfg.get("run_transition_graph", False),
+        run_mmd_metrics=cfg.get("run_mmd_metrics", False),
         render_gt_transitions=cfg.get("render_gt_transitions", False),
+        mmd_data_key=cfg.get("mmd_data_key", "intention"),
+        mmd_target_len=cfg.get("mmd_target_len", 100),
         gt_render_max_samples=cfg.get("gt_render_max_samples", 5),
         gt_render_framerate=cfg.get("gt_render_framerate", 30),
         gt_render_target_size=tuple(cfg.get("gt_render_target_size", [320, 240])),
