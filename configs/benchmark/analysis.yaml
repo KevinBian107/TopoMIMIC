@@ -1,7 +1,7 @@
 # Unified Analysis Configuration
 # Run after experiment.py to analyze results
 
-experiment_dir: "out/benchmark_experiment_test"
+experiment_dir: "out/benchmark_experiment_train"
 output_dir: "out/benchmark_analysis"
 
 rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
@@ -19,6 +19,18 @@ seeds: [0]
 short_behavior_threshold: 50  # Max frames for intermediate behavior to be bridged
 merge_rear: true  # Merge Supported Rear and Unsupported Rear into single "Rear" category
 max_gap_between_segments: 10  # Max gap between consecutive behavior segments to count as transition
+
+
+# =============================================================================
+# GT Sanity Check (run at start of analysis)
+# =============================================================================
+# Compares movement sequences between top GT transition clusters using DTW
+# to verify they represent distinct behavioral states (different movement patterns)
+run_gt_sanity_check: false
+gt_sanity_top_k: 5  # Number of top GT transition types to compare
+gt_sanity_data_key: "qpos_rollout"  # Feature to use: "qpos_rollout" or "intention"
+gt_sanity_figsize: [12, 10]  # [width, height] for heatmaps
+gt_sanity_skip_root_dims: 7  # Skip first N dims of qpos (root pos + quat)
 
 # =============================================================================
 # MDS settings
@@ -56,8 +68,15 @@ transition_graph_layout: "spring"  # Layout algorithm: spring, kamada_kawai, spe
 transition_graph_figsize: [16, 7]  # [width, height]
 
 # =============================================================================
-# MMD metrics (set-to-set comparison)
+# DTW Metrics (Discovered vs Corresponding GT comparison)
 # =============================================================================
-run_mmd_metrics: false  # Enable MMD metrics
-mmd_data_key: "qpos_rollout"  # Data to use: "intention" (qpos not in aggregate h5)
-mmd_target_len: 100  # Normalize all trajectories to this length
+# Compares movement SEQUENCES using Dynamic Time Warping
+# Each discovered cluster is compared to its corresponding GT transition type
+# Turn direction (left/right) is used to filter GT sequences
+# Lower DTW = more similar transition dynamics (how joints move over time)
+run_dtw_metrics: true
+dtw_data_key: "qpos_rollout"  # Data to use: "qpos_rollout" or "intention"
+dtw_max_seqs: 50  # Max sequences per cluster
+dtw_max_comparisons: 100  # Max pairwise DTW comparisons per cluster pair
+dtw_min_seq_length: 3  # Minimum sequence length to include
+dtw_skip_root_dims: 7  # Skip first N dims of qpos (root pos + quat)
