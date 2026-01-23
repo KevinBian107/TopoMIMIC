@@ -4,6 +4,7 @@
 output_dir: "out/benchmark_experiment_test"
 rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
 split: "test"
+n_clips: 100  # Number of clips to use from split (null = all clips in split)
 
 # Data configuration
 data:
@@ -20,11 +21,11 @@ clustering:
   max_len: 500
   target_len: 100
   only_max: true
-  skip_clips: [80, 187, 227, 246, 267, 392, 434, 456, 491, 562, 610]
+  skip_clips: [80, 187, 227, 246, 267, 392, 434, 456, 491, 562, 610, 685]
 
 # K selection configuration
 k_selection:
-  n_clusters: 30
+  n_clusters: 10
 
 # Seeds for reproducibility (multiple seeds for stability analysis)
 seeds: [0]

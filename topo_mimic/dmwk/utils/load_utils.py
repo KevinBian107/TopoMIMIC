@@ -232,25 +232,31 @@ TOTAL_CLIPS = 842
 TEST_SIZE = 200
 
 
-def get_clip_indices(split: str) -> list[int]:
+def get_clip_indices(split: str, n_clips: int | None = None) -> list[int]:
     """
     Get clip indices for a given split.
 
     Args:
         split: One of "train", "test", or "all"
+        n_clips: Optional limit on number of clips to return (from start of split)
 
     Returns:
         List of clip indices for the specified split
     """
     train_end = TOTAL_CLIPS - TEST_SIZE
     if split == "train":
-        return list(range(train_end))
+        indices = list(range(train_end))
     elif split == "test":
-        return list(range(train_end, TOTAL_CLIPS))
+        indices = list(range(train_end, TOTAL_CLIPS))
     elif split == "all":
-        return list(range(TOTAL_CLIPS))
+        indices = list(range(TOTAL_CLIPS))
     else:
         raise ValueError(f"Unknown split: {split}. Must be 'train', 'test', or 'all'")
+
+    if n_clips is not None:
+        indices = indices[:n_clips]
+
+    return indices
 
 
 def split_clips_by_frames(

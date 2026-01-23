@@ -2,7 +2,7 @@
 # Run after experiment.py to generate label recommendations
 
 # Experiment location
-experiment_dir: "out/benchmark_experiment"
+experiment_dir: "out/benchmark_experiment_test"
 rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
 behavior_labels_csv: "/home/jovyan/vast/kaiwen/TopoVNL/behavior_labels.csv"
 
@@ -23,12 +23,12 @@ gt_extraction:
 
 # Distance computation parameters
 distance:
-  max_cycles_per_cluster: 50   # Sample cycles from each cluster
-  max_gt_samples: 50           # Sample GT transitions per type
+  max_cycles_per_cluster: 100   # Sample cycles from each cluster
+  max_gt_samples: 100           # Sample GT transitions per type
 
 # Recommendation parameters
 recommendations:
-  top_k: 5                     # Number of recommendations per cluster
+  top_k: 10                     # Number of recommendations per cluster
 
 # Output options
 save_csv: true                 # Save recommendations and statistics to CSV
