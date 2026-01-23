@@ -22,6 +22,7 @@ from .visualization import (
 )
 from .metrics import run_dtw_analysis, DTWResult
 from .gt_sanity_check import run_gt_dtw_sanity_check
+from .dtw_visualization import run_dtw_visualization
 
 
 def create_dtw_comparison_table(
@@ -305,6 +306,33 @@ def run_analysis(config: AnalysisConfig) -> None:
                         all_dtw_results[method_key] = dtw_results
                     except Exception as e:
                         print(f"    DTW analysis failed: {e}")
+                        import traceback
+                        traceback.print_exc()
+
+            if config.run_dtw_visualization and dtw_data is not None:
+                if os.path.exists(config.behavior_labels_csv):
+                    print(f"    Running DTW visualization...")
+                    try:
+                        dtw_viz_dir = os.path.join(seed_output_dir, "dtw_visualization")
+                        run_dtw_visualization(
+                            cluster_dict=cluster_dict,
+                            cluster_labels=cluster_labels,
+                            turn_directions=turn_directions,
+                            behavior_labels_csv=config.behavior_labels_csv,
+                            data=dtw_data,
+                            rodent_rollout_dir=config.rodent_rollout_dir,
+                            output_dir=dtw_viz_dir,
+                            method_name=method_name,
+                            seed=seed,
+                            short_threshold=config.short_behavior_threshold,
+                            merge_rear=config.merge_rear,
+                            skip_root_dims=config.dtw_skip_root_dims,
+                            min_seq_length=config.dtw_min_seq_length,
+                            fps=config.gt_render_framerate,
+                            target_size=config.gt_render_target_size,
+                        )
+                    except Exception as e:
+                        print(f"    DTW visualization failed: {e}")
                         import traceback
                         traceback.print_exc()
 

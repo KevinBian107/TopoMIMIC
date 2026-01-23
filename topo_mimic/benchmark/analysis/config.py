@@ -22,6 +22,7 @@ class AnalysisConfig:
     run_transition_ranking: bool = True
     run_transition_graph: bool = False
     run_dtw_metrics: bool = True
+    run_dtw_visualization: bool = False
     render_gt_transitions: bool = False
 
     gt_sanity_top_k: int = 10
@@ -73,6 +74,7 @@ def load_config(config_path: str | Path) -> AnalysisConfig:
         run_transition_ranking=cfg.get("run_transition_ranking", True),
         run_transition_graph=cfg.get("run_transition_graph", False),
         run_dtw_metrics=cfg.get("run_dtw_metrics", True),
+        run_dtw_visualization=cfg.get("run_dtw_visualization", False),
         render_gt_transitions=cfg.get("render_gt_transitions", False),
         gt_sanity_top_k=cfg.get("gt_sanity_top_k", 10),
         gt_sanity_data_key=cfg.get("gt_sanity_data_key", "qpos_rollout"),

@@ -80,3 +80,10 @@ dtw_max_seqs: 50  # Max sequences per cluster
 dtw_max_comparisons: 100  # Max pairwise DTW comparisons per cluster pair
 dtw_min_seq_length: 3  # Minimum sequence length to include
 dtw_skip_root_dims: 7  # Skip first N dims of qpos (root pos + quat)
+
+# =============================================================================
+# DTW Visualization (detailed alignment visualization)
+# =============================================================================
+# Generates per-cluster visualizations showing DTW alignment details
+# For each cluster: warping path on cost matrix, aligned joint trajectories, and video
+run_dtw_visualization: true  # Enable detailed DTW visualization (slower)
