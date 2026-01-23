@@ -97,6 +97,7 @@ class ExperimentConfig:
     output_dir: str = "out/experiment"
     rodent_rollout_dir: str = "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
     split: str = "train"
+    n_clips: int | None = None  # Number of clips to use (None = all clips in split)
 
     data: DataConfig = None
     dm: DMConfig = None
@@ -176,6 +177,7 @@ def load_config(config_path: str) -> ExperimentConfig:
         output_dir=cfg.get("output_dir", ExperimentConfig.output_dir),
         rodent_rollout_dir=cfg.get("rodent_rollout_dir", ExperimentConfig.rodent_rollout_dir),
         split=cfg.get("split", ExperimentConfig.split),
+        n_clips=cfg.get("n_clips", None),
         data=data_cfg,
         dm=dm_cfg,
         clustering=clustering_cfg,
@@ -191,8 +193,9 @@ def load_data(
     data_key: str,
     rodent_rollout_dir: str,
     split: str,
+    n_clips: int | None = None,
 ) -> tuple[np.ndarray, list[int]]:
-    clip_indices = get_clip_indices(split)
+    clip_indices = get_clip_indices(split, n_clips=n_clips)
     work_fn = functools.partial(
         get_aggregate_data, f"/{data_key}", [], path=rodent_rollout_dir
     )
@@ -223,32 +226,35 @@ def prepare_windows_for_clustering(
     all_cycle_dm: list,
     data: np.ndarray,
     clustering_cfg: ClusteringConfig,
+    clip_indices: list[int] | None = None,
 ) -> tuple[list[tuple[int, np.ndarray]], list[np.ndarray]]:
     windows = []
     cleaned_loops = []
     n_clips = len(data)
 
-    for clip_id in range(n_clips):
-        if clip_id in clustering_cfg.skip_clips:
+    for local_idx in range(n_clips):
+        # Convert to absolute clip ID for skip check
+        abs_clip_id = clip_indices[local_idx] if clip_indices else local_idx
+        if abs_clip_id in clustering_cfg.skip_clips:
             continue
-        if clip_id >= len(all_cycle_dm):
+        if local_idx >= len(all_cycle_dm):
             continue
 
         loops = [
-            loop for loop in all_cycle_dm[clip_id]
+            loop for loop in all_cycle_dm[local_idx]
             if clustering_cfg.min_len <= len(loop) <= clustering_cfg.max_len
         ]
 
         if clustering_cfg.only_max and len(loops) > 0:
             loops = [max(loops, key=len)]
 
-        clip_len = len(data[clip_id])
+        clip_len = len(data[local_idx])
         for loop in loops:
             expanded = _expand_frames_nonconsec(loop, pad=0, clip_len=clip_len)
             sampled = _uniform_downsample(expanded, clustering_cfg.target_len)
             if sampled is None:
                 continue
-            windows.append((clip_id, sampled))
+            windows.append((local_idx, sampled))  # Store local index for data access
             cleaned_loops.append(np.asarray(loop, dtype=int))
 
     if clustering_cfg.only_max and cleaned_loops:
@@ -261,6 +267,7 @@ def prepare_windows_for_clustering(
 def prepare_all_frames_for_clustering(
     data: np.ndarray,
     clustering_cfg: ClusteringConfig,
+    clip_indices: list[int] | None = None,
 ) -> list[tuple[int, np.ndarray]]:
     """
     Prepare windows using all frames from each clip (baseline).
@@ -272,23 +279,25 @@ def prepare_all_frames_for_clustering(
     Args:
         data: Full data array (n_clips, n_frames, n_dim)
         clustering_cfg: Clustering configuration
+        clip_indices: Absolute clip indices (for skip_clips check)
 
     Returns:
-        List of (clip_id, frame_indices) tuples, one per clip
+        List of (abs_clip_id, frame_indices) tuples, one per clip
     """
     windows = []
     n_clips = len(data)
 
-    for clip_id in range(n_clips):
-        if clip_id in clustering_cfg.skip_clips:
+    for local_idx in range(n_clips):
+        abs_clip_id = clip_indices[local_idx] if clip_indices else local_idx
+        if abs_clip_id in clustering_cfg.skip_clips:
             continue
 
-        clip_len = len(data[clip_id])
+        clip_len = len(data[local_idx])
         all_frames = np.arange(clip_len)
         sampled = _uniform_downsample(all_frames, clustering_cfg.target_len)
 
         if sampled is not None:
-            windows.append((clip_id, sampled))
+            windows.append((local_idx, sampled))  # Store local index for data access
 
     print(f"[all_frames baseline] Created {len(windows)} windows (1 per clip)")
     return windows
@@ -398,13 +407,15 @@ def compute_gw_distance_matrix(
 def labels_to_cluster_dict(
     labels: np.ndarray,
     windows: list[tuple[int, np.ndarray]],
+    clip_indices: list[int] | None = None,
 ) -> dict[int, list[tuple[int, np.ndarray]]]:
     cluster_dict = {}
-    for lbl, win in zip(labels, windows):
+    for lbl, (local_clip_id, frames) in zip(labels, windows):
         lbl = int(lbl)
         if lbl < 0:
             continue
-        cluster_dict.setdefault(lbl, []).append(win)
+        abs_clip_id = clip_indices[local_clip_id] if clip_indices else local_clip_id
+        cluster_dict.setdefault(lbl, []).append((abs_clip_id, frames))
     return cluster_dict
 
 
@@ -484,10 +495,11 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
     print(f"Seeds: {config.seeds}")
 
     print(f"\n=== Stage 1: Loading {config.data.dm_key} data ===")
-    dm_data, clip_indices = load_data(config.data.dm_key, config.rodent_rollout_dir, config.split)
+    dm_data, clip_indices = load_data(config.data.dm_key, config.rodent_rollout_dir, config.split, config.n_clips)
+    print(f"Loaded {len(clip_indices)} clips: {clip_indices[0]}-{clip_indices[-1]}")
 
     print(f"\n=== Stage 2: Loading {config.data.evaluation_key} data ===")
-    eval_data, _ = load_data(config.data.evaluation_key, config.rodent_rollout_dir, config.split)
+    eval_data, _ = load_data(config.data.evaluation_key, config.rodent_rollout_dir, config.split, config.n_clips)
 
     min_frames = min(dm_data.shape[1], eval_data.shape[1])
     dm_data = dm_data[:, :min_frames, :]
@@ -503,7 +515,7 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
 
     print("\n=== Stage 4: Preparing windows ===")
     windows, cleaned_loops = prepare_windows_for_clustering(
-        all_cycle_dm, dm_data, config.clustering
+        all_cycle_dm, dm_data, config.clustering, clip_indices
     )
     print(f"Prepared {len(windows)} windows (from topological cycles)")
 
@@ -513,12 +525,12 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
     X = build_feature_matrix(windows, dm_data)
     print(f"Feature matrix: {X.shape}")
 
-    baseline_needed = any(m.name == "w2_kmeans_baseline" and m.enabled for m in config.methods)
+    baseline_needed = any(m.name == "w2_unif_kmeans" and m.enabled for m in config.methods)
     windows_baseline = None
     X_baseline = None
     if baseline_needed:
         print("\n=== Stage 4b: Preparing baseline windows (all frames) ===")
-        windows_baseline = prepare_all_frames_for_clustering(dm_data, config.clustering)
+        windows_baseline = prepare_all_frames_for_clustering(dm_data, config.clustering, clip_indices)
         X_baseline = build_feature_matrix(windows_baseline, dm_data)
         print(f"Baseline feature matrix: {X_baseline.shape}")
 
@@ -526,7 +538,7 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
     D_gw, Dn_gw = None, None
     D_w2_baseline, Dn_w2_baseline = None, None
 
-    w2_needed = any(m.name == "w2_kmeans" and m.enabled for m in config.methods)
+    w2_needed = any(m.name == "w2_dm_kmeans" and m.enabled for m in config.methods)
     if w2_needed:
         w2_cache_path = os.path.join(config.output_dir, "w2_distance_matrix.pkl")
         if os.path.exists(w2_cache_path):
@@ -558,9 +570,9 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
                 pkl.dump({"D": D_w2_baseline, "Dn": Dn_w2_baseline}, f)
             print(f"Cached W2 baseline matrix to {w2_baseline_cache_path}")
 
-    gw_needed = any(m.name == "gw_kmeans" and m.enabled for m in config.methods)
+    gw_needed = any(m.name == "gw_dm_kmeans" and m.enabled for m in config.methods)
     if gw_needed:
-        gw_method = next((m for m in config.methods if m.name == "gw_kmeans"), None)
+        gw_method = next((m for m in config.methods if m.name == "gw_dm_kmeans"), None)
         gw_params = gw_method.params if gw_method else {}
         loss_fun = gw_params.get("loss_fun", "square_loss")
         max_iter = gw_params.get("max_iter", 1000)
@@ -606,15 +618,15 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
         method = get_method(method_entry.name, method_entry.params)
         method_results = {}
 
-        if method_entry.name == "w2_kmeans":
+        if method_entry.name == "w2_dm_kmeans":
             method.params["distance_matrix"] = Dn_w2
-        elif method_entry.name == "w2_kmeans_baseline":
+        elif method_entry.name == "w2_unif_kmeans":
             method.params["distance_matrix"] = Dn_w2_baseline
-        elif method_entry.name == "gw_kmeans":
+        elif method_entry.name == "gw_dm_kmeans":
             method.params["distance_matrix"] = Dn_gw
 
-        current_windows = windows_baseline if method_entry.name == "w2_kmeans_baseline" else windows
-        current_X = X_baseline if method_entry.name == "w2_kmeans_baseline" else X
+        current_windows = windows_baseline if method_entry.name == "w2_unif_kmeans" else windows
+        current_X = X_baseline if method_entry.name == "w2_unif_kmeans" else X
 
         if method.method_type == MethodType.STATE_SPACE:
             n_clusters_to_use = config.k_selection.n_clusters
@@ -632,7 +644,10 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
 
                 cluster_dict_filtered = kpms_result.transition_cluster_dict
                 cluster_dict = {
-                    cluster_id: [(keep_indices[clip_id], frames) for clip_id, frames in instances]
+                    cluster_id: [
+                        (clip_indices[keep_indices[clip_id]], frames)
+                        for clip_id, frames in instances
+                    ]
                     for cluster_id, instances in cluster_dict_filtered.items()
                 }
                 stats = kpms_result.transition_stats
@@ -650,7 +665,9 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
         else:
             for seed in config.seeds:
                 labels = method.fit_predict(current_X, config.k_selection.n_clusters, seed)
-                cluster_dict = labels_to_cluster_dict(labels, current_windows)
+                cluster_dict = labels_to_cluster_dict(
+                    labels, current_windows, clip_indices=clip_indices
+                )
 
                 method_results[seed] = {
                     "n_clusters": config.k_selection.n_clusters,

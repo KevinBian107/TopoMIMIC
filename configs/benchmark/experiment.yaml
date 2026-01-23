@@ -1,9 +1,10 @@
 # Unified Benchmark Experiment Configuration
 # Single entry point for all clustering methods
 
-output_dir: "out/benchmark_experiment"
+output_dir: "out/benchmark_experiment_test"
 rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
-split: "train"
+split: "test"
+n_clips: 100  # Number of clips to use from split (null = all clips in split)
 
 # Data configuration
 data:
@@ -20,7 +21,7 @@ clustering:
   max_len: 500
   target_len: 100
   only_max: true
-  skip_clips: [80, 187, 227, 246, 267, 392, 434, 456, 491, 562, 610]
+  skip_clips: [80, 187, 227, 246, 267, 392, 434, 456, 491, 562, 610, 685]
 
 # K selection configuration
 k_selection:
@@ -34,13 +35,13 @@ aggregate_seeds: true
 methods:
   - name: "w2_dm_kmeans"
     type: "clustering"
-    enabled: false
+    enabled: true
     params:
       mds_components: 3
 
   - name: "w2_unif_kmeans"
     type: "clustering"
-    enabled: false
+    enabled: train
     params:
       mds_components: 3
 
@@ -72,7 +73,7 @@ methods:
 rendering:
   enabled: true
   pad: 0
-  max_samples: 6
+  max_samples: 5
   framerate: 50
   target_size: [320, 240]
   per_cluster_videos: false

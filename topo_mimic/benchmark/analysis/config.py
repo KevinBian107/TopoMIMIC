@@ -16,11 +16,25 @@ class AnalysisConfig:
     methods: list[str] = None
     seeds: list[int] = None
 
+    run_gt_sanity_check: bool = True
     run_mds_analysis: bool = True
     run_transition_comparison: bool = True
     run_transition_ranking: bool = True
     run_transition_graph: bool = False
+    run_dtw_metrics: bool = True
+    run_dtw_visualization: bool = False
     render_gt_transitions: bool = False
+
+    gt_sanity_top_k: int = 10
+    gt_sanity_data_key: str = "qpos_rollout"
+    gt_sanity_figsize: tuple[float, float] = (12, 10)
+    gt_sanity_skip_root_dims: int = 7
+
+    dtw_data_key: str = "qpos_rollout"
+    dtw_max_seqs: int = 50
+    dtw_max_comparisons: int = 100
+    dtw_min_seq_length: int = 3
+    dtw_skip_root_dims: int = 7
 
     gt_render_max_samples: int = 5
     gt_render_framerate: int = 30
@@ -54,11 +68,23 @@ def load_config(config_path: str | Path) -> AnalysisConfig:
         behavior_labels_csv=cfg.get("behavior_labels_csv", AnalysisConfig.behavior_labels_csv),
         methods=cfg.get("methods", None),
         seeds=cfg.get("seeds", None),
+        run_gt_sanity_check=cfg.get("run_gt_sanity_check", True),
         run_mds_analysis=cfg.get("run_mds_analysis", True),
         run_transition_comparison=cfg.get("run_transition_comparison", True),
         run_transition_ranking=cfg.get("run_transition_ranking", True),
         run_transition_graph=cfg.get("run_transition_graph", False),
+        run_dtw_metrics=cfg.get("run_dtw_metrics", True),
+        run_dtw_visualization=cfg.get("run_dtw_visualization", False),
         render_gt_transitions=cfg.get("render_gt_transitions", False),
+        gt_sanity_top_k=cfg.get("gt_sanity_top_k", 10),
+        gt_sanity_data_key=cfg.get("gt_sanity_data_key", "qpos_rollout"),
+        gt_sanity_figsize=tuple(cfg.get("gt_sanity_figsize", [12, 10])),
+        gt_sanity_skip_root_dims=cfg.get("gt_sanity_skip_root_dims", 7),
+        dtw_data_key=cfg.get("dtw_data_key", "qpos_rollout"),
+        dtw_max_seqs=cfg.get("dtw_max_seqs", 50),
+        dtw_max_comparisons=cfg.get("dtw_max_comparisons", 100),
+        dtw_min_seq_length=cfg.get("dtw_min_seq_length", 3),
+        dtw_skip_root_dims=cfg.get("dtw_skip_root_dims", 7),
         gt_render_max_samples=cfg.get("gt_render_max_samples", 5),
         gt_render_framerate=cfg.get("gt_render_framerate", 30),
         gt_render_target_size=tuple(cfg.get("gt_render_target_size", [320, 240])),
