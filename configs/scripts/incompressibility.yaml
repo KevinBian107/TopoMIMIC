@@ -1,0 +1,67 @@
+# Incompressibility Experiment Configuration
+# Tests the theory that DM-G preserves divergent paths in intention space
+#
+# Theory (from proof.pdf):
+# - DM-G detects changes through incompressibility
+# - Steady-state behavior has H_p = 0, so it collapses
+# - Transitions create H_1 != 0 (loops) that cannot be paired away
+# - This experiment finds divergent trajectories and verifies DM-G captures them
+
+output_dir: "out/incompressibility"
+
+data:
+  rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
+  split: "train"
+  intention_key: "intention"
+  qpos_key: "qpos_rollout"
+  skip_clips: [80, 187, 227, 246, 267, 392, 434, 456, 491, 562, 610, 685]
+
+divergence:
+  # Number of trajectories to compare (K from the experiment description)
+  k_trajectories: 2
+  # How many frames define "similar past"
+  past_frames: 150
+  # How many frames to check for divergence
+  future_frames: 350
+  # Cosine similarity threshold for past (higher = more similar)
+  similarity_threshold: 0.8
+  # Euclidean distance threshold for future divergence (higher = more divergent)
+  divergence_threshold: 1.5
+  # Number of candidate pairs to consider
+  n_candidates: 100
+  seed: 42
+  # Minimum root displacement (x,y) to consider a clip as "moving"
+  min_displacement: 0.1
+  # Filter only moving clips
+  require_movement: true
+
+dm:
+  # Takens embedding parameters (from dm_pipeline.yaml)
+  m: 1
+  tau: 1
+  # Persistence threshold - higher keeps fewer cycles
+  pers_delta: 1.0
+  k_neighbors: 3
+  epsilon: 0.99
+
+visualization:
+  # Key joints to plot in 2D panels
+  # qpos layout: [root_xyz(3), root_quat(4), joints...]
+  key_joints:
+    - name: "root_x"
+      indices: [0]
+    - name: "root_y"
+      indices: [1]
+    - name: "root_z"
+      indices: [2]
+    - name: "spine_bend"
+      indices: [7, 8, 9]
+    - name: "hip_L"
+      indices: [10, 11, 12]
+    - name: "hip_R"
+      indices: [17, 18, 19]
+
+rendering:
+  framerate: 30
+  target_size: [320, 240]
+  camera_name: "close_profile"
