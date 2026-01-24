@@ -102,7 +102,7 @@ Generate variance heatmaps, cross-method comparison, and seed stability analysis
 python -m topo_mimic.benchmark.analysis.main configs/benchmark/analysis.yaml
 ```
 
-## Rendering
+## Experiment
 To extract the clips with "filled space", representing only single behavior mode within it:
 ```bash
 python -m scripts.extract_filled_space configs/scripts/extract_filled_space.yaml
@@ -112,6 +112,11 @@ To render cycles for visualization:
 ```bash
 python -m scripts.render_cycle configs/scripts/render_cycle.yaml
 ```
+
+To verify the incompressibility statement:
+```bash
+ python scripts/incompressibility.py configs/scripts/incompressibility.yaml
+ ```
 
 ## Demo
 We have the code for illustrative demos:
