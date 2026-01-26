@@ -125,7 +125,11 @@ We have the code for illustrative demos:
 ```bash
 python -m scripts.demo_behavior_overlap
 python -m scripts.demo_torus
+python scripts/demo_saddle.py
 ```
+
+![Saddle_demo](/figures/saddle_dm.png)
+> Demonstration of incompressability proposition where divergent future must be recorded.
 
 ## Acknowledgements
 - This codebase is adapted from the [MIMIC-MJX](https://mimic-mjx.talmolab.org/) package.
