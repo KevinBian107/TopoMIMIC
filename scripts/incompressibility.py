@@ -84,6 +84,8 @@ class DivergenceConfig:
     seed: int = 42
     min_displacement: float = 0.05
     require_movement: bool = True
+    moving_vs_stationary: bool = False
+    max_intention_variance: float = 0.1
 
 
 @dataclass
@@ -260,6 +262,103 @@ def filter_moving_clips(
     filtered_indices = [clip_indices[i] for i in moving_mask]
 
     return filtered_qpos, filtered_indices, moving_mask
+
+
+def find_moving_vs_stationary_pairs(
+    intention: np.ndarray,
+    qpos: np.ndarray,
+    config: DivergenceConfig,
+    clip_indices: list[int],
+) -> list[tuple[int, ...]]:
+    """
+    Find groups with 1 stationary clip and (k-1) moving clips.
+    All clips should have similar past to the stationary clip.
+    Stationary requires both low physical movement AND low intention variance.
+    """
+    np.random.seed(config.seed)
+    n_clips = intention.shape[0]
+    n_frames = intention.shape[1]
+    k = config.k_trajectories
+
+    moving_mask = []
+    stationary_mask = []
+
+    for i in range(n_clips):
+        root_xy = qpos[i, :, :2]
+        displacement = np.linalg.norm(root_xy[-1] - root_xy[0])
+        total_path = np.sum(np.linalg.norm(np.diff(root_xy, axis=0), axis=1))
+
+        intent_var = np.var(intention[i], axis=0).mean()
+
+        is_physically_moving = displacement > config.min_displacement or total_path > config.min_displacement * 3
+        is_intention_stable = intent_var < config.max_intention_variance
+
+        if is_physically_moving:
+            moving_mask.append(i)
+        elif is_intention_stable:
+            stationary_mask.append(i)
+
+    print(f"Found {len(moving_mask)} moving clips, {len(stationary_mask)} stationary clips (intention var < {config.max_intention_variance})")
+
+    if len(moving_mask) == 0 or len(stationary_mask) == 0:
+        print("Warning: Need both moving and stationary clips")
+        return []
+
+    if len(moving_mask) < k - 1:
+        print(f"Warning: Need at least {k-1} moving clips, only have {len(moving_mask)}")
+        return []
+
+    past_end = config.past_frames
+    future_start = past_end
+    future_end = min(past_end + config.future_frames, n_frames)
+
+    past_data = intention[:, :past_end, :].reshape(n_clips, -1)
+    future_data = intention[:, future_start:future_end, :].reshape(n_clips, -1)
+
+    past_norm = past_data / (np.linalg.norm(past_data, axis=1, keepdims=True) + 1e-8)
+    future_norm = future_data / (np.linalg.norm(future_data, axis=1, keepdims=True) + 1e-8)
+
+    past_sim = past_norm @ past_norm.T
+    future_dist = cdist(future_norm, future_norm, metric="euclidean")
+
+    groups = []
+    for j in stationary_mask:
+        stat_clip_id = clip_indices[j]
+
+        moving_candidates = []
+        for i in moving_mask:
+            if (
+                past_sim[i, j] > config.similarity_threshold
+                and future_dist[i, j] > config.divergence_threshold
+            ):
+                moving_candidates.append((clip_indices[i], i, past_sim[i, j], future_dist[i, j]))
+
+        moving_candidates.sort(key=lambda x: (-x[2], x[3]))
+
+        if len(moving_candidates) >= k - 1:
+            selected_moving = [mc[0] for mc in moving_candidates[:k - 1]]
+            group = tuple(selected_moving + [stat_clip_id])
+            avg_sim = np.mean([mc[2] for mc in moving_candidates[:k - 1]])
+            groups.append((group, avg_sim))
+
+    groups.sort(key=lambda x: -x[1])
+    print(f"Found {len(groups)} valid groups with 1 stationary + {k-1} moving clips")
+
+    if len(groups) == 0:
+        print("Warning: No groups found, trying with relaxed constraints...")
+        for j in stationary_mask:
+            stat_clip_id = clip_indices[j]
+            moving_candidates = []
+            for i in moving_mask:
+                moving_candidates.append((clip_indices[i], i, past_sim[i, j], future_dist[i, j]))
+            moving_candidates.sort(key=lambda x: (-x[2], x[3]))
+            if len(moving_candidates) >= k - 1:
+                selected_moving = [mc[0] for mc in moving_candidates[:k - 1]]
+                group = tuple(selected_moving + [stat_clip_id])
+                groups.append((group, 0))
+                break
+
+    return [g[0] for g in groups[:1]] if groups else []
 
 
 def find_divergent_trajectories(
@@ -1208,6 +1307,90 @@ def plot_intention_with_cycles(
     print(f"Saved: {output_path}")
 
 
+def plot_sink_analysis(
+    combined_pts: np.ndarray,
+    clip_ids: list[int],
+    clip_ranges: list[tuple[int, int]],
+    cycles: list[np.ndarray],
+    output_path: str,
+) -> None:
+    """
+    Visualize the 'sink' effect: project combined point cloud to 2D,
+    color by clip, highlight cycle vertices.
+    """
+    from sklearn.decomposition import PCA
+
+    if not cycles:
+        print("No cycles to analyze")
+        return
+
+    pca = PCA(n_components=2)
+    projected = pca.fit_transform(combined_pts)
+
+    longest_cycle = max(cycles, key=len)
+    cycle_vertex_set = set(longest_cycle)
+
+    fig, axes = plt.subplots(1, 2, figsize=(16, 7))
+
+    ax = axes[0]
+    colors_clips = plt.cm.tab10(np.linspace(0, 1, len(clip_ids)))
+
+    for i, (clip_id, (start, end)) in enumerate(zip(clip_ids, clip_ranges)):
+        clip_pts = projected[start:end]
+        ax.scatter(clip_pts[:, 0], clip_pts[:, 1], c=[colors_clips[i]],
+                   alpha=0.3, s=10, label=f"Clip {clip_id}")
+        ax.scatter(clip_pts[0, 0], clip_pts[0, 1], c=[colors_clips[i]],
+                   s=100, marker="o", edgecolors="black", zorder=5)
+        ax.scatter(clip_pts[-1, 0], clip_pts[-1, 1], c=[colors_clips[i]],
+                   s=100, marker="s", edgecolors="black", zorder=5)
+
+    cycle_pts = projected[list(longest_cycle)]
+    ax.scatter(cycle_pts[:, 0], cycle_pts[:, 1], c="red", s=50,
+               marker="x", linewidths=2, label=f"Cycle vertices (n={len(longest_cycle)})", zorder=10)
+
+    ax.set_xlabel("PC1", fontsize=12)
+    ax.set_ylabel("PC2", fontsize=12)
+    ax.set_title("Combined Point Cloud with Cycle Vertices", fontsize=14)
+    ax.legend(loc="best")
+    ax.grid(True, alpha=0.3)
+
+    ax = axes[1]
+    cycle_by_clip = {clip_id: [] for clip_id in clip_ids}
+    for idx in longest_cycle:
+        for clip_id, (start, end) in zip(clip_ids, clip_ranges):
+            if start <= idx < end:
+                cycle_by_clip[clip_id].append(idx)
+                break
+
+    clip_labels = [f"Clip {cid}" for cid in clip_ids]
+    cycle_counts = [len(cycle_by_clip[cid]) for cid in clip_ids]
+    total_counts = [end - start for start, end in clip_ranges]
+
+    x = np.arange(len(clip_ids))
+    width = 0.35
+
+    bars1 = ax.bar(x - width/2, total_counts, width, label="Total points", alpha=0.7)
+    bars2 = ax.bar(x + width/2, cycle_counts, width, label="Cycle vertices", color="red", alpha=0.7)
+
+    ax.set_xlabel("Clip", fontsize=12)
+    ax.set_ylabel("Count", fontsize=12)
+    ax.set_title("Cycle Vertex Distribution by Clip", fontsize=14)
+    ax.set_xticks(x)
+    ax.set_xticklabels(clip_labels)
+    ax.legend()
+    ax.grid(True, alpha=0.3, axis="y")
+
+    for bar, count, total in zip(bars2, cycle_counts, total_counts):
+        pct = 100 * count / total if total > 0 else 0
+        ax.annotate(f"{pct:.1f}%", xy=(bar.get_x() + bar.get_width()/2, bar.get_height()),
+                    xytext=(0, 3), textcoords="offset points", ha="center", fontsize=10)
+
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"Saved: {output_path}")
+
+
 def run_experiment(config: IncompressibilityConfig) -> dict:
     os.makedirs(config.output_dir, exist_ok=True)
 
@@ -1224,19 +1407,25 @@ def run_experiment(config: IncompressibilityConfig) -> dict:
     qpos = load_qpos_data(config.data, clip_indices)
     print(f"Loaded intention: {intention.shape}, qpos: {qpos.shape}")
 
-    if config.divergence.require_movement:
-        print("\n=== Stage 1b: Filtering for moving clips ===")
-        qpos, clip_indices, moving_mask = filter_moving_clips(
-            qpos, clip_indices, config.divergence.min_displacement
+    if config.divergence.moving_vs_stationary:
+        print("\n=== Stage 2: Finding moving vs stationary pairs ===")
+        divergent_groups = find_moving_vs_stationary_pairs(
+            intention, qpos, config.divergence, clip_indices
         )
-        intention = intention[moving_mask]
-        print(f"Filtered to {len(clip_indices)} moving clips")
-        print(f"After filter - intention: {intention.shape}, qpos: {qpos.shape}")
+    else:
+        if config.divergence.require_movement:
+            print("\n=== Stage 1b: Filtering for moving clips ===")
+            qpos, clip_indices, moving_mask = filter_moving_clips(
+                qpos, clip_indices, config.divergence.min_displacement
+            )
+            intention = intention[moving_mask]
+            print(f"Filtered to {len(clip_indices)} moving clips")
+            print(f"After filter - intention: {intention.shape}, qpos: {qpos.shape}")
 
-    print("\n=== Stage 2: Finding divergent trajectories ===")
-    divergent_groups = find_divergent_trajectories(
-        intention, config.divergence, clip_indices
-    )
+        print("\n=== Stage 2: Finding divergent trajectories ===")
+        divergent_groups = find_divergent_trajectories(
+            intention, config.divergence, clip_indices
+        )
 
     if not divergent_groups:
         print("No divergent trajectory groups found. Exiting.")
@@ -1306,6 +1495,15 @@ def run_experiment(config: IncompressibilityConfig) -> dict:
         config.divergence.past_frames,
         dm_offset,
         os.path.join(config.output_dir, "intention_with_cycles.png"),
+    )
+
+    print("\n=== Stage 5c: Sink analysis (PCA projection) ===")
+    plot_sink_analysis(
+        combined_pts,
+        list(selected_group),
+        clip_ranges,
+        cycles,
+        os.path.join(config.output_dir, "sink_analysis.png"),
     )
 
     print("\n=== Stage 6: Rendering cycles ===")

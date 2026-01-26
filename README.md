@@ -116,6 +116,7 @@ python -m scripts.render_cycle configs/scripts/render_cycle.yaml
 To verify the incompressibility statement:
 ```bash
  python scripts/incompressibility.py configs/scripts/incompressibility.yaml
+  python scripts/varying_k.py configs/scripts/varying_k.yaml    
  ```
 
 ## Demo
