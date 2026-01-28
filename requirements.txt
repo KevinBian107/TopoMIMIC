@@ -6,4 +6,5 @@ ripser
 gudhi
 seaborn
 keypoint-moseq[cuda]
+jax-moseq[cuda]
 gradio
