@@ -23,9 +23,10 @@ class TableConfig:
 METHOD_DISPLAY_NAMES = {
     "w2_dm_kmeans": "W₂+DM",
     "w2_unif_kmeans": "W₂+Unif",
-    "kpms_intention": "KPMS-Intention",
-    "kpms_keypoint": "KPMS-Keypoint",
+    "kpms_intention": "KPMS-Int",
+    "kpms_keypoint": "KPMS-KP",
     "gw_dm_kmeans": "GW+DM",
+    "custom_vae": "VAE",
 }
 
 
@@ -149,7 +150,7 @@ def create_per_joint_pivot_table(agg_df: pd.DataFrame) -> pd.DataFrame:
     df = agg_df.set_index("Joint")
 
     method_order = []
-    for m in ["w2_dm_kmeans", "w2_unif_kmeans", "kpms_intention", "kpms_keypoint", "gw_dm_kmeans"]:
+    for m in ["w2_dm_kmeans", "w2_unif_kmeans", "kpms_intention", "kpms_keypoint", "custom_vae", "gw_dm_kmeans"]:
         matching = [c for c in df.columns if c.startswith(m)]
         method_order.extend(matching)
     for c in df.columns:
@@ -297,7 +298,7 @@ def create_pivot_table(
     )
 
     method_order = []
-    for m in ["w2_dm_kmeans", "w2_unif_kmeans", "kpms_intention", "kpms_keypoint", "gw_dm_kmeans"]:
+    for m in ["w2_dm_kmeans", "w2_unif_kmeans", "kpms_intention", "kpms_keypoint", "custom_vae", "gw_dm_kmeans"]:
         if m in pivot.columns:
             method_order.append(m)
     for m in pivot.columns:
@@ -326,7 +327,7 @@ def create_simple_pivot_table(agg_df: pd.DataFrame) -> pd.DataFrame:
     )
 
     method_order = []
-    for m in ["w2_dm_kmeans", "w2_unif_kmeans", "kpms_intention", "kpms_keypoint", "gw_dm_kmeans"]:
+    for m in ["w2_dm_kmeans", "w2_unif_kmeans", "kpms_intention", "kpms_keypoint", "custom_vae", "gw_dm_kmeans"]:
         if m in pivot.columns:
             method_order.append(m)
     for m in pivot.columns:
@@ -363,8 +364,8 @@ def render_nature_table(
     n_rows = len(display_df) + 1
     n_cols = len(display_df.columns) + 1
 
-    fig_height = max(config.figsize[1], 0.4 * n_rows + 1)
-    fig_width = max(config.figsize[0], 1.2 * n_cols + 2)
+    fig_height = max(config.figsize[1], 0.4 * n_rows + 1.5)
+    fig_width = max(config.figsize[0], 1.8 * n_cols + 3)
 
     fig, ax = plt.subplots(figsize=(fig_width, fig_height))
     ax.axis("off")
@@ -414,15 +415,18 @@ def render_nature_table(
 
     table.auto_set_font_size(False)
     table.set_fontsize(config.font_size)
-    table.scale(1.2, 1.5)
+    table.auto_set_column_width(col=list(range(len(col_labels))))
+    table.scale(1.4, 1.5)
 
     for (row, col), cell in table.get_celld().items():
         if row == 0:
             cell.set_text_props(fontweight="bold", fontsize=config.header_font_size)
             cell.set_facecolor("#e3f2fd")
+            cell.set_width(cell.get_width() * 1.3)
         if col == -1:
             cell.set_text_props(fontweight="bold" if row == len(cell_text) else "normal")
             cell.set_facecolor("#f5f5f5")
+            cell.set_width(cell.get_width() * 1.5)
 
         if row == len(cell_text) and col >= 0:
             cell.set_text_props(fontweight="bold")
@@ -468,8 +472,8 @@ def render_per_joint_table(
     n_rows = len(display_df) + 1
     n_cols = len(display_df.columns) + 1
 
-    fig_height = max(config.figsize[1], 0.4 * n_rows + 1)
-    fig_width = max(config.figsize[0], 1.2 * n_cols + 2)
+    fig_height = max(config.figsize[1], 0.4 * n_rows + 1.5)
+    fig_width = max(config.figsize[0], 1.8 * n_cols + 3)
 
     fig, ax = plt.subplots(figsize=(fig_width, fig_height))
     ax.axis("off")
@@ -518,15 +522,18 @@ def render_per_joint_table(
 
     table.auto_set_font_size(False)
     table.set_fontsize(config.font_size)
-    table.scale(1.2, 1.5)
+    table.auto_set_column_width(col=list(range(len(col_labels))))
+    table.scale(1.4, 1.5)
 
     for (row, col), cell in table.get_celld().items():
         if row == 0:
             cell.set_text_props(fontweight="bold", fontsize=config.header_font_size)
             cell.set_facecolor("#e3f2fd")
+            cell.set_width(cell.get_width() * 1.3)
         if col == -1:
             cell.set_text_props(fontweight="bold" if row == len(cell_text) else "normal")
             cell.set_facecolor("#f5f5f5")
+            cell.set_width(cell.get_width() * 1.5)
 
         if row == len(cell_text) and col >= 0:
             cell.set_text_props(fontweight="bold")
@@ -623,15 +630,18 @@ def render_summary_table(
 
     table.auto_set_font_size(False)
     table.set_fontsize(config.font_size)
-    table.scale(1.3, 1.8)
+    table.auto_set_column_width(col=list(range(len(col_labels))))
+    table.scale(1.5, 1.8)
 
     for (row, col), cell in table.get_celld().items():
         if row == 0:
             cell.set_text_props(fontweight="bold", fontsize=config.header_font_size)
             cell.set_facecolor("#e3f2fd")
+            cell.set_width(cell.get_width() * 1.3)
         if col == -1:
             cell.set_text_props(fontweight="bold")
             cell.set_facecolor("#f5f5f5")
+            cell.set_width(cell.get_width() * 1.5)
 
     ax.set_title(
         "Behavior Segmentation: DTW Distance to Ground Truth",

@@ -54,7 +54,7 @@ gt_render_target_size: [320, 240]  # Target tile size for GT rendering
 # =============================================================================
 # Transition comparison settings
 # =============================================================================
-run_transition_comparison: true  # Side-by-side discovered vs ground truth transitions
+run_transition_comparison: false  # Side-by-side discovered vs ground truth transitions
 run_transition_ranking: true  # Generate transition variant rankings (with turn directions)
 max_transition_points: 500  # Max points to display per cluster
 
@@ -91,7 +91,23 @@ run_dtw_visualization: false  # Enable detailed DTW visualization (slower)
 # =============================================================================
 # Per-Joint DTW Analysis
 # =============================================================================
-# Computes DTW distance for individual joints (top J by variance)
+# Computes DTW distance for individual joints
 # Produces: J x num_clusters table per method, J x methods summary table
 run_per_joint_dtw: true
-per_joint_dtw_top_j: 8  # Number of top variance joints to analyze
+# Joints to analyze (null = use defaults)
+# Available joints: see JOINT_NAMES in dtw_visualization.py
+per_joint_dtw_joints:
+  # Legs
+  - hip_L_extend
+  - hip_R_extend
+  - knee_L
+  - knee_R
+  # Arms
+  - elbow_L
+  - elbow_R
+  # Head (for orienting)
+  - atlas
+  - vertebra_axis_twist
+  # Torso
+  - vertebra_6_twist
+  - vertebra_3_twist

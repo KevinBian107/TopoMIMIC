@@ -250,39 +250,55 @@ class PerJointDTWResult:
     n_gt_seqs: int
 
 
-def find_top_variance_joints(
-    data: np.ndarray,
-    top_j: int = 8,
+DEFAULT_ANALYSIS_JOINTS = [
+    # Legs
+    "hip_L_extend",
+    "hip_R_extend",
+    "knee_L",
+    "knee_R",
+    # Arms
+    "elbow_L",
+    "elbow_R",
+    # Head (for orienting)
+    "atlas",
+    "vertebra_axis_twist",
+    # Torso
+    "vertebra_6_twist",
+    "vertebra_3_twist",
+]
+
+
+def resolve_joint_config(
+    joint_names_config: list[str] | None,
     skip_root_dims: int = 7,
 ) -> tuple[list[int], list[str]]:
     """
-    Find the top J joints with maximum variance across the dataset.
+    Resolve configured joint names to indices.
 
     Args:
-        data: (num_clips, num_frames, dim) feature array
-        top_j: Number of top variance joints to return
-        skip_root_dims: Number of root dimensions already skipped from data
+        joint_names_config: List of joint names from config, or None for defaults
+        skip_root_dims: Not used (kept for API compatibility)
 
     Returns:
-        (joint_indices, joint_names) - indices into the data array (after skip_root_dims)
+        (joint_indices, joint_names) - indices into the data array (after root dims skipped)
     """
     from .dtw_visualization import JOINT_NAMES
 
-    flat_data = data.reshape(-1, data.shape[-1])
-    variances = np.var(flat_data, axis=0)
+    if joint_names_config is None:
+        joint_names_config = DEFAULT_ANALYSIS_JOINTS
 
-    top_indices = np.argsort(variances)[::-1][:top_j]
-    top_indices = sorted(top_indices)
-
+    joint_indices = []
     joint_names = []
-    for idx in top_indices:
-        original_idx = idx + skip_root_dims
-        if original_idx < len(JOINT_NAMES):
-            joint_names.append(JOINT_NAMES[original_idx])
-        else:
-            joint_names.append(f"Joint_{original_idx}")
 
-    return list(top_indices), joint_names
+    for name in joint_names_config:
+        if name in JOINT_NAMES:
+            joint_idx = JOINT_NAMES.index(name)
+            joint_indices.append(joint_idx)
+            joint_names.append(name)
+        else:
+            print(f"Warning: Joint '{name}' not found in JOINT_NAMES")
+
+    return joint_indices, joint_names
 
 
 def compute_per_joint_dtw(

@@ -23,7 +23,7 @@ from .visualization import (
 from .metrics import (
     run_dtw_analysis,
     run_per_joint_dtw_analysis,
-    find_top_variance_joints,
+    resolve_joint_config,
     DTWResult,
     PerJointDTWResult,
 )
@@ -273,13 +273,12 @@ def run_analysis(config: AnalysisConfig) -> None:
                 dtw_data_processed = dtw_data
 
             if config.run_per_joint_dtw:
-                print(f"\n=== Finding top {config.per_joint_dtw_top_j} variance joints ===")
-                top_joint_indices, top_joint_names = find_top_variance_joints(
-                    dtw_data_processed,
-                    top_j=config.per_joint_dtw_top_j,
+                print(f"\n=== Resolving joints for per-joint DTW ===")
+                top_joint_indices, top_joint_names = resolve_joint_config(
+                    config.per_joint_dtw_joints,
                     skip_root_dims=config.dtw_skip_root_dims,
                 )
-                print(f"Top variance joints: {list(zip(top_joint_indices, top_joint_names))}")
+                print(f"Analysis joints: {list(zip(top_joint_names, top_joint_indices))}")
 
         except Exception as e:
             print(f"Failed to load data: {e}")

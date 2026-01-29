@@ -7,7 +7,7 @@ rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
 behavior_labels_csv: "/home/jovyan/vast/kaiwen/TopoVNL/behavior_labels.csv"
 
 # Method and seed to label (can be overridden via CLI)
-method: "kpms_keypoint"
+method: "custom_vae"
 seed: 0
 
 # GT extraction parameters

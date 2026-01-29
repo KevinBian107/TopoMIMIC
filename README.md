@@ -105,6 +105,7 @@ The GUI displays each cluster's video row individually (extracted from the grid 
 Generate variance heatmaps, cross-method comparison, and seed stability analysis:
 ```bash
 python -m topo_mimic.benchmark.analysis.main configs/benchmark/analysis.yaml
+python -m topo_mimic.benchmark.generate_results_table
 ```
 
 ## Experiment
