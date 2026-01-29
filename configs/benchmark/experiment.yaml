@@ -63,7 +63,7 @@ methods:
   # Achieves intention reconstruction MSE ~0.57
   - name: "kpms_intention"
     type: "state_space"
-    enabled: true
+    enabled: false
     params:
       model_type: "slds"
       latent_dim: 10
@@ -79,13 +79,32 @@ methods:
   # Achieves keypoint reconstruction MSE ~0.002
   - name: "kpms_keypoint"
     type: "state_space"
-    enabled: true
+    enabled: false
     params:
       model_type: "arhmm"
       latent_dim: 15
       kappa: 1090000
       ar_iters: 100
       full_iters: 300
+      min_sustained_duration: 25
+      top_k_transitions: 10
+      min_instances: 1
+
+  # Custom VAE Method (tuned hyperparameters from wandb sweep, run 0etcc386)
+  # Best config: latent_dim=30, time_window=30, hidden_dim=512, beta=8.51
+  # Achieves intention reconstruction MSE ~2.71e-05
+  - name: "custom_vae"
+    type: "state_space"
+    enabled: true
+    params:
+      latent_dim: 30
+      time_window: 30
+      hidden_dim: 512
+      beta: 8.51
+      learning_rate: 0.000245
+      batch_size: 256
+      max_epochs: 50
+      segmentation_algo: "kmeans"
       min_sustained_duration: 25
       top_k_transitions: 10
       min_instances: 1

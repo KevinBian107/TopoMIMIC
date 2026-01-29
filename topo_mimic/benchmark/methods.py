@@ -28,6 +28,16 @@ try:
 except ImportError:
     HAS_KPMS = False
 
+try:
+    import torch
+    from topo_mimic.benchmark.hyperparam_sweep.custom_vae.model import RNNVAE
+    from topo_mimic.benchmark.hyperparam_sweep.custom_vae.trainer import VAETrainer
+    from topo_mimic.benchmark.hyperparam_sweep.custom_vae.config import VAEHyperparams
+    from topo_mimic.benchmark.hyperparam_sweep.custom_vae.segmentation import segment_latent
+    HAS_CUSTOM_VAE = True
+except ImportError:
+    HAS_CUSTOM_VAE = False
+
 
 class MethodType(Enum):
     CLUSTERING = "clustering"
@@ -802,12 +812,162 @@ class KPMSKeypointMethod(BaseMethod):
         )
 
 
+class CustomVAEMethod(BaseMethod):
+    """
+    Custom RNN-VAE based state-space method for intention data.
+
+    Uses an RNN-VAE to encode behavioral sequences, then segments the latent
+    space using KMeans clustering. Extracts sustained transitions similar to KPMS.
+
+    Default hyperparameters are tuned from wandb sweep (run 0etcc386):
+    - latent_dim=30, time_window=30, hidden_dim=512, beta=8.51
+    - segmentation_algo=kmeans, learning_rate=0.000245
+    - Achieves intention reconstruction MSE ~2.71e-05
+    """
+    def __init__(self, params: dict = None):
+        super().__init__("custom_vae", params)
+        self.latent_dim = self.params.get("latent_dim", 30)
+        self.time_window = self.params.get("time_window", 30)
+        self.hidden_dim = self.params.get("hidden_dim", 512)
+        self.beta = self.params.get("beta", 8.51)
+        self.learning_rate = self.params.get("learning_rate", 0.000245)
+        self.batch_size = self.params.get("batch_size", 256)
+        self.max_epochs = self.params.get("max_epochs", 200)
+        self.segmentation_algo = self.params.get("segmentation_algo", "kmeans")
+
+    @property
+    def method_type(self) -> MethodType:
+        return MethodType.STATE_SPACE
+
+    def fit_predict(
+        self,
+        X: np.ndarray,
+        n_clusters: int,
+        seed: int = 0,
+    ) -> np.ndarray:
+        raise NotImplementedError("Use fit() for state-space methods")
+
+    def fit(
+        self,
+        data: np.ndarray,
+        n_states: int,
+        project_dir: str,
+        seed: int = 0,
+    ) -> KPMSResult:
+        if not HAS_CUSTOM_VAE:
+            raise ImportError("Custom VAE dependencies not installed (torch, etc.)")
+
+        import os
+        from pathlib import Path
+
+        project_path = Path(project_dir)
+        project_path.mkdir(parents=True, exist_ok=True)
+
+        n_clips, n_frames, n_dim = data.shape
+        print(f"Training CustomVAE on {n_clips} clips, {n_frames} frames, {n_dim} dims")
+
+        hyperparams = VAEHyperparams(
+            latent_dim=self.latent_dim,
+            time_window=self.time_window,
+            hidden_dim=self.hidden_dim,
+            beta=self.beta,
+            learning_rate=self.learning_rate,
+            batch_size=self.batch_size,
+            max_epochs=self.max_epochs,
+        )
+
+        model = RNNVAE(
+            input_dim=n_dim,
+            latent_dim=self.latent_dim,
+            hidden_dim=self.hidden_dim,
+        )
+
+        torch.manual_seed(seed)
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        trainer = VAETrainer(model, hyperparams, device=device)
+
+        train_result = trainer.train(
+            data,
+            wandb_logger=None,
+            modality_name="intention",
+            val_ratio=0.1,
+            seed=seed,
+        )
+
+        print(f"VAE training completed at epoch {train_result.final_epoch}")
+
+        latent_embeddings = trainer.encode_per_frame(data)
+        print(f"Per-frame latent embeddings shape: {latent_embeddings.shape}")
+
+        seg_result = segment_latent(
+            latent_embeddings,
+            n_clusters=n_states,
+            method=self.segmentation_algo,
+            random_state=seed,
+        )
+
+        labels_list = seg_result.labels_list
+        print(f"Segmentation complete: {n_states} clusters using {self.segmentation_algo}")
+
+        cluster_dict, stats = extract_sustained_transitions(
+            labels_list,
+            min_duration=self.params.get("min_sustained_duration", 50),
+            top_k=self.params.get("top_k_transitions", 10),
+            min_instances=self.params.get("min_instances", 3),
+        )
+
+        print_transition_stats(stats)
+
+        original_data = data.copy()
+        reconstructed_data = trainer.reconstruct(data)
+        reconstruction_mse = float(np.mean((original_data - reconstructed_data) ** 2))
+        print(f"Intention Reconstruction MSE: {reconstruction_mse:.6f}")
+
+        model_path = os.path.join(project_dir, "vae_model.pt")
+        torch.save(train_result.model.state_dict(), model_path)
+        print(f"Saved VAE model to {model_path}")
+
+        model_info = {
+            "hyperparams": {
+                "latent_dim": self.latent_dim,
+                "time_window": self.time_window,
+                "hidden_dim": self.hidden_dim,
+                "beta": self.beta,
+                "learning_rate": self.learning_rate,
+                "batch_size": self.batch_size,
+                "max_epochs": self.max_epochs,
+                "segmentation_algo": self.segmentation_algo,
+            },
+            "final_epoch": train_result.final_epoch,
+            "train_losses": train_result.train_losses,
+            "val_losses": train_result.val_losses,
+            "model_path": model_path,
+            "project_dir": project_dir,
+        }
+
+        return KPMSResult(
+            labels=labels_list,
+            n_states=n_states,
+            method_name=self.name,
+            model=model_info,
+            results=None,
+            data={"latent_embeddings": latent_embeddings},
+            metadata=None,
+            original=original_data,
+            reconstructed=reconstructed_data,
+            reconstruction_mse=reconstruction_mse,
+            transition_cluster_dict=cluster_dict,
+            transition_stats=stats,
+        )
+
+
 METHOD_REGISTRY: dict[str, type[BaseMethod]] = {
     "w2_dm_kmeans": W2DMKMeans,
     "w2_unif_kmeans": W2UnifKMeans,
     "gw_dm_kmeans": GWDMKMeans,
     "kpms_intention": KPMSIntentionMethod,
     "kpms_keypoint": KPMSKeypointMethod,
+    "custom_vae": CustomVAEMethod,
 }
 
 

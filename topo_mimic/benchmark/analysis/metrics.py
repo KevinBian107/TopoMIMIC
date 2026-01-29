@@ -239,6 +239,134 @@ class DTWResult:
     n_gt_seqs: int
 
 
+@dataclass
+class PerJointDTWResult:
+    label: str
+    turn_direction: str | None
+    cluster_ids: list[int]
+    joint_dtw: dict[str, float]
+    joint_std: dict[str, float]
+    n_discovered_seqs: int
+    n_gt_seqs: int
+
+
+def find_top_variance_joints(
+    data: np.ndarray,
+    top_j: int = 8,
+    skip_root_dims: int = 7,
+) -> tuple[list[int], list[str]]:
+    """
+    Find the top J joints with maximum variance across the dataset.
+
+    Args:
+        data: (num_clips, num_frames, dim) feature array
+        top_j: Number of top variance joints to return
+        skip_root_dims: Number of root dimensions already skipped from data
+
+    Returns:
+        (joint_indices, joint_names) - indices into the data array (after skip_root_dims)
+    """
+    from .dtw_visualization import JOINT_NAMES
+
+    flat_data = data.reshape(-1, data.shape[-1])
+    variances = np.var(flat_data, axis=0)
+
+    top_indices = np.argsort(variances)[::-1][:top_j]
+    top_indices = sorted(top_indices)
+
+    joint_names = []
+    for idx in top_indices:
+        original_idx = idx + skip_root_dims
+        if original_idx < len(JOINT_NAMES):
+            joint_names.append(JOINT_NAMES[original_idx])
+        else:
+            joint_names.append(f"Joint_{original_idx}")
+
+    return list(top_indices), joint_names
+
+
+def compute_per_joint_dtw(
+    seq_a: np.ndarray,
+    seq_b: np.ndarray,
+    joint_indices: list[int],
+) -> dict[int, float]:
+    """
+    Compute DTW distance for each joint separately.
+
+    Args:
+        seq_a: (T1, D) first sequence
+        seq_b: (T2, D) second sequence
+        joint_indices: List of joint indices to compute DTW for
+
+    Returns:
+        Dict mapping joint_index -> DTW distance
+    """
+    results = {}
+    for joint_idx in joint_indices:
+        seq_a_joint = seq_a[:, joint_idx:joint_idx+1]
+        seq_b_joint = seq_b[:, joint_idx:joint_idx+1]
+        results[joint_idx] = compute_dtw(seq_a_joint, seq_b_joint)
+    return results
+
+
+def compute_cluster_per_joint_dtw(
+    seqs_a: list[np.ndarray],
+    seqs_b: list[np.ndarray],
+    joint_indices: list[int],
+    max_comparisons: int = 100,
+) -> tuple[dict[int, float], dict[int, float]]:
+    """
+    Compute average per-joint DTW between two sets of sequences.
+
+    Args:
+        seqs_a: List of sequences from cluster A
+        seqs_b: List of sequences from cluster B
+        joint_indices: List of joint indices to compute DTW for
+        max_comparisons: Max pairwise comparisons
+
+    Returns:
+        (mean_dtw_per_joint, std_dtw_per_joint)
+    """
+    if not seqs_a or not seqs_b:
+        return (
+            {j: float('inf') for j in joint_indices},
+            {j: 0.0 for j in joint_indices},
+        )
+
+    n_a, n_b = len(seqs_a), len(seqs_b)
+    total_pairs = n_a * n_b
+
+    if total_pairs <= max_comparisons:
+        pairs = [(i, j) for i in range(n_a) for j in range(n_b)]
+    else:
+        np.random.seed(42)
+        pairs = []
+        for _ in range(max_comparisons):
+            i = np.random.randint(n_a)
+            j = np.random.randint(n_b)
+            pairs.append((i, j))
+
+    joint_distances = {j: [] for j in joint_indices}
+    for i, j in pairs:
+        per_joint = compute_per_joint_dtw(seqs_a[i], seqs_b[j], joint_indices)
+        for joint_idx, dist in per_joint.items():
+            if np.isfinite(dist):
+                joint_distances[joint_idx].append(dist)
+
+    mean_dtw = {}
+    std_dtw = {}
+    for joint_idx in joint_indices:
+        dists = joint_distances[joint_idx]
+        if dists:
+            mean_dtw[joint_idx] = float(np.mean(dists))
+            std_dtw[joint_idx] = float(np.std(dists))
+        else:
+            mean_dtw[joint_idx] = float('inf')
+            std_dtw[joint_idx] = 0.0
+
+    return mean_dtw, std_dtw
+
+
 def run_dtw_analysis(
     cluster_dict: dict,
     cluster_labels: dict[int, str],
@@ -427,6 +555,214 @@ def run_dtw_analysis(
         print(f"      Worst: {worst.label} (DTW={worst.mean_dtw:.4f})")
 
     return results
+
+
+def run_per_joint_dtw_analysis(
+    cluster_dict: dict,
+    cluster_labels: dict[int, str],
+    turn_directions: dict[int, str] | None,
+    behavior_labels_csv: str,
+    data: np.ndarray,
+    output_dir: str,
+    joint_indices: list[int],
+    joint_names: list[str],
+    method_name: str = "",
+    seed: int = 0,
+    max_samples: int = 50,
+    max_comparisons: int = 100,
+    short_threshold: int = 10,
+    merge_rear: bool = True,
+    min_seq_length: int = 3,
+) -> list[PerJointDTWResult]:
+    """
+    Compute per-joint DTW for discovered clusters vs corresponding GT.
+
+    Args:
+        cluster_dict: Mapping cluster_id -> list of (clip_id, frames)
+        cluster_labels: Mapping cluster_id -> label string
+        turn_directions: Mapping cluster_id -> turn direction
+        behavior_labels_csv: Path to behavior labels CSV
+        data: (num_clips, num_frames, dim) feature array (already root-skipped)
+        output_dir: Directory to save outputs
+        joint_indices: List of joint indices to analyze
+        joint_names: Names for the joints
+        method_name: Name for output files
+        seed: Seed for output files
+        max_samples: Max sequences per cluster
+        max_comparisons: Max pairwise DTW comparisons
+        short_threshold: Max frames for intermediate behavior bridging
+        merge_rear: Merge rear categories
+        min_seq_length: Minimum sequence length
+
+    Returns:
+        List of PerJointDTWResult for each unique (label, turn_direction) combination
+    """
+    import os
+    import pandas as pd
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    if turn_directions is None:
+        turn_directions = {}
+
+    print("    Loading GT transitions for per-joint DTW...")
+    all_transitions = find_all_transitions(
+        behavior_labels_csv,
+        short_threshold=short_threshold,
+        merge_rear=merge_rear,
+    )
+
+    print("    Grouping discovered clusters by (label, turn_direction)...")
+    grouped_clusters = defaultdict(list)
+
+    for cluster_id, label in cluster_labels.items():
+        if not label or label.startswith("C"):
+            continue
+
+        parsed = parse_cluster_label(label, merge_rear=merge_rear)
+        if parsed is None or parsed.comparison_type != "transition":
+            continue
+
+        if len(parsed.primitives) < 2:
+            continue
+
+        target_behaviors = tuple(sorted(parsed.primitives[:2]))
+        turn_dir_str = turn_directions.get(cluster_id)
+
+        key = (target_behaviors, turn_dir_str)
+        grouped_clusters[key].append(cluster_id)
+
+    results = []
+
+    print(f"\n    Computing per-joint DTW ({len(joint_indices)} joints) for {len(grouped_clusters)} groups...")
+
+    for (target_behaviors, turn_dir_str), cluster_ids in tqdm(
+        grouped_clusters.items(), desc="    Per-joint DTW"
+    ):
+        turn_dir = parse_turn_direction(turn_dir_str)
+
+        combined_seqs = []
+        for cid in cluster_ids:
+            entries = cluster_dict.get(cid, [])
+            seqs = extract_sequences_from_cluster(entries, data, min_seq_length)
+            combined_seqs.extend(seqs)
+
+        if not combined_seqs:
+            continue
+
+        if len(combined_seqs) > max_samples:
+            np.random.seed(42)
+            indices = np.random.choice(len(combined_seqs), max_samples, replace=False)
+            combined_seqs = [combined_seqs[i] for i in indices]
+
+        gt_seqs = extract_sequences_for_gt_label(
+            all_transitions,
+            data,
+            target_behaviors,
+            turn_direction=turn_dir,
+            min_seq_length=min_seq_length,
+            max_seqs=max_samples,
+        )
+
+        if not gt_seqs:
+            continue
+
+        mean_dtw, std_dtw = compute_cluster_per_joint_dtw(
+            combined_seqs,
+            gt_seqs,
+            joint_indices,
+            max_comparisons=max_comparisons,
+        )
+
+        label_str = f"{target_behaviors[0]}↔{target_behaviors[1]}"
+
+        joint_dtw_named = {joint_names[i]: mean_dtw[joint_indices[i]] for i in range(len(joint_indices))}
+        joint_std_named = {joint_names[i]: std_dtw[joint_indices[i]] for i in range(len(joint_indices))}
+
+        results.append(PerJointDTWResult(
+            label=label_str,
+            turn_direction=turn_dir_str,
+            cluster_ids=cluster_ids,
+            joint_dtw=joint_dtw_named,
+            joint_std=joint_std_named,
+            n_discovered_seqs=len(combined_seqs),
+            n_gt_seqs=len(gt_seqs),
+        ))
+
+    prefix = f"{method_name}_seed{seed}" if method_name else f"seed{seed}"
+
+    if results:
+        rows = []
+        for r in results:
+            row = {
+                "Label": r.label,
+                "Turn_Direction": r.turn_direction or "none",
+                "Cluster_IDs": ",".join(str(c) for c in r.cluster_ids),
+            }
+            for jname in joint_names:
+                row[f"DTW_{jname}"] = r.joint_dtw.get(jname, float('inf'))
+            rows.append(row)
+
+        df = pd.DataFrame(rows)
+        csv_path = os.path.join(output_dir, f"{prefix}_per_joint_dtw.csv")
+        df.to_csv(csv_path, index=False, float_format="%.4f")
+        print(f"\n    Saved per-joint DTW results to {csv_path}")
+
+        plot_per_joint_dtw_heatmap(results, joint_names, output_dir, prefix)
+
+    return results
+
+
+def plot_per_joint_dtw_heatmap(
+    results: list[PerJointDTWResult],
+    joint_names: list[str],
+    output_dir: str,
+    prefix: str = "",
+) -> None:
+    """Plot per-joint DTW results as a heatmap (clusters x joints)."""
+    import os
+
+    if not results:
+        return
+
+    labels = []
+    for r in results:
+        turn_suffix = f" [{r.turn_direction}]" if r.turn_direction else ""
+        labels.append(f"{r.label}{turn_suffix}")
+
+    matrix = np.zeros((len(results), len(joint_names)))
+    for i, r in enumerate(results):
+        for j, jname in enumerate(joint_names):
+            matrix[i, j] = r.joint_dtw.get(jname, float('inf'))
+
+    matrix = np.nan_to_num(matrix, nan=0.0, posinf=np.nanmax(matrix[np.isfinite(matrix)]))
+
+    fig, ax = plt.subplots(figsize=(max(8, len(joint_names) * 0.8), max(4, len(results) * 0.4)))
+
+    im = ax.imshow(matrix, cmap='YlOrRd', aspect='auto')
+    ax.set_xticks(np.arange(len(joint_names)))
+    ax.set_yticks(np.arange(len(labels)))
+    ax.set_xticklabels(joint_names, rotation=45, ha='right', fontsize=9)
+    ax.set_yticklabels(labels, fontsize=9)
+
+    for i in range(len(results)):
+        for j in range(len(joint_names)):
+            val = matrix[i, j]
+            text_color = 'white' if val > matrix.max() * 0.6 else 'black'
+            ax.text(j, i, f'{val:.3f}', ha='center', va='center', fontsize=7, color=text_color)
+
+    cbar = plt.colorbar(im, ax=ax, shrink=0.8)
+    cbar.ax.set_ylabel("DTW Distance", fontsize=10)
+
+    ax.set_xlabel("Joint", fontsize=11)
+    ax.set_ylabel("Cluster", fontsize=11)
+    ax.set_title("Per-Joint DTW: Discovered vs GT", fontsize=12, fontweight='bold')
+
+    plt.tight_layout()
+    save_path = os.path.join(output_dir, f"{prefix}_per_joint_dtw_heatmap.pdf")
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"    Saved per-joint DTW heatmap to {save_path}")
 
 
 def plot_dtw_bar_chart(
