@@ -47,11 +47,35 @@ from topo_mimic.benchmark.methods import (
     KPMSResult,
 )
 
+try:
+    from topo_mimic.benchmark.hyperparam_sweep.visualization import (
+        plot_reconstruction_timeseries,
+    )
+    HAS_RECON_VIZ = True
+except ImportError:
+    HAS_RECON_VIZ = False
+
+try:
+    from topo_mimic.benchmark.hyperparam_sweep.keypoint_loader import (
+        setup_stac_reference,
+        qpos_to_keypoints,
+    )
+    HAS_KP_LOADER = True
+except ImportError:
+    HAS_KP_LOADER = False
+
 
 @dataclass
 class DataConfig:
     dm_key: str = "intention"
     evaluation_key: str = "qpos"
+
+
+@dataclass
+class KeypointConfig:
+    xml_path: str = "topo_mimic/dmwk/xml/rodent.xml"
+    stac_data_path: str = "data/rodent_reference_clips.h5"
+    kp_names: list[str] = None
 
 
 @dataclass
@@ -102,6 +126,7 @@ class ExperimentConfig:
     data: DataConfig = None
     dm: DMConfig = None
     clustering: ClusteringConfig = None
+    keypoint: KeypointConfig = None
 
     k_selection: KSelectionConfig = None
     seeds: list[int] = field(default_factory=lambda: [0])
@@ -117,6 +142,8 @@ class ExperimentConfig:
             self.dm = DMConfig()
         if self.clustering is None:
             self.clustering = ClusteringConfig()
+        if self.keypoint is None:
+            self.keypoint = KeypointConfig()
         if self.k_selection is None:
             self.k_selection = KSelectionConfig()
         if self.rendering is None:
@@ -173,6 +200,9 @@ def load_config(config_path: str) -> ExperimentConfig:
         rendering_dict["target_size"] = tuple(rendering_dict["target_size"])
     rendering_cfg = RenderingConfig(**rendering_dict)
 
+    keypoint_dict = cfg.get("keypoint", {})
+    keypoint_cfg = KeypointConfig(**keypoint_dict)
+
     return ExperimentConfig(
         output_dir=cfg.get("output_dir", ExperimentConfig.output_dir),
         rodent_rollout_dir=cfg.get("rodent_rollout_dir", ExperimentConfig.rodent_rollout_dir),
@@ -181,6 +211,7 @@ def load_config(config_path: str) -> ExperimentConfig:
         data=data_cfg,
         dm=dm_cfg,
         clustering=clustering_cfg,
+        keypoint=keypoint_cfg,
         k_selection=k_selection_cfg,
         seeds=cfg.get("seeds", [0]),
         aggregate_seeds=cfg.get("aggregate_seeds", True),
@@ -448,6 +479,132 @@ def generate_labels_yaml(
     return labels_path
 
 
+def plot_kpms_reconstruction(
+    kpms_result: KPMSResult,
+    output_dir: str,
+    method_name: str,
+    seed: int,
+    n_dims: int = 5,
+    n_clips: int = 3,
+) -> dict[str, str]:
+    """
+    Generate reconstruction time series plots for KPMS results.
+
+    Args:
+        kpms_result: KPMSResult with original and reconstructed data
+        output_dir: Directory to save plots
+        method_name: Name of the method for plot titles
+        seed: Random seed used
+        n_dims: Number of dimensions to plot
+        n_clips: Number of clips to generate plots for
+
+    Returns:
+        Dict mapping plot names to file paths
+    """
+    plot_paths = {}
+
+    if kpms_result.original is None or kpms_result.reconstructed is None:
+        print(f"  Warning: No reconstruction data available for {method_name}")
+        return plot_paths
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    orig = kpms_result.original
+    recon = kpms_result.reconstructed
+
+    if HAS_RECON_VIZ:
+        for clip_idx in range(min(n_clips, len(orig))):
+            try:
+                fig = plot_reconstruction_timeseries(
+                    original_data=orig,
+                    reconstructed_data=recon,
+                    clip_idx=clip_idx,
+                    n_dims=min(n_dims, orig.shape[2]),
+                    title_prefix=f"{method_name} Reconstruction",
+                    max_frames=500,
+                )
+                plot_path = os.path.join(output_dir, f"reconstruction_clip{clip_idx}_seed{seed}.png")
+                fig.savefig(plot_path, dpi=150, bbox_inches='tight')
+                plt.close(fig)
+                plot_paths[f"reconstruction_clip{clip_idx}"] = plot_path
+                print(f"  Saved reconstruction plot: {plot_path}")
+            except Exception as e:
+                print(f"  Warning: Failed to generate reconstruction plot for clip {clip_idx}: {e}")
+    else:
+        for clip_idx in range(min(n_clips, len(orig))):
+            try:
+                n_frames = min(orig.shape[1], recon.shape[1], 500)
+                actual_n_dims = min(n_dims, orig.shape[2])
+                t = np.arange(n_frames)
+
+                fig, axes = plt.subplots(actual_n_dims, 1, figsize=(12, 2 * actual_n_dims), sharex=True)
+                if actual_n_dims == 1:
+                    axes = [axes]
+
+                for dim_idx in range(actual_n_dims):
+                    ax = axes[dim_idx]
+                    orig_vals = orig[clip_idx, :n_frames, dim_idx]
+                    recon_vals = recon[clip_idx, :n_frames, dim_idx]
+
+                    ax.plot(t, orig_vals, label="Original", color="blue", alpha=0.7, linewidth=1)
+                    ax.plot(t, recon_vals, label="Reconstructed", color="red", alpha=0.7, linewidth=1)
+
+                    mse = np.mean((orig_vals - recon_vals) ** 2)
+                    ax.set_ylabel(f"Dim {dim_idx}")
+                    ax.set_title(f"Dimension {dim_idx} (MSE: {mse:.4f})", fontsize=10)
+                    if dim_idx == 0:
+                        ax.legend(loc="upper right")
+
+                axes[-1].set_xlabel("Frame")
+                fig.suptitle(f"{method_name} Reconstruction - Clip {clip_idx} (seed={seed})", fontsize=12)
+                plt.tight_layout()
+
+                plot_path = os.path.join(output_dir, f"reconstruction_clip{clip_idx}_seed{seed}.png")
+                fig.savefig(plot_path, dpi=150, bbox_inches='tight')
+                plt.close(fig)
+                plot_paths[f"reconstruction_clip{clip_idx}"] = plot_path
+                print(f"  Saved reconstruction plot: {plot_path}")
+            except Exception as e:
+                print(f"  Warning: Failed to generate reconstruction plot for clip {clip_idx}: {e}")
+
+    if kpms_result.reconstruction_mse is not None:
+        summary_path = os.path.join(output_dir, f"reconstruction_summary_seed{seed}.txt")
+        with open(summary_path, "w") as f:
+            f.write(f"Reconstruction Summary for {method_name} (seed={seed})\n")
+            f.write("=" * 50 + "\n\n")
+            f.write(f"Overall Reconstruction MSE: {kpms_result.reconstruction_mse:.6f}\n")
+            f.write(f"Original shape: {orig.shape}\n")
+            f.write(f"Reconstructed shape: {recon.shape}\n")
+        plot_paths["summary"] = summary_path
+
+    return plot_paths
+
+
+def load_keypoint_data(
+    rodent_rollout_dir: str,
+    split: str,
+    n_clips: int | None,
+    keypoint_cfg: KeypointConfig,
+) -> tuple[np.ndarray, list[str]]:
+    """Load qpos data and convert to keypoints using MuJoCo model."""
+    if not HAS_KP_LOADER:
+        raise ImportError("Keypoint loader not available. Install jax and mujoco.")
+
+    qpos_data, clip_indices = load_data("qpos", rodent_rollout_dir, split, n_clips)
+
+    print("Setting up MuJoCo model for keypoint conversion...")
+    mjx_model, mjx_data, site_ids, kp_names = setup_stac_reference(
+        keypoint_cfg.xml_path, keypoint_cfg.stac_data_path
+    )
+    print(f"Found {len(site_ids)} keypoint sites")
+
+    print("Converting qpos to keypoints...")
+    keypoint_data = qpos_to_keypoints(qpos_data, mjx_model, mjx_data, site_ids)
+    print(f"Keypoints shape: {keypoint_data.shape}")
+
+    return keypoint_data, kp_names
+
+
 def run_rendering(
     cluster_dict: dict,
     rodent_rollout_dir: str,
@@ -633,14 +790,34 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
 
             skip_set = set(config.clustering.skip_clips)
             keep_indices = [i for i in range(dm_data.shape[0]) if i not in skip_set]
-            dm_data_filtered = dm_data[keep_indices]
-            print(f"  Filtered {dm_data.shape[0]} -> {dm_data_filtered.shape[0]} clips (skipped {len(skip_set)})")
+
+            is_keypoint_method = method_entry.name == "kpms_keypoint"
+
+            if is_keypoint_method:
+                print(f"  Loading keypoint data for {method_entry.name}...")
+                kp_data, kp_names = load_keypoint_data(
+                    config.rodent_rollout_dir, config.split, config.n_clips, config.keypoint
+                )
+                kp_data_filtered = kp_data[keep_indices]
+                print(f"  Filtered {kp_data.shape[0]} -> {kp_data_filtered.shape[0]} clips")
+                data_for_method = kp_data_filtered
+            else:
+                dm_data_filtered = dm_data[keep_indices]
+                print(f"  Filtered {dm_data.shape[0]} -> {dm_data_filtered.shape[0]} clips (skipped {len(skip_set)})")
+                data_for_method = dm_data_filtered
 
             for seed in config.seeds:
                 seed_dir = os.path.join(method_output_dir, f"seed_{seed}")
-                kpms_result = method.fit(
-                    dm_data_filtered, n_clusters_to_use, seed_dir, seed
-                )
+
+                if is_keypoint_method:
+                    kpms_result = method.fit(
+                        data_for_method, n_clusters_to_use, seed_dir, seed,
+                        kp_names=kp_names if 'kp_names' in locals() else None
+                    )
+                else:
+                    kpms_result = method.fit(
+                        data_for_method, n_clusters_to_use, seed_dir, seed
+                    )
 
                 cluster_dict_filtered = kpms_result.transition_cluster_dict
                 cluster_dict = {
@@ -657,11 +834,25 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
                     "cluster_dict": cluster_dict,
                     "labels": kpms_result.labels,
                     "transition_stats": stats,
+                    "reconstruction_mse": kpms_result.reconstruction_mse,
                 }
 
                 print(f"  Seed {seed}: {stats['n_sustained_segments']} sustained segments, "
                       f"{stats['n_transition_types']} transition types, "
                       f"{len(cluster_dict)} clusters")
+                if kpms_result.reconstruction_mse is not None:
+                    print(f"  Seed {seed}: Reconstruction MSE = {kpms_result.reconstruction_mse:.6f}")
+
+                print(f"\n  Generating reconstruction plots for seed {seed}...")
+                plot_paths = plot_kpms_reconstruction(
+                    kpms_result=kpms_result,
+                    output_dir=seed_dir,
+                    method_name=method_entry.name,
+                    seed=seed,
+                    n_dims=5,
+                    n_clips=3,
+                )
+                method_results[seed]["reconstruction_plots"] = plot_paths
         else:
             for seed in config.seeds:
                 labels = method.fit_predict(current_X, config.k_selection.n_clusters, seed)

@@ -58,7 +58,11 @@ class KPMSResult:
     method_name: str
     model: Any = None
     results: dict = None
+    data: dict = None
+    metadata: tuple = None
+    original: np.ndarray = None
     reconstructed: np.ndarray = None
+    reconstruction_mse: float = None
     transition_cluster_dict: dict = None
     transition_stats: dict = None
 
@@ -406,13 +410,16 @@ class KPMSIntentionMethod(BaseMethod):
     Keypoint-MoSeq based state-space method for intention data.
 
     Supports both AR-HMM and SLDS model types via the model_type parameter.
+    Default hyperparameters are tuned for intention data (from hyperparam sweep):
+    - kappa=1.35e4, latent_dim=10, num_states=15, model_type=slds
+    - Achieves intention reconstruction MSE ~0.57
     """
     def __init__(self, params: dict = None):
         super().__init__("kpms_intention", params)
-        self.model_type = self.params.get("model_type", "arhmm")
+        self.model_type = self.params.get("model_type", "slds")
         self.latent_dim = self.params.get("latent_dim", 10)
-        self.kappa = self.params.get("kappa", 1e5)
-        self.ar_iters = self.params.get("ar_iters", 50)
+        self.kappa = self.params.get("kappa", 1.35e4)
+        self.ar_iters = self.params.get("ar_iters", 100)
         self.full_iters = self.params.get("full_iters", 300)
 
     @property
@@ -534,12 +541,262 @@ class KPMSIntentionMethod(BaseMethod):
 
         print_transition_stats(stats)
 
+        original_data = None
+        reconstructed_data = None
+        reconstruction_mse = None
+        try:
+            from jax_moseq.models.keypoint_slds import estimate_coordinates
+            from jax_moseq.utils import unbatch
+            import jax.numpy as jnp
+
+            Y = int_data.get("Y")
+            if Y is not None:
+                if isinstance(Y, dict):
+                    keys = sorted(Y.keys())
+                    original_data = np.stack([np.array(Y[k]) for k in keys], axis=0)
+                else:
+                    original_data = np.array(Y)
+                if original_data.ndim > 3:
+                    original_data = original_data.squeeze(-1)
+
+            if 'states' in model_ckpt and 'params' in model_ckpt:
+                Y_est = estimate_coordinates(
+                    jnp.array(model_ckpt['states']['x']),
+                    jnp.array(model_ckpt['states']['v']),
+                    jnp.array(model_ckpt['states']['h']),
+                    jnp.array(model_ckpt['params']['Cd'])
+                )
+                coords_est = unbatch(Y_est, *int_metadata)
+                rec_keys = sorted(coords_est.keys())
+                reconstructed_data = np.stack(
+                    [np.array(coords_est[k]).squeeze(-1) for k in rec_keys], axis=0
+                )
+
+                if original_data is not None:
+                    min_len = min(original_data.shape[1], reconstructed_data.shape[1])
+                    reconstruction_mse = float(np.mean(
+                        (original_data[:, :min_len] - reconstructed_data[:, :min_len]) ** 2
+                    ))
+                    print(f"Intention Reconstruction MSE: {reconstruction_mse:.6f}")
+        except Exception as e:
+            print(f"Warning: Reconstruction computation failed: {e}")
+
         return KPMSResult(
             labels=labels_list,
             n_states=n_states,
             method_name=self.name,
             model=model_ckpt,
             results=results,
+            data=int_data,
+            metadata=int_metadata,
+            original=original_data,
+            reconstructed=reconstructed_data,
+            reconstruction_mse=reconstruction_mse,
+            transition_cluster_dict=cluster_dict,
+            transition_stats=stats,
+        )
+
+
+class KPMSKeypointMethod(BaseMethod):
+    """
+    Keypoint-MoSeq based state-space method for keypoint data.
+
+    Supports both AR-HMM and SLDS model types via the model_type parameter.
+    Default hyperparameters are tuned for keypoint data (from hyperparam sweep):
+    - kappa=1.09e6, latent_dim=15, num_states=10, model_type=arhmm
+    - Achieves keypoint reconstruction MSE ~0.002
+    """
+    def __init__(self, params: dict = None):
+        super().__init__("kpms_keypoint", params)
+        self.model_type = self.params.get("model_type", "arhmm")
+        self.latent_dim = self.params.get("latent_dim", 15)
+        self.kappa = self.params.get("kappa", 1.09e6)
+        self.ar_iters = self.params.get("ar_iters", 100)
+        self.full_iters = self.params.get("full_iters", 300)
+
+    @property
+    def method_type(self) -> MethodType:
+        return MethodType.STATE_SPACE
+
+    def fit_predict(
+        self,
+        X: np.ndarray,
+        n_clusters: int,
+        seed: int = 0,
+    ) -> np.ndarray:
+        raise NotImplementedError("Use fit() for state-space methods")
+
+    def fit(
+        self,
+        data: np.ndarray,
+        n_states: int,
+        project_dir: str,
+        seed: int = 0,
+        kp_names: list[str] | None = None,
+    ) -> KPMSResult:
+        if not HAS_KPMS:
+            raise ImportError("keypoint-moseq not installed")
+
+        import shutil
+        from pathlib import Path
+
+        project_path = Path(project_dir)
+        if project_path.exists():
+            shutil.rmtree(project_path)
+        project_path.mkdir(parents=True, exist_ok=True)
+
+        n_clips, n_frames, n_kp, n_dim = data.shape
+        coordinates = {}
+        confidences = {}
+
+        for i in range(n_clips):
+            coordinates[f"recording_{i:04d}"] = data[i].astype(np.float64)
+            confidences[f"recording_{i:04d}"] = np.ones((n_frames, n_kp), dtype=np.float64)
+
+        if kp_names is None:
+            kp_names = [f"kp_{i}" for i in range(n_kp)]
+
+        kpms.setup_project(
+            project_dir,
+            fix_heading=True,
+            bodyparts=kp_names,
+            skeleton=[],
+            fps=30,
+            overwrite=True,
+        )
+
+        kpms.update_config(
+            project_dir,
+            fix_heading=True,
+            bodyparts=kp_names,
+            use_bodyparts=kp_names,
+            anterior_bodyparts=[kp_names[0]],
+            posterior_bodyparts=[kp_names[-1]],
+            verbose=False,
+            latent_dim=self.latent_dim,
+            num_states=n_states,
+            kappa=self.kappa,
+        )
+
+        config = kpms.load_config(project_dir)
+        kp_data, kp_metadata = kpms.format_data(coordinates, confidences, **config)
+
+        model_name = f"{self.model_type}_states{n_states}"
+        model = kpms.init_model(
+            data=kp_data,
+            metadata=kp_metadata,
+            states=None,
+            **config,
+            seed=jax.random.PRNGKey(seed + n_states),
+        )
+        model = kpms.update_hypparams(model, kappa=self.kappa)
+
+        model = kpms.fit_model(
+            model=model,
+            data=kp_data,
+            metadata=kp_metadata,
+            project_dir=project_dir,
+            model_name=model_name,
+            ar_only=True,
+            num_iters=self.ar_iters,
+            num_states=n_states,
+            generate_progress_plots=False,
+        )[0]
+
+        if self.model_type == "slds":
+            model = kpms.update_hypparams(model, kappa=self.kappa)
+            kpms.fit_model(
+                model=model,
+                data=kp_data,
+                metadata=kp_metadata,
+                project_dir=project_dir,
+                model_name=model_name,
+                ar_only=False,
+                start_iter=self.ar_iters,
+                num_iters=self.full_iters,
+                generate_progress_plots=False,
+            )
+
+        kpms.reindex_syllables_in_checkpoint(project_dir, model_name)
+        model_ckpt, _, _, _ = kpms.load_checkpoint(project_dir, model_name)
+        model_ckpt['project_dir'] = project_dir
+        model_ckpt['model_name'] = model_name
+
+        results = kpms.extract_results(model_ckpt, kp_metadata, project_dir, model_name)
+
+        rec_names = sorted(results.keys())
+        labels_list = [results[rn]['syllable'] for rn in rec_names]
+
+        cluster_dict, stats = extract_sustained_transitions(
+            labels_list,
+            min_duration=self.params.get("min_sustained_duration", 50),
+            top_k=self.params.get("top_k_transitions", 10),
+            min_instances=self.params.get("min_instances", 3),
+        )
+
+        print_transition_stats(stats)
+
+        original_data = None
+        reconstructed_data = None
+        reconstruction_mse = None
+        try:
+            from jax_moseq.models.keypoint_slds import estimate_coordinates
+            from jax_moseq.utils import unbatch
+            import jax.numpy as jnp
+
+            Y = kp_data.get("Y")
+            if Y is not None:
+                if isinstance(Y, dict):
+                    keys = sorted(Y.keys())
+                    original_data = np.stack([np.array(Y[k]) for k in keys], axis=0)
+                else:
+                    original_data = np.array(Y)
+                if original_data.ndim == 4:
+                    n_clips_y, n_frames_y, n_kp_y, n_dim_y = original_data.shape
+                    original_data = original_data.reshape(n_clips_y, n_frames_y, n_kp_y * n_dim_y)
+
+            if 'states' in model_ckpt and 'params' in model_ckpt:
+                Y_est = estimate_coordinates(
+                    jnp.array(model_ckpt['states']['x']),
+                    jnp.array(model_ckpt['states']['v']),
+                    jnp.array(model_ckpt['states']['h']),
+                    jnp.array(model_ckpt['params']['Cd'])
+                )
+                coords_est = unbatch(Y_est, *kp_metadata)
+                rec_keys = sorted(coords_est.keys())
+                recon_list = []
+                for k in rec_keys:
+                    arr = np.array(coords_est[k])
+                    if arr.ndim == 3 and arr.shape[-1] == 1:
+                        arr = arr.squeeze(-1)
+                    elif arr.ndim == 4:
+                        arr = arr.reshape(arr.shape[0], -1)
+                    recon_list.append(arr)
+                reconstructed_data = np.stack(recon_list, axis=0)
+                if reconstructed_data.ndim == 4:
+                    n_clips_r, n_frames_r, n_kp_r, n_dim_r = reconstructed_data.shape
+                    reconstructed_data = reconstructed_data.reshape(n_clips_r, n_frames_r, n_kp_r * n_dim_r)
+
+                if original_data is not None:
+                    min_len = min(original_data.shape[1], reconstructed_data.shape[1])
+                    reconstruction_mse = float(np.mean(
+                        (original_data[:, :min_len] - reconstructed_data[:, :min_len]) ** 2
+                    ))
+                    print(f"Keypoint Reconstruction MSE: {reconstruction_mse:.6f}")
+        except Exception as e:
+            print(f"Warning: Reconstruction computation failed: {e}")
+
+        return KPMSResult(
+            labels=labels_list,
+            n_states=n_states,
+            method_name=self.name,
+            model=model_ckpt,
+            results=results,
+            data=kp_data,
+            metadata=kp_metadata,
+            original=original_data,
+            reconstructed=reconstructed_data,
+            reconstruction_mse=reconstruction_mse,
             transition_cluster_dict=cluster_dict,
             transition_stats=stats,
         )
@@ -550,6 +807,7 @@ METHOD_REGISTRY: dict[str, type[BaseMethod]] = {
     "w2_unif_kmeans": W2UnifKMeans,
     "gw_dm_kmeans": GWDMKMeans,
     "kpms_intention": KPMSIntentionMethod,
+    "kpms_keypoint": KPMSKeypointMethod,
 }
 
 
