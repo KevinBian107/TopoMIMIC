@@ -34,15 +34,17 @@ from topo_mimic.dmwk.utils.load_utils import load_rollout_from_source
 
 from topo_mimic.benchmark.hyperparam_sweep.config import (
     SweepConfig,
-    KPMSHyperparams,
     load_config,
+)
+from topo_mimic.benchmark.hyperparam_sweep.kpms.config import (
+    KPMSHyperparams,
     hyperparams_to_dict,
 )
 from topo_mimic.benchmark.hyperparam_sweep.keypoint_loader import (
     setup_stac_reference,
     qpos_to_keypoints,
 )
-from topo_mimic.benchmark.hyperparam_sweep.dual_fit import (
+from topo_mimic.benchmark.hyperparam_sweep.kpms.dual_fit import (
     run_dual_fit,
     run_ensemble_dual_fit,
 )

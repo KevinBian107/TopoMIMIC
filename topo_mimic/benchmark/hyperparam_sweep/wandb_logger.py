@@ -1,4 +1,4 @@
-"""WandB logging utilities for KPMS hyperparameter sweep."""
+"""WandB logging utilities for hyperparameter sweep."""
 
 from pathlib import Path
 from typing import Any
@@ -18,16 +18,10 @@ try:
 except ImportError:
     HAS_MPL = False
 
-from topo_mimic.benchmark.hyperparam_sweep.config import (
-    SweepConfig,
-    KPMSHyperparams,
-    hyperparams_to_dict,
-)
-
 
 def init_sweep_run(
-    config: SweepConfig,
-    hyperparams: KPMSHyperparams | None = None,
+    config: Any,
+    hyperparams: Any | None = None,
     run_name: str | None = None,
     tags: list[str] | None = None,
 ) -> Any:
@@ -38,14 +32,22 @@ def init_sweep_run(
         return None
 
     hp = hyperparams if hyperparams is not None else config.hyperparams
-    hp_dict = hyperparams_to_dict(hp)
+    hp_dict = {}
+    for attr in dir(hp):
+        if not attr.startswith("_"):
+            val = getattr(hp, attr)
+            if isinstance(val, (int, float, str, bool, list, tuple)):
+                hp_dict[attr] = val
 
-    run_config = {
-        **hp_dict,
-        "n_models_per_setting": config.evaluation.n_models_per_setting,
-        "train_clips": config.data.train_clips,
-        "test_clips": config.data.test_clips,
-    }
+    run_config = {**hp_dict}
+
+    if hasattr(config, "evaluation") and hasattr(config.evaluation, "n_models_per_setting"):
+        run_config["n_models_per_setting"] = config.evaluation.n_models_per_setting
+    if hasattr(config, "data"):
+        if hasattr(config.data, "train_clips"):
+            run_config["train_clips"] = config.data.train_clips
+        if hasattr(config.data, "test_clips"):
+            run_config["test_clips"] = config.data.test_clips
 
     run = wandb.init(
         project=config.wandb.project,
@@ -181,6 +183,50 @@ def log_table(
     wandb.log({name: table})
 
 
+def log_training_curves(
+    train_losses: list[float],
+    val_losses: list[float] | None = None,
+    recon_losses: list[float] | None = None,
+    kl_losses: list[float] | None = None,
+    prefix: str = "train",
+) -> None:
+    if not HAS_WANDB or not HAS_MPL:
+        return
+
+    if wandb.run is None:
+        return
+
+    fig, axes = plt.subplots(1, 2 if val_losses else 1, figsize=(12, 4))
+    if not isinstance(axes, np.ndarray):
+        axes = [axes]
+
+    epochs = list(range(len(train_losses)))
+
+    ax = axes[0]
+    ax.plot(epochs, train_losses, label="Total Loss", color="blue")
+    if recon_losses:
+        ax.plot(epochs, recon_losses, label="Recon Loss", color="green", linestyle="--")
+    if kl_losses:
+        ax.plot(epochs, kl_losses, label="KL Loss", color="red", linestyle="--")
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Loss")
+    ax.set_title(f"{prefix} Training Curves")
+    ax.legend()
+
+    if val_losses and len(axes) > 1:
+        ax = axes[1]
+        ax.plot(epochs, train_losses, label="Train", color="blue")
+        ax.plot(epochs, val_losses, label="Validation", color="orange")
+        ax.set_xlabel("Epoch")
+        ax.set_ylabel("Total Loss")
+        ax.set_title(f"{prefix} Train vs Validation")
+        ax.legend()
+
+    plt.tight_layout()
+    wandb.log({f"{prefix}/training_curves": wandb.Image(fig)})
+    plt.close(fig)
+
+
 def finish_run() -> None:
     if not HAS_WANDB:
         return
@@ -233,14 +279,14 @@ def run_sweep_agent(
 
 
 class WandBLogger:
-    def __init__(self, config: SweepConfig):
+    def __init__(self, config: Any):
         self.config = config
         self.enabled = config.wandb.enabled and HAS_WANDB
         self.run = None
 
     def init(
         self,
-        hyperparams: KPMSHyperparams | None = None,
+        hyperparams: Any | None = None,
         run_name: str | None = None,
         tags: list[str] | None = None,
     ) -> Any:
@@ -273,6 +319,18 @@ class WandBLogger:
         if not self.enabled:
             return
         log_videos(videos, fps)
+
+    def log_training_curves(
+        self,
+        train_losses: list[float],
+        val_losses: list[float] | None = None,
+        recon_losses: list[float] | None = None,
+        kl_losses: list[float] | None = None,
+        prefix: str = "train",
+    ) -> None:
+        if not self.enabled:
+            return
+        log_training_curves(train_losses, val_losses, recon_losses, kl_losses, prefix)
 
     def finish(self) -> None:
         if not self.enabled:

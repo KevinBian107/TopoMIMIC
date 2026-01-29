@@ -1,0 +1,38 @@
+program: topo_mimic/benchmark/hyperparam_sweep/custom_vae/vae_sweep.py
+method: bayes
+metric:
+  goal: maximize
+  name: dual_fit/motif_ari
+
+parameters:
+  latent_dim:
+    values: [16, 30, 64]
+  time_window:
+    values: [15, 30, 60]
+  hidden_dim:
+    values: [128, 256, 512]
+  beta:
+    distribution: log_uniform_values
+    min: 0.1
+    max: 10.0
+  n_clusters:
+    values: [10, 15, 20, 30]
+  segmentation_algo:
+    values: ["hmm", "kmeans"]
+  learning_rate:
+    distribution: log_uniform_values
+    min: 0.0001
+    max: 0.01
+
+early_terminate:
+  type: hyperband
+  min_iter: 3
+  max_iter: 20
+
+command:
+  - ${env}
+  - python
+  - ${program}
+  - --config
+  - configs/benchmark/hyperparam_sweep/vae_sweep.yaml
+  - --sweep

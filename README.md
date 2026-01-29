@@ -61,7 +61,8 @@ Refer to the [documentation folder](/docs/) for more detailed information on the
 ### Hyperparameter Tuning
 Find optimal Takens embedding (m, tau) and DM parameters (k_neighbors, pers_delta) first prior to clustering, this is a crtical parameter search for the unsupervised learning method to work:
 ```bash
-python -m topo_mimic.benchmark.hyperparam_sweep.kpms_sweep --sweep --ensemble
+python -m topo_mimic.benchmark.hyperparam_sweep.kpms.kpms_sweep --sweep
+python -m topo_mimic.benchmark.hyperparam_sweep.custom_vae.vae_sweep --sweep
 ```
 
 ### Extract DM Graphs

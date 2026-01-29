@@ -1,20 +1,40 @@
-"""KPMS Hyperparameter Sweep System with WandB integration and dual-fitting."""
+"""Hyperparameter sweep systems with WandB integration and dual-fitting."""
 
 from topo_mimic.benchmark.hyperparam_sweep.config import (
     SweepConfig,
-    KPMSHyperparams,
     DataConfig,
     KeypointConfig,
     WandBConfig,
     EvaluationConfig,
+    RenderingConfig,
     load_config,
 )
-from topo_mimic.benchmark.hyperparam_sweep.dual_fit import (
+from topo_mimic.benchmark.hyperparam_sweep.kpms import (
+    KPMSHyperparams,
+    hyperparams_to_dict,
+    KPMSFitResult,
     DualFitResult,
     fit_kpms_model,
     fit_kpms_intention,
     fit_kpms_keypoints,
     run_dual_fit,
+    run_ensemble_dual_fit,
+)
+from topo_mimic.benchmark.hyperparam_sweep.custom_vae import (
+    VAEHyperparams,
+    VAESweepConfig,
+    vae_hyperparams_to_dict,
+    load_vae_config,
+    RNNVAE,
+    WindowedDataset,
+    VAETrainResult,
+    VAETrainer,
+    SegmentationResult,
+    segment_hmm,
+    segment_kmeans,
+    segment_latent,
+    VAEFitResult,
+    fit_vae,
 )
 from topo_mimic.benchmark.hyperparam_sweep.metrics import (
     compute_eml,
@@ -35,7 +55,9 @@ from topo_mimic.benchmark.hyperparam_sweep.wandb_logger import (
     log_metrics,
     log_plots,
     log_videos,
+    log_training_curves,
     finish_run,
+    WandBLogger,
 )
 from topo_mimic.benchmark.hyperparam_sweep.visualization import (
     plot_duration_distribution,
@@ -47,18 +69,40 @@ from topo_mimic.benchmark.hyperparam_sweep.visualization import (
 )
 
 __all__ = [
+    # Shared configs
     "SweepConfig",
-    "KPMSHyperparams",
     "DataConfig",
     "KeypointConfig",
     "WandBConfig",
     "EvaluationConfig",
+    "RenderingConfig",
     "load_config",
+    # KPMS
+    "KPMSHyperparams",
+    "hyperparams_to_dict",
+    "KPMSFitResult",
     "DualFitResult",
     "fit_kpms_model",
     "fit_kpms_intention",
     "fit_kpms_keypoints",
     "run_dual_fit",
+    "run_ensemble_dual_fit",
+    # VAE
+    "VAEHyperparams",
+    "VAESweepConfig",
+    "vae_hyperparams_to_dict",
+    "load_vae_config",
+    "RNNVAE",
+    "WindowedDataset",
+    "VAETrainResult",
+    "VAETrainer",
+    "SegmentationResult",
+    "segment_hmm",
+    "segment_kmeans",
+    "segment_latent",
+    "VAEFitResult",
+    "fit_vae",
+    # Metrics
     "compute_eml",
     "compute_reconstruction_mse",
     "compute_duration_stats",
@@ -66,14 +110,19 @@ __all__ = [
     "compute_active_syllables",
     "compute_syllable_consistency",
     "compute_duration_kl",
+    # Keypoint loader
     "setup_stac_reference",
     "qpos_to_keypoints",
     "prepare_kpms_coordinates",
+    # WandB
     "init_sweep_run",
     "log_metrics",
     "log_plots",
     "log_videos",
+    "log_training_curves",
     "finish_run",
+    "WandBLogger",
+    # Visualization
     "plot_duration_distribution",
     "plot_syllable_frequencies",
     "plot_transition_matrix",

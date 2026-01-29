@@ -15,7 +15,7 @@ try:
 except ImportError:
     HAS_KPMS = False
 
-from topo_mimic.benchmark.hyperparam_sweep.config import KPMSHyperparams
+from topo_mimic.benchmark.hyperparam_sweep.kpms.config import KPMSHyperparams
 from topo_mimic.benchmark.hyperparam_sweep.keypoint_loader import (
     prepare_intention_for_kpms,
     prepare_keypoints_for_kpms,
