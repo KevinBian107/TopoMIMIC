@@ -92,6 +92,7 @@ KEY_JOINTS = {
 }
 
 
+
 @dataclass
 class DTWVisualizationResult:
     label: str

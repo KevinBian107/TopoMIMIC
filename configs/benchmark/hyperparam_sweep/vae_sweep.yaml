@@ -1,0 +1,35 @@
+output_dir: "out/vae_hyperparam_sweep"
+
+data:
+  rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
+  train_clips: [0, 642]
+  test_clips: [642, 742]
+
+keypoint:
+  xml_path: "topo_mimic/dmwk/xml/rodent.xml"
+  stac_data_path: "data/rodent_reference_clips.h5"
+
+hyperparams:
+  latent_dim: 30
+  time_window: 30
+  hidden_dim: 256
+  rnn_layers: 1
+  rnn_type: "GRU"
+  beta: 1.0
+  n_clusters: 15
+  segmentation_algo: "hmm"
+  learning_rate: 0.0005
+  batch_size: 256
+  max_epochs: 100
+
+wandb:
+  project: "topomimic-vae-sweep"
+  entity: null
+  enabled: true
+  n_video_samples: 2
+
+rendering:
+  enabled: true
+  fps: 30
+  target_size: [320, 240]
+  camera_name: "close_profile"

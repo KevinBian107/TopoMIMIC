@@ -20,7 +20,13 @@ from .visualization import (
     plot_transition_cluster_comparison,
     plot_transition_graph,
 )
-from .metrics import run_dtw_analysis, DTWResult
+from .metrics import (
+    run_dtw_analysis,
+    run_per_joint_dtw_analysis,
+    resolve_joint_config,
+    DTWResult,
+    PerJointDTWResult,
+)
 from .gt_sanity_check import run_gt_dtw_sanity_check
 from .dtw_visualization import run_dtw_visualization
 
@@ -82,6 +88,98 @@ def create_dtw_comparison_table(
                     vals.append(float(v))
             if vals:
                 print(f"  {method}: {np.mean(vals):.4f} (n={len(vals)})")
+
+
+def create_per_joint_dtw_summary(
+    all_per_joint_results: dict[str, list[PerJointDTWResult]],
+    joint_names: list[str],
+    output_dir: str,
+) -> None:
+    """
+    Create a J x methods summary table by summing DTW across clusters.
+
+    For each method, sum the per-joint DTW across all clusters to get
+    a single value per joint. This enables comparison across methods.
+    """
+    if not all_per_joint_results:
+        return
+
+    methods = sorted(all_per_joint_results.keys())
+
+    rows = []
+    for jname in joint_names:
+        row = {"Joint": jname}
+        for method in methods:
+            results = all_per_joint_results.get(method, [])
+            total = 0.0
+            count = 0
+            for r in results:
+                val = r.joint_dtw.get(jname, 0.0)
+                if np.isfinite(val):
+                    total += val
+                    count += 1
+            row[method] = total if count > 0 else float('nan')
+        rows.append(row)
+
+    df = pd.DataFrame(rows)
+
+    csv_path = os.path.join(output_dir, "per_joint_dtw_summary.csv")
+    df.to_csv(csv_path, index=False, float_format="%.4f")
+    print(f"Saved per-joint DTW summary (J x methods) to {csv_path}")
+
+    print("\nPer-Joint DTW Summary (sum across clusters):")
+    print("-" * 80)
+    print(df.to_string(index=False))
+    print("-" * 80)
+
+    method_cols = [c for c in df.columns if c != "Joint"]
+    if method_cols:
+        print("\nMethod Totals (sum across joints):")
+        for method in method_cols:
+            total = df[method].sum()
+            print(f"  {method}: {total:.4f}")
+
+    plot_per_joint_summary_heatmap(df, joint_names, methods, output_dir)
+
+
+def plot_per_joint_summary_heatmap(
+    df: pd.DataFrame,
+    joint_names: list[str],
+    methods: list[str],
+    output_dir: str,
+) -> None:
+    """Plot the J x methods summary as a heatmap."""
+    import matplotlib.pyplot as plt
+
+    matrix = df[methods].values
+    matrix = np.nan_to_num(matrix, nan=0.0)
+
+    fig, ax = plt.subplots(figsize=(max(6, len(methods) * 1.5), max(4, len(joint_names) * 0.5)))
+
+    im = ax.imshow(matrix, cmap='YlOrRd', aspect='auto')
+    ax.set_xticks(np.arange(len(methods)))
+    ax.set_yticks(np.arange(len(joint_names)))
+    ax.set_xticklabels(methods, rotation=45, ha='right', fontsize=9)
+    ax.set_yticklabels(joint_names, fontsize=9)
+
+    for i in range(len(joint_names)):
+        for j in range(len(methods)):
+            val = matrix[i, j]
+            text_color = 'white' if val > matrix.max() * 0.6 else 'black'
+            ax.text(j, i, f'{val:.3f}', ha='center', va='center', fontsize=8, color=text_color)
+
+    cbar = plt.colorbar(im, ax=ax, shrink=0.8)
+    cbar.ax.set_ylabel("DTW Sum", fontsize=10)
+
+    ax.set_xlabel("Method", fontsize=11)
+    ax.set_ylabel("Joint", fontsize=11)
+    ax.set_title("Per-Joint DTW Summary (sum across clusters)", fontsize=12, fontweight='bold')
+
+    plt.tight_layout()
+    save_path = os.path.join(output_dir, "per_joint_dtw_summary_heatmap.pdf")
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"Saved per-joint DTW summary heatmap to {save_path}")
 
 
 def load_trajectory_data(rodent_rollout_dir: str, data_key: str) -> np.ndarray:
@@ -155,7 +253,11 @@ def run_analysis(config: AnalysisConfig) -> None:
         print(f"Filtering to seeds: {config.seeds}")
 
     dtw_data = None
-    if config.run_dtw_metrics:
+    dtw_data_processed = None
+    top_joint_indices = None
+    top_joint_names = None
+
+    if config.run_dtw_metrics or config.run_per_joint_dtw:
         print(f"\n=== Loading data for DTW metrics ({config.dtw_data_key}) ===")
         try:
             dtw_data = load_trajectory_data(
@@ -163,11 +265,28 @@ def run_analysis(config: AnalysisConfig) -> None:
                 config.dtw_data_key,
             )
             print(f"Loaded data: {dtw_data.shape}")
+
+            if config.dtw_skip_root_dims > 0:
+                dtw_data_processed = dtw_data[..., config.dtw_skip_root_dims:]
+                print(f"After skipping {config.dtw_skip_root_dims} root dims: {dtw_data_processed.shape}")
+            else:
+                dtw_data_processed = dtw_data
+
+            if config.run_per_joint_dtw:
+                print(f"\n=== Resolving joints for per-joint DTW ===")
+                top_joint_indices, top_joint_names = resolve_joint_config(
+                    config.per_joint_dtw_joints,
+                    skip_root_dims=config.dtw_skip_root_dims,
+                )
+                print(f"Analysis joints: {list(zip(top_joint_names, top_joint_indices))}")
+
         except Exception as e:
             print(f"Failed to load data: {e}")
             config.run_dtw_metrics = False
+            config.run_per_joint_dtw = False
 
     all_dtw_results: dict[str, list[DTWResult]] = {}
+    all_per_joint_results: dict[str, list[PerJointDTWResult]] = {}
 
     for method_name, method_results in all_results.items():
         if config.methods and method_name not in config.methods:
@@ -336,9 +455,42 @@ def run_analysis(config: AnalysisConfig) -> None:
                         import traceback
                         traceback.print_exc()
 
+            if config.run_per_joint_dtw and dtw_data_processed is not None and top_joint_indices is not None:
+                if os.path.exists(config.behavior_labels_csv):
+                    print(f"    Running per-joint DTW analysis ({len(top_joint_indices)} joints)...")
+                    try:
+                        per_joint_dir = os.path.join(seed_output_dir, "per_joint_dtw")
+                        per_joint_results = run_per_joint_dtw_analysis(
+                            cluster_dict=cluster_dict,
+                            cluster_labels=cluster_labels,
+                            turn_directions=turn_directions,
+                            behavior_labels_csv=config.behavior_labels_csv,
+                            data=dtw_data_processed,
+                            output_dir=per_joint_dir,
+                            joint_indices=top_joint_indices,
+                            joint_names=top_joint_names,
+                            method_name=method_name,
+                            seed=seed,
+                            max_samples=config.dtw_max_seqs,
+                            max_comparisons=config.dtw_max_comparisons,
+                            short_threshold=config.short_behavior_threshold,
+                            merge_rear=config.merge_rear,
+                            min_seq_length=config.dtw_min_seq_length,
+                        )
+                        method_key = f"{method_name}_seed{seed}"
+                        all_per_joint_results[method_key] = per_joint_results
+                    except Exception as e:
+                        print(f"    Per-joint DTW analysis failed: {e}")
+                        import traceback
+                        traceback.print_exc()
+
     if config.run_dtw_metrics and all_dtw_results:
         print("\n=== Generating DTW Comparison Table ===")
         create_dtw_comparison_table(all_dtw_results, config.output_dir)
+
+    if config.run_per_joint_dtw and all_per_joint_results and top_joint_names:
+        print("\n=== Generating Per-Joint DTW Summary (J x Methods) ===")
+        create_per_joint_dtw_summary(all_per_joint_results, top_joint_names, config.output_dir)
 
     print("\n" + "=" * 60)
     print("Analysis Complete!")

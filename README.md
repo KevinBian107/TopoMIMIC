@@ -5,11 +5,10 @@
 
 This code base is designed to develope an unsupervised behavior clustering algorithm by looking at the latent space of [Mimic-mjx](https://github.com/talmolab/Mimic-mjx).
 
-- [View demo presentations](https://1drv.ms/p/c/98d7a8c1c4098906/EWaQUCtAdxhOnRaLUJEzJ4ABF2L1F52lpLsUqw0Z8AQzcA)
-- [View SfN poster](https://drive.google.com/file/d/1tTwwww-OyBqC_tmbU0du2dtpfIY9_OI4/view)
-
 ## Environment Instantiation
-We setup this repository similar to the [Mimic-mjx package](https://github.com/talmolab/track-mjx). All the `jax` dependency should be following the ones that is specified in `Mimic-mjx`. Besides the `Mimic-mjx` environment, please also download some of the TDA related packages using the following:
+We setup this repository similar to the [Mimic-mjx package](https://github.com/talmolab/track-mjx). All the `jax` dependency should be following the ones that is specified in `Mimic-mjx`. Besides the `Mimic-mjx` environment, we also need the [Stac-mjx package](https://github.com/talmolab/stac-mjx) for benchmarking (`Stac-mjx` should be installed prior to installing from `requirements.txt`, `KPMS` requires an newer version of jax dependency, which mismatch with `Stac-mjx` but workable).
+
+Please also download some of the TDA related packages using the following:
 
 ```bash
 pip install -r requirements.txt
@@ -62,7 +61,8 @@ Refer to the [documentation folder](/docs/) for more detailed information on the
 ### Hyperparameter Tuning
 Find optimal Takens embedding (m, tau) and DM parameters (k_neighbors, pers_delta) first prior to clustering, this is a crtical parameter search for the unsupervised learning method to work:
 ```bash
-python -m topo_mimic.dmwk.dm_hypertune configs/dmwk/dm_hypertune.yaml
+python -m topo_mimic.benchmark.hyperparam_sweep.kpms.kpms_sweep --sweep
+python -m topo_mimic.benchmark.hyperparam_sweep.custom_vae.vae_sweep --sweep
 ```
 
 ### Extract DM Graphs
@@ -72,6 +72,11 @@ python -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline.yaml
 ```
 
 ### Run Benchmark Experiment
+Run the hyperparameter sweep to set teh hyperparam set for the benchmark methods:
+```bash
+python -m topo_mimic.benchmark.hyperparam_sweep.kpms_sweep
+```
+
 Run all clustering methods with integrated seeds and auto-generated labels.yaml:
 ```bash
 python -m topo_mimic.benchmark.experiment configs/benchmark/experiment.yaml
@@ -100,6 +105,7 @@ The GUI displays each cluster's video row individually (extracted from the grid 
 Generate variance heatmaps, cross-method comparison, and seed stability analysis:
 ```bash
 python -m topo_mimic.benchmark.analysis.main configs/benchmark/analysis.yaml
+python -m topo_mimic.benchmark.generate_results_table
 ```
 
 ## Experiment

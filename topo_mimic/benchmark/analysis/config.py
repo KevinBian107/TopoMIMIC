@@ -36,6 +36,9 @@ class AnalysisConfig:
     dtw_min_seq_length: int = 3
     dtw_skip_root_dims: int = 7
 
+    run_per_joint_dtw: bool = False
+    per_joint_dtw_joints: list[str] = None  # Joint names to analyze (None = use defaults)
+
     gt_render_max_samples: int = 5
     gt_render_framerate: int = 30
     gt_render_target_size: tuple[int, int] = (320, 240)
@@ -85,6 +88,8 @@ def load_config(config_path: str | Path) -> AnalysisConfig:
         dtw_max_comparisons=cfg.get("dtw_max_comparisons", 100),
         dtw_min_seq_length=cfg.get("dtw_min_seq_length", 3),
         dtw_skip_root_dims=cfg.get("dtw_skip_root_dims", 7),
+        run_per_joint_dtw=cfg.get("run_per_joint_dtw", False),
+        per_joint_dtw_joints=cfg.get("per_joint_dtw_joints", None),
         gt_render_max_samples=cfg.get("gt_render_max_samples", 5),
         gt_render_framerate=cfg.get("gt_render_framerate", 30),
         gt_render_target_size=tuple(cfg.get("gt_render_target_size", [320, 240])),
