@@ -10,7 +10,7 @@ behavior_labels_csv: "/home/jovyan/vast/kaiwen/TopoVNL/behavior_labels.csv"
 # Filter to specific methods and seeds (null = all)
 # Example: methods: ["gw_kmeans", "w2_kmeans"]
 # Example: seeds: [0, 123]
-methods: ["w2_dm_kmeans", "w2_unif_kmeans"]
+methods: ["kpms_keypoint", "kpms_intention"]
 seeds: [0]
 
 # =============================================================================
@@ -54,7 +54,7 @@ gt_render_target_size: [320, 240]  # Target tile size for GT rendering
 # =============================================================================
 # Transition comparison settings
 # =============================================================================
-run_transition_comparison: false  # Side-by-side discovered vs ground truth transitions
+run_transition_comparison: true  # Side-by-side discovered vs ground truth transitions
 run_transition_ranking: true  # Generate transition variant rankings (with turn directions)
 max_transition_points: 500  # Max points to display per cluster
 
@@ -74,7 +74,7 @@ transition_graph_figsize: [16, 7]  # [width, height]
 # Each discovered cluster is compared to its corresponding GT transition type
 # Turn direction (left/right) is used to filter GT sequences
 # Lower DTW = more similar transition dynamics (how joints move over time)
-run_dtw_metrics: true
+run_dtw_metrics: false
 dtw_data_key: "qpos_rollout"  # Data to use: "qpos_rollout" or "intention"
 dtw_max_seqs: 50  # Max sequences per cluster
 dtw_max_comparisons: 100  # Max pairwise DTW comparisons per cluster pair
@@ -86,4 +86,4 @@ dtw_skip_root_dims: 7  # Skip first N dims of qpos (root pos + quat)
 # =============================================================================
 # Generates per-cluster visualizations showing DTW alignment details
 # For each cluster: warping path on cost matrix, aligned joint trajectories, and video
-run_dtw_visualization: true  # Enable detailed DTW visualization (slower)
+run_dtw_visualization: false  # Enable detailed DTW visualization (slower)

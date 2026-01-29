@@ -13,6 +13,7 @@ stac-mjx/
 
 # out figures
 out/
+archive_out/
 
 # labeling framework
 .gradio
