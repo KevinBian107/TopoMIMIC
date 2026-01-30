@@ -513,4 +513,94 @@ Output: Transition comparisons, MDS plots in `out/analysis_output/`
 
 ---
 
+## Granularity Analysis
+
+The granularity analysis module examines how persistence threshold affects behavior discrimination and cluster redundancy.
+
+### Purpose
+
+Different persistence thresholds capture different levels of behavioral detail:
+- **Low δ (e.g., 0.1)**: Captures fine-grained movements (orienting, grooming)
+- **High δ (e.g., 1.0)**: Captures only gross movements (locomotion)
+
+The granularity analysis quantifies this relationship through:
+1. **Stationary clip analysis**: Joint variance within DM cycles
+2. **Redundancy analysis**: How many clusters become redundant at different k values
+
+### Pipeline Overview
+
+```
+                  Granularity Analysis Pipeline
+
+    ┌────────────────────────────────────────────────────────┐
+    │  Multi-Persistence DM Extraction                       │
+    │  δ ∈ {0.1, 0.25, 0.5, 0.75, 1.0}                       │
+    └────────────────────────────────────────────────────────┘
+                              │
+              ┌───────────────┴───────────────┐
+              ▼                               ▼
+    ┌──────────────────┐            ┌──────────────────┐
+    │ Stationary Clip  │            │   Redundancy     │
+    │    Analysis      │            │    Analysis      │
+    │                  │            │                  │
+    │ • Head joints    │            │ • W2 clustering  │
+    │ • Arm joints     │            │ • DTW distances  │
+    │ • Variance in    │            │ • Union-Find     │
+    │   cycles         │            │   merging        │
+    └──────────────────┘            └──────────────────┘
+              │                               │
+              ▼                               ▼
+    ┌──────────────────┐            ┌──────────────────┐
+    │ Joint Variance   │            │ Unique Clusters  │
+    │   Boxplots       │            │     Curves       │
+    └──────────────────┘            └──────────────────┘
+
+Figure 12: Granularity analysis pipeline. Multi-persistence DM extraction
+feeds into two analysis branches: stationary clip analysis and redundancy
+analysis.
+```
+
+### Stationary Clip Analysis
+
+For clips with low root displacement (stationary behavior):
+1. Extract DM cycles at each persistence threshold
+2. Compute joint variance within cycles for head and arm joints
+3. Plot boxplots showing how variance changes with persistence
+
+**Expected result**: Lower persistence captures more head movement variance (orienting behavior).
+
+### Redundancy Analysis
+
+For each (pers_delta, n_clusters) configuration:
+1. Build windows from DM cycles
+2. Compute W2 distance matrix and cluster with MDS + KMeans
+3. Compute pairwise DTW between cluster representatives
+4. Identify redundant pairs using threshold or percentile
+5. Count unique clusters after merging redundant pairs
+
+**Expected result**: Higher n_clusters leads to a plateau in unique clusters as redundancy increases.
+
+### Running Granularity Analysis
+
+```bash
+python -m topo_mimic.granularity.main configs/granularity/granularity.yaml
+```
+
+Output directory structure:
+```
+out/granularity/
+├── dm_cache/
+│   └── pers_0.10/dm_result.pkl
+├── stationary/
+│   ├── stationary_clips.csv
+│   └── plots/
+├── redundancy/
+│   ├── pers_0.10/n_clusters_10/
+│   ├── plots/
+│   └── summary.csv
+└── summary.yaml
+```
+
+---
+
 *Document generated for TopoVNL methods documentation.*

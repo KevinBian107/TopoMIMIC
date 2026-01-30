@@ -111,6 +111,16 @@ topo_mimic/
 │       ├── rodent.xml
 │       └── assets/                    # .obj mesh files
 │
+├── granularity/                       # Granularity analysis module
+│   ├── __init__.py
+│   ├── config.py                      # Configuration dataclasses
+│   ├── main.py                        # Entry point
+│   ├── dm_multi_persistence.py        # Multi-δ DM extraction
+│   ├── stationary_analysis.py         # Head/arm joint analysis
+│   ├── redundancy.py                  # DTW redundancy analysis
+│   ├── plotting.py                    # Nature-style plots
+│   └── utils.py                       # Shared utilities
+│
 └── benchmark/
     ├── __init__.py
     ├── experiment.py                  # Unified experiment runner
@@ -261,6 +271,9 @@ configs/
 │   ├── experiment.yaml             # Method comparison
 │   ├── analysis.yaml               # Analysis settings
 │   └── labeling.yaml               # Labeling settings
+│
+├── granularity/
+│   └── granularity.yaml            # Granularity analysis settings
 │
 └── scripts/
     ├── render_cycle.yaml
@@ -556,6 +569,11 @@ python -m topo_mimic.benchmark.experiment configs/benchmark/experiment.yaml
 **Step 3: Run Analysis**
 ```bash
 python -m topo_mimic.benchmark.analysis.main configs/benchmark/analysis.yaml
+```
+
+**Step 4: Run Granularity Analysis** (Optional)
+```bash
+python -m topo_mimic.granularity.main configs/granularity/granularity.yaml
 ```
 
 ---
