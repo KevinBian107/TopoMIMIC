@@ -21,7 +21,7 @@ from .dm_multi_persistence import run_dm_multi_persistence
 from .stationary_analysis import run_stationary_analysis
 from .redundancy import run_redundancy_analysis
 from .plotting import generate_stationary_plots, generate_redundancy_plots
-from .rendering import render_all_similar_pairs, render_stationary_analysis
+from .rendering import render_all_similar_pairs, render_stationary_analysis, render_similar_pairs_grid
 
 
 def load_data(
@@ -221,9 +221,24 @@ def run_granularity_analysis(config: GranularityConfig) -> None:
     rendered_videos = []
     if config.rendering.enabled and redundancy_output is not None:
         print("\n=== Stage 6: Rendering Similar Pairs ===")
+
+        grid_video_path = str(Path(config.output_dir) / "redundancy" / "similar_pairs_grid.mp4")
+        try:
+            print("  Rendering similar pairs grid (persistence × cluster count)...")
+            render_similar_pairs_grid(
+                redundancy_output.results,
+                config.data.rodent_rollout_dir,
+                grid_video_path,
+                config,
+            )
+            rendered_videos.append(grid_video_path)
+            print(f"  Rendered: {grid_video_path}")
+        except Exception as e:
+            print(f"  Error rendering similar pairs grid: {e}")
+
         for (pers_delta, n_clusters), result in redundancy_output.results.items():
             if result.top_similar_pairs:
-                print(f"\n  Rendering for pers_delta={pers_delta}, k={n_clusters}")
+                print(f"\n  Rendering individual pairs for pers_delta={pers_delta}, k={n_clusters}")
                 videos_dir = Path(config.output_dir) / "redundancy" / f"pers_{pers_delta:.2f}" / f"n_clusters_{n_clusters}"
                 videos = render_all_similar_pairs(
                     result,

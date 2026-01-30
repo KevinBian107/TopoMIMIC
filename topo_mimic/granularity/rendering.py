@@ -266,6 +266,183 @@ def render_all_similar_pairs(
     return rendered_paths
 
 
+def render_similar_pairs_grid(
+    redundancy_results: dict[tuple[float, int], "RedundancyResult"],
+    rodent_rollout_dir: str,
+    out_path: str,
+    config: GranularityConfig,
+) -> str:
+    """
+    Render a grid of similar cluster pairs.
+    Rows = persistence values, Cols = number of clusters.
+    Each cell shows the top similar pair side-by-side.
+
+    Args:
+        redundancy_results: Dict mapping (pers_delta, n_clusters) to RedundancyResult
+        rodent_rollout_dir: Path to rollout data
+        out_path: Output video path
+        config: Configuration object
+
+    Returns:
+        Path to output video
+    """
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+
+    pers_values = sorted(set(k[0] for k in redundancy_results.keys()))
+    k_values = sorted(set(k[1] for k in redundancy_results.keys()))
+
+    n_rows = len(pers_values)
+    n_cols = len(k_values)
+
+    if n_rows == 0 or n_cols == 0:
+        raise ValueError("No redundancy results to render")
+
+    print(f"  Building grid: {n_rows} persistence values x {n_cols} cluster counts")
+
+    all_clips_needed = set()
+    for (pers_delta, n_clusters), result in redundancy_results.items():
+        if result.top_similar_pairs:
+            ci, cj, _ = result.top_similar_pairs[0]
+            for cid in [ci, cj]:
+                entries = result.cluster_dict.get(cid, [])
+                for clip_id, _ in entries[:1]:
+                    all_clips_needed.add(int(clip_id))
+
+    print(f"  Loading frames for {len(all_clips_needed)} clips...")
+    clip_frame_cache = {}
+    for clip_id in tqdm(all_clips_needed, desc="Loading clips"):
+        try:
+            clip_frame_cache[clip_id] = _load_clip_frames(rodent_rollout_dir, clip_id)
+        except Exception as e:
+            print(f"    Warning: Failed to load clip {clip_id}: {e}")
+            clip_frame_cache[clip_id] = []
+
+    takens_offset = (config.takens.m - 1) * config.takens.tau
+
+    grid_data = []
+    grid_labels = []
+    max_cycle_len = 1
+
+    for pers_delta in pers_values:
+        row_data = []
+        row_labels = []
+
+        for n_clusters in k_values:
+            result = redundancy_results.get((pers_delta, n_clusters))
+
+            if result is None or not result.top_similar_pairs:
+                row_data.append(([], []))
+                row_labels.append(None)
+                continue
+
+            ci, cj, dtw_dist = result.top_similar_pairs[0]
+
+            def get_first_sample(cluster_id):
+                entries = result.cluster_dict.get(cluster_id, [])
+                if not entries:
+                    return []
+
+                clip_id, frame_indices = entries[0]
+                clip_id = int(clip_id)
+                all_frames = clip_frame_cache.get(clip_id, [])
+
+                if not all_frames:
+                    return []
+
+                frames = np.asarray(frame_indices).flatten()
+                frames = np.sort(frames)
+                valid_frames = frames[(frames >= 0) & (frames < len(all_frames))]
+
+                if len(valid_frames) < 2:
+                    return []
+
+                return [all_frames[f] for f in valid_frames]
+
+            frames_i = get_first_sample(ci)
+            frames_j = get_first_sample(cj)
+
+            row_data.append((frames_i, frames_j))
+            row_labels.append(f"C{ci}-C{cj}\n{dtw_dist:.3f}")
+
+            max_cycle_len = max(max_cycle_len, len(frames_i), len(frames_j))
+
+        grid_data.append(row_data)
+        grid_labels.append(row_labels)
+
+    Wc, Hc = config.rendering.target_size
+    cell_w = Wc * 2 + 4
+    cell_h = Hc
+
+    font_label, font_title = _get_fonts()
+
+    title_h = 40
+    row_label_w = 80
+    col_label_h = 40
+    cell_label_h = 24
+    gutter = 8
+    pad_x, pad_y = 16, 12
+
+    W = pad_x * 2 + row_label_w + n_cols * cell_w + (n_cols - 1) * gutter
+    H = pad_y * 2 + title_h + col_label_h + n_rows * (cell_label_h + cell_h) + (n_rows - 1) * gutter
+
+    writer = imageio_ffmpeg.write_frames(
+        out_path, (W, H), fps=config.rendering.framerate, codec="h264", macro_block_size=1
+    )
+    writer.send(None)
+
+    title = "Similar Cluster Pairs: Persistence × Cluster Count"
+
+    for t in range(max_cycle_len):
+        canvas = Image.new("RGB", (W, H), (255, 255, 255))
+        draw = ImageDraw.Draw(canvas)
+
+        _draw_centered_text(draw, title, W // 2, pad_y + title_h // 2, font_title, fill=(0, 0, 0))
+
+        y0 = pad_y + title_h
+
+        for col_idx, k in enumerate(k_values):
+            x = pad_x + row_label_w + col_idx * (cell_w + gutter) + cell_w // 2
+            _draw_centered_text(draw, f"k={k}", x, y0 + col_label_h // 2, font_label)
+
+        for row_idx, pers_delta in enumerate(pers_values):
+            y = y0 + col_label_h + row_idx * (cell_label_h + cell_h + gutter)
+
+            _draw_centered_text(
+                draw, f"δ={pers_delta:.2f}",
+                pad_x + row_label_w // 2, y + (cell_label_h + cell_h) // 2, font_label
+            )
+
+            row_data = grid_data[row_idx]
+            row_label = grid_labels[row_idx]
+
+            for col_idx, ((frames_i, frames_j), label) in enumerate(zip(row_data, row_label)):
+                x = pad_x + row_label_w + col_idx * (cell_w + gutter)
+
+                if label:
+                    _draw_centered_text(draw, label, x + cell_w // 2, y + cell_label_h // 2, font_label, fill=(80, 80, 80))
+
+                y_img = y + cell_label_h
+
+                if frames_i:
+                    fr = frames_i[t % len(frames_i)]
+                    img = Image.fromarray(_ensure_rgb_uint8(fr)).resize((Wc, Hc))
+                    canvas.paste(img, (x, y_img))
+                else:
+                    draw.rectangle([x, y_img, x + Wc - 1, y_img + Hc - 1], fill=(220, 220, 220))
+
+                if frames_j:
+                    fr = frames_j[t % len(frames_j)]
+                    img = Image.fromarray(_ensure_rgb_uint8(fr)).resize((Wc, Hc))
+                    canvas.paste(img, (x + Wc + 4, y_img))
+                else:
+                    draw.rectangle([x + Wc + 4, y_img, x + cell_w - 1, y_img + Hc - 1], fill=(220, 220, 220))
+
+        writer.send(np.asarray(canvas, dtype=np.uint8))
+
+    writer.close()
+    return out_path
+
+
 def render_filtered_cycles_grid(
     stationary_clips: list[StationaryClipInfo],
     dm_results: dict[float, DMExtractionResult],
