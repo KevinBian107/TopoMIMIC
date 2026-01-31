@@ -1,0 +1,35 @@
+# Configuration for demo_switching_state_space.py
+# NASCAR Racetrack: DM-G vs SLDS Comparison
+
+output_dir: "out/switching_state_space_demo"
+
+# NASCAR racetrack parameters
+nascar:
+  n_timesteps: 2000
+  num_states: 4
+  noise_std: 0.02       # Process noise (low for clean loop)
+  obs_noise_std: 0.1    # Observation noise
+  seed: 0
+
+# SLDS fitting parameters (dynamax)
+slds_fit:
+  num_states: 4
+  latent_dim: 2
+  full_iters: 100
+
+# Discrete Morse Graph parameters
+dm:
+  k_neighbors: 15
+  pers_delta: 0.1
+  epsilon: 0.99
+  subsample: 1000
+
+# Visualization settings
+visualization:
+  figsize: [16, 8]
+  dpi: 150
+  trajectory_linewidth: 1.0
+  trajectory_alpha: 0.8
+  cycle_color: "purple"
+  marker_size: 30
+  state_colors: ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"]
