@@ -108,30 +108,32 @@ python -m topo_mimic.benchmark.analysis.main configs/benchmark/analysis.yaml
 python -m topo_mimic.benchmark.generate_results_table
 ```
 
-## Experiment
-To extract the clips with "filled space", representing only single behavior mode within it:
+### Granularity Analysis
+Analyze how persistence threshold affects behavior discrimination and cluster redundancy:
 ```bash
-python -m scripts.extract_filled_space configs/scripts/extract_filled_space.yaml
+python -m topo_mimic.granularity.main configs/granularity/granularity.yaml
 ```
 
-To render cycles for visualization:
-```bash
-python -m scripts.render_cycle configs/scripts/render_cycle.yaml
-```
+This runs:
+1. **Multi-persistence DM extraction**: Extract cycles at multiple persistence thresholds
+2. **Stationary clip analysis**: Analyze head/arm joint variance in stationary clips
+3. **Redundancy analysis**: Compute DTW-based cluster redundancy across k values
 
+## Incompressability
 To verify the incompressibility statement:
 ```bash
- python scripts/incompressibility.py configs/scripts/incompressibility.yaml
-  python scripts/varying_k.py configs/scripts/varying_k.yaml    
+ python -m scripts.incompressibility configs/scripts/incompressibility.yaml
+ python -m scripts.varying_k configs/scripts/varying_k.yaml    
  ```
 
 ## Demo
 We have the code for illustrative demos:
 
 ```bash
+python -m scripts.demo_stationary
 python -m scripts.demo_behavior_overlap
 python -m scripts.demo_torus
-python scripts/demo_saddle.py
+python -m scripts.demo_saddle
 ```
 
 ![Saddle_demo](/figures/saddle_dm.png)

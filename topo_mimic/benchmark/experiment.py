@@ -40,6 +40,12 @@ try:
 except ImportError:
     HAS_OT = False
 
+try:
+    from tslearn.metrics import dtw as tslearn_dtw
+    HAS_TSLEARN = True
+except ImportError:
+    HAS_TSLEARN = False
+
 from topo_mimic.benchmark.methods import (
     get_method,
     MethodType,
@@ -117,6 +123,18 @@ class KSelectionConfig:
 
 
 @dataclass
+class ClusterMergingConfig:
+    enabled: bool = False
+    dtw_threshold: float = 0.1  # Fixed threshold (pairs below are similar)
+    dtw_percentile: float = 10.0  # Percentile threshold (bottom X% are similar)
+    threshold_method: str = "both"  # "fixed", "percentile", or "both"
+    top_k_similar_pairs: int = 5
+    render_similar_pairs: bool = True
+    samples_per_cluster: int = 3
+    skip_root_dims: int = 7
+
+
+@dataclass
 class ExperimentConfig:
     output_dir: str = "out/experiment"
     rodent_rollout_dir: str = "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
@@ -134,6 +152,7 @@ class ExperimentConfig:
 
     methods: list[MethodEntry] = field(default_factory=list)
     rendering: RenderingConfig = None
+    cluster_merging: ClusterMergingConfig = None
 
     def __post_init__(self):
         if self.data is None:
@@ -148,6 +167,8 @@ class ExperimentConfig:
             self.k_selection = KSelectionConfig()
         if self.rendering is None:
             self.rendering = RenderingConfig()
+        if self.cluster_merging is None:
+            self.cluster_merging = ClusterMergingConfig()
 
     @property
     def n_clusters(self) -> int:
@@ -203,6 +224,9 @@ def load_config(config_path: str) -> ExperimentConfig:
     keypoint_dict = cfg.get("keypoint", {})
     keypoint_cfg = KeypointConfig(**keypoint_dict)
 
+    cluster_merging_dict = cfg.get("cluster_merging", {})
+    cluster_merging_cfg = ClusterMergingConfig(**cluster_merging_dict)
+
     return ExperimentConfig(
         output_dir=cfg.get("output_dir", ExperimentConfig.output_dir),
         rodent_rollout_dir=cfg.get("rodent_rollout_dir", ExperimentConfig.rodent_rollout_dir),
@@ -217,6 +241,7 @@ def load_config(config_path: str) -> ExperimentConfig:
         aggregate_seeds=cfg.get("aggregate_seeds", True),
         methods=methods_list,
         rendering=rendering_cfg,
+        cluster_merging=cluster_merging_cfg,
     )
 
 
@@ -477,6 +502,332 @@ def generate_labels_yaml(
         yaml.dump(labels_content, f, default_flow_style=False, sort_keys=False)
 
     return labels_path
+
+
+def compute_dtw_between_clusters(
+    cluster_dict: dict[int, list[tuple[int, np.ndarray]]],
+    eval_data: np.ndarray,
+    clip_indices: list[int],
+    skip_root_dims: int = 7,
+) -> tuple[np.ndarray, list[int]]:
+    """
+    Compute DTW distance matrix between cluster representatives.
+
+    For each cluster, compute the mean trajectory (centroid) across all instances,
+    then compute pairwise DTW distances between cluster centroids.
+
+    Args:
+        cluster_dict: Dict mapping cluster_id to list of (abs_clip_id, frame_indices)
+        eval_data: Evaluation data array (n_clips, n_frames, n_dim)
+        clip_indices: List of absolute clip indices
+        skip_root_dims: Number of root dimensions to skip (default 7)
+
+    Returns:
+        dtw_matrix: (K, K) pairwise DTW distance matrix
+        cluster_ids: List of cluster IDs in matrix order
+    """
+    if not HAS_TSLEARN:
+        raise ImportError("tslearn library not installed. Install with: pip install tslearn")
+
+    cluster_ids = sorted(cluster_dict.keys())
+    K = len(cluster_ids)
+
+    abs_to_local = {abs_idx: local_idx for local_idx, abs_idx in enumerate(clip_indices)}
+
+    cluster_centroids = {}
+    for cluster_id in cluster_ids:
+        instances = cluster_dict[cluster_id]
+        trajectories = []
+
+        for abs_clip_id, frames in instances:
+            if abs_clip_id not in abs_to_local:
+                continue
+            local_idx = abs_to_local[abs_clip_id]
+            traj = eval_data[local_idx, frames, skip_root_dims:]
+            trajectories.append(traj)
+
+        if trajectories:
+            min_len = min(t.shape[0] for t in trajectories)
+            aligned_trajs = np.array([t[:min_len] for t in trajectories])
+            centroid = aligned_trajs.mean(axis=0)
+            cluster_centroids[cluster_id] = centroid
+
+    dtw_matrix = np.zeros((K, K), dtype=float)
+
+    for i, ci in enumerate(tqdm(cluster_ids, desc="Computing DTW matrix")):
+        if ci not in cluster_centroids:
+            continue
+        for j in range(i + 1, K):
+            cj = cluster_ids[j]
+            if cj not in cluster_centroids:
+                continue
+
+            dist = tslearn_dtw(cluster_centroids[ci], cluster_centroids[cj])
+            dtw_matrix[i, j] = dtw_matrix[j, i] = dist
+
+    return dtw_matrix, cluster_ids
+
+
+def identify_similar_cluster_pairs(
+    dtw_matrix: np.ndarray,
+    cluster_ids: list[int],
+    threshold: float | None = None,
+    percentile: float | None = None,
+    top_k: int = 5,
+) -> list[tuple[int, int, float]]:
+    """
+    Identify pairs of clusters that are similar based on DTW distance.
+
+    Consistent with granularity/redundancy.py implementation.
+
+    Args:
+        dtw_matrix: (K, K) pairwise DTW distance matrix
+        cluster_ids: List of cluster IDs in matrix order
+        threshold: Fixed DTW threshold (pairs below this are similar)
+        percentile: Percentile threshold (pairs below this percentile are similar)
+        top_k: Return top-k most similar pairs
+
+    Returns:
+        List of (cluster_i, cluster_j, dtw_distance) tuples, sorted by distance
+    """
+    K = len(cluster_ids)
+    pairs = []
+
+    for i in range(K):
+        for j in range(i + 1, K):
+            dist = dtw_matrix[i, j]
+            if np.isfinite(dist):
+                pairs.append((cluster_ids[i], cluster_ids[j], dist))
+
+    if not pairs:
+        return []
+
+    pairs.sort(key=lambda x: x[2])
+    distances = [p[2] for p in pairs]
+
+    if percentile is not None:
+        threshold = np.percentile(distances, percentile)
+
+    if threshold is None:
+        return pairs[:top_k]
+
+    similar = [p for p in pairs if p[2] < threshold]
+    return similar[:top_k]
+
+
+@dataclass
+class ClusterMergingResult:
+    dtw_matrix: np.ndarray
+    cluster_ids: list[int]
+    similar_pairs_fixed: list[tuple[int, int, float]]
+    similar_pairs_percentile: list[tuple[int, int, float]]
+    top_similar_pairs: list[tuple[int, int, float]]
+    threshold_fixed: float | None
+    threshold_percentile: float | None
+
+
+def run_cluster_merging_analysis(
+    cluster_dict: dict[int, list[tuple[int, np.ndarray]]],
+    eval_data: np.ndarray,
+    clip_indices: list[int],
+    config: ClusterMergingConfig,
+) -> ClusterMergingResult:
+    """
+    Run cluster merging analysis to identify similar clusters.
+
+    Consistent with granularity/redundancy.py - computes both fixed and percentile
+    similar pairs separately.
+
+    Args:
+        cluster_dict: Dict mapping cluster_id to list of (abs_clip_id, frame_indices)
+        eval_data: Evaluation data array (n_clips, n_frames, n_dim)
+        clip_indices: List of absolute clip indices
+        config: Cluster merging configuration
+
+    Returns:
+        ClusterMergingResult with DTW matrix and similar pairs
+    """
+    print("  Computing DTW distances between cluster centroids...")
+    dtw_matrix, cluster_ids = compute_dtw_between_clusters(
+        cluster_dict, eval_data, clip_indices, config.skip_root_dims
+    )
+
+    similar_pairs_fixed = identify_similar_cluster_pairs(
+        dtw_matrix, cluster_ids,
+        threshold=config.dtw_threshold,
+        percentile=None,
+        top_k=config.top_k_similar_pairs,
+    )
+
+    similar_pairs_percentile = identify_similar_cluster_pairs(
+        dtw_matrix, cluster_ids,
+        threshold=None,
+        percentile=config.dtw_percentile,
+        top_k=config.top_k_similar_pairs,
+    )
+
+    all_pairs = []
+    K = len(cluster_ids)
+    for i in range(K):
+        for j in range(i + 1, K):
+            d = dtw_matrix[i, j]
+            if np.isfinite(d):
+                all_pairs.append((cluster_ids[i], cluster_ids[j], d))
+    all_pairs.sort(key=lambda x: x[2])
+    top_similar = all_pairs[:config.top_k_similar_pairs]
+
+    distances = [p[2] for p in all_pairs] if all_pairs else []
+    threshold_percentile = np.percentile(distances, config.dtw_percentile) if distances else None
+
+    print(f"  Fixed threshold ({config.dtw_threshold}): {len(similar_pairs_fixed)} similar pairs")
+    print(f"  Percentile threshold ({config.dtw_percentile}%={threshold_percentile:.4f if threshold_percentile else 'N/A'}): {len(similar_pairs_percentile)} similar pairs")
+
+    return ClusterMergingResult(
+        dtw_matrix=dtw_matrix,
+        cluster_ids=cluster_ids,
+        similar_pairs_fixed=similar_pairs_fixed,
+        similar_pairs_percentile=similar_pairs_percentile,
+        top_similar_pairs=top_similar,
+        threshold_fixed=config.dtw_threshold,
+        threshold_percentile=threshold_percentile,
+    )
+
+
+def render_similar_cluster_pairs(
+    similar_pairs: list[tuple[int, int, float]],
+    cluster_dict: dict[int, list[tuple[int, np.ndarray]]],
+    rodent_rollout_dir: str,
+    output_dir: str,
+    samples_per_cluster: int = 3,
+    framerate: int = 30,
+    target_size: tuple[int, int] = (320, 240),
+) -> list[str]:
+    """
+    Render videos showing similar cluster pairs side by side.
+
+    Creates a grid video where:
+    - Rows: Different similar cluster pairs
+    - Columns: Samples from each cluster (alternating between cluster i and j)
+
+    Args:
+        similar_pairs: List of (cluster_i, cluster_j, dtw_distance) tuples
+        cluster_dict: Dict mapping cluster_id to list of (abs_clip_id, frame_indices)
+        rodent_rollout_dir: Path to rodent rollout data
+        output_dir: Output directory for videos
+        samples_per_cluster: Number of samples per cluster
+        framerate: Video framerate
+        target_size: Target video size (width, height)
+
+    Returns:
+        List of rendered video paths
+    """
+    import cv2
+    from topo_mimic.dmwk.skeletonization.postprocess import render_frame_range
+
+    os.makedirs(output_dir, exist_ok=True)
+    rendered_videos = []
+
+    if not similar_pairs:
+        print("  No similar pairs to render")
+        return rendered_videos
+
+    grid_path = os.path.join(output_dir, "similar_clusters_grid.mp4")
+
+    all_row_frames = []
+    max_frames_per_row = 0
+
+    for pair_idx, (ci, cj, dist) in enumerate(similar_pairs):
+        instances_i = cluster_dict.get(ci, [])
+        instances_j = cluster_dict.get(cj, [])
+
+        if not instances_i or not instances_j:
+            continue
+
+        samples_i = instances_i[:samples_per_cluster]
+        samples_j = instances_j[:samples_per_cluster]
+
+        row_clips = []
+
+        for sample_idx in range(samples_per_cluster):
+            if sample_idx < len(samples_i):
+                abs_clip_id, frames = samples_i[sample_idx]
+                frames_i = render_frame_range(
+                    abs_clip_id, frames[0], frames[-1],
+                    pad=0, path=rodent_rollout_dir
+                )
+                row_clips.append(frames_i)
+            else:
+                row_clips.append(None)
+
+            if sample_idx < len(samples_j):
+                abs_clip_id, frames = samples_j[sample_idx]
+                frames_j = render_frame_range(
+                    abs_clip_id, frames[0], frames[-1],
+                    pad=0, path=rodent_rollout_dir
+                )
+                row_clips.append(frames_j)
+            else:
+                row_clips.append(None)
+
+        all_row_frames.append((ci, cj, dist, row_clips))
+
+        for clip_frames in row_clips:
+            if clip_frames is not None:
+                max_frames_per_row = max(max_frames_per_row, len(clip_frames))
+
+    if not all_row_frames:
+        print("  No valid rows to render")
+        return rendered_videos
+
+    n_rows = len(all_row_frames)
+    n_cols = samples_per_cluster * 2
+    grid_width = n_cols * target_size[0]
+    grid_height = n_rows * target_size[1]
+
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(grid_path, fourcc, framerate, (grid_width, grid_height))
+
+    for frame_idx in range(max_frames_per_row):
+        grid_frame = np.zeros((grid_height, grid_width, 3), dtype=np.uint8)
+
+        for row_idx, (ci, cj, dist, row_clips) in enumerate(all_row_frames):
+            row_y = row_idx * target_size[1]
+
+            for col_idx, clip_frames in enumerate(row_clips):
+                col_x = col_idx * target_size[0]
+
+                if clip_frames is not None and frame_idx < len(clip_frames):
+                    frame = clip_frames[frame_idx]
+                    resized = cv2.resize(frame, target_size)
+                    grid_frame[row_y:row_y + target_size[1], col_x:col_x + target_size[0]] = resized
+
+            label = f"C{ci} vs C{cj} (DTW={dist:.3f})"
+            cv2.putText(grid_frame, label, (5, row_y + 20),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+
+        out.write(grid_frame)
+
+    out.release()
+    rendered_videos.append(grid_path)
+    print(f"  Rendered similar pairs grid: {grid_path}")
+
+    return rendered_videos
+
+
+def save_dtw_matrix_csv(
+    dtw_matrix: np.ndarray,
+    cluster_ids: list[int],
+    output_path: str,
+) -> None:
+    """Save DTW distance matrix to CSV file."""
+    import pandas as pd
+    df = pd.DataFrame(
+        dtw_matrix,
+        index=[f"C{i}" for i in cluster_ids],
+        columns=[f"C{i}" for i in cluster_ids],
+    )
+    df.to_csv(output_path)
+    print(f"  Saved DTW matrix to {output_path}")
 
 
 def plot_kpms_reconstruction(
@@ -907,7 +1258,76 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
                         title=f"{method_entry.name} (k={result_n_clusters}, seed={seed})",
                     )
 
-    print("\n=== Stage 7: Saving summary ===")
+    if config.cluster_merging.enabled:
+        print("\n=== Stage 7: Cluster Merging Analysis ===")
+        for method_entry in enabled_methods:
+            method_output_dir = os.path.join(config.output_dir, method_entry.name)
+            method_results = all_results[method_entry.name]
+
+            for seed in config.seeds:
+                result = method_results[seed]
+                if "cluster_dict" not in result:
+                    continue
+
+                cluster_dict = result["cluster_dict"]
+                print(f"\n  {method_entry.name} (seed={seed}):")
+
+                merging_result = run_cluster_merging_analysis(
+                    cluster_dict, eval_data, clip_indices, config.cluster_merging
+                )
+
+                merging_dir = os.path.join(method_output_dir, f"cluster_merging_seed{seed}")
+                os.makedirs(merging_dir, exist_ok=True)
+
+                save_dtw_matrix_csv(
+                    merging_result.dtw_matrix,
+                    merging_result.cluster_ids,
+                    os.path.join(merging_dir, "dtw_matrix.csv"),
+                )
+
+                similar_pairs_path = os.path.join(merging_dir, "similar_pairs.yaml")
+                with open(similar_pairs_path, "w") as f:
+                    yaml.dump({
+                        "threshold_fixed": merging_result.threshold_fixed,
+                        "threshold_percentile": merging_result.threshold_percentile,
+                        "similar_pairs_fixed": [
+                            {"cluster_i": int(ci), "cluster_j": int(cj), "dtw_distance": float(d)}
+                            for ci, cj, d in merging_result.similar_pairs_fixed
+                        ],
+                        "similar_pairs_percentile": [
+                            {"cluster_i": int(ci), "cluster_j": int(cj), "dtw_distance": float(d)}
+                            for ci, cj, d in merging_result.similar_pairs_percentile
+                        ],
+                        "top_similar_pairs": [
+                            {"cluster_i": int(ci), "cluster_j": int(cj), "dtw_distance": float(d)}
+                            for ci, cj, d in merging_result.top_similar_pairs
+                        ],
+                    }, f, default_flow_style=False)
+                print(f"    Saved similar pairs to {similar_pairs_path}")
+
+                pairs_to_render = merging_result.top_similar_pairs
+                if config.cluster_merging.render_similar_pairs and pairs_to_render:
+                    rendered = render_similar_cluster_pairs(
+                        pairs_to_render,
+                        cluster_dict,
+                        config.rodent_rollout_dir,
+                        merging_dir,
+                        samples_per_cluster=config.cluster_merging.samples_per_cluster,
+                        framerate=config.rendering.framerate,
+                        target_size=config.rendering.target_size,
+                    )
+                    result["cluster_merging"] = {
+                        "similar_pairs_fixed": merging_result.similar_pairs_fixed,
+                        "similar_pairs_percentile": merging_result.similar_pairs_percentile,
+                        "top_similar_pairs": merging_result.top_similar_pairs,
+                        "dtw_matrix": merging_result.dtw_matrix,
+                        "cluster_ids": merging_result.cluster_ids,
+                        "rendered_videos": rendered,
+                    }
+    else:
+        print("\n=== Stage 7: Skipping Cluster Merging (disabled) ===")
+
+    print("\n=== Stage 8: Saving summary ===")
     summary_path = os.path.join(config.output_dir, "experiment_summary.txt")
     with open(summary_path, "w") as f:
         f.write("Unified Benchmark Experiment Summary\n")

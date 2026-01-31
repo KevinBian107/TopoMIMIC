@@ -117,3 +117,18 @@ rendering:
   framerate: 50
   target_size: [320, 240]
   per_cluster_videos: false
+
+# Cluster merging analysis
+# Identifies similar clusters based on DTW distance between cluster centroids
+# Computes both fixed and percentile thresholds (like granularity/redundancy.py)
+# Renders video showing similar cluster pairs side-by-side for verification
+cluster_merging:
+  enabled: false
+  # Threshold method: "fixed", "percentile", or "both" (computes both separately)
+  threshold_method: "both"
+  dtw_threshold: 0.1  # Fixed DTW threshold (pairs below this are similar)
+  dtw_percentile: 10.0  # Percentile threshold (bottom X% are similar)
+  top_k_similar_pairs: 5  # Return top-k most similar pairs
+  render_similar_pairs: true  # Render grid video of top similar pairs
+  samples_per_cluster: 3  # Number of samples per cluster in rendered video
+  skip_root_dims: 7  # Skip first N dims of qpos (root pos + quat) for DTW
