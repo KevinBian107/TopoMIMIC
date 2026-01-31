@@ -10,8 +10,8 @@ Three experiments:
 3. Combined paths from experiments 1 and 2
 
 Usage:
-    python demo_saddle.py [--config configs/scripts/demo_saddle.yaml]
-    python demo_saddle.py [--n_steps 500] [--seed 42]
+    python demos/demo_saddle.py [--config configs/scripts/demo_saddle.yaml]
+    python demos/demo_saddle.py [--n_steps 500] [--seed 42]
 """
 
 import os
@@ -567,7 +567,7 @@ def main():
     parser.add_argument("--pers_delta", type=float, default=None, help="Persistence threshold")
     args = parser.parse_args()
 
-    default_config_path = Path(__file__).parent.parent / "configs" / "scripts" / "demo_saddle.yaml"
+    default_config_path = Path(__file__).parent.parent / "configs" / "demos" / "demo_saddle.yaml"
 
     if args.config:
         cfg = load_config(args.config)
