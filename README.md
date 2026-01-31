@@ -130,10 +130,11 @@ To verify the incompressibility statement:
 We have the code for illustrative demos:
 
 ```bash
-python -m scripts.demo_stationary
-python -m scripts.demo_behavior_overlap
-python -m scripts.demo_torus
-python -m scripts.demo_saddle
+python -m demos.demo_stationary
+python -m demos.demo_behavior_overlap
+python -m demos.demo_torus
+python -m demos.demo_saddle
+python -m demos.demo_switching_state_space
 ```
 
 ![Saddle_demo](/figures/saddle_dm.png)

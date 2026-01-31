@@ -15,9 +15,9 @@ We compare two approaches for discovering structure:
 2. DM-G - topological graph analysis to find cycles/structure
 
 Usage:
-    python scripts/demo_switching_state_space.py
-    python scripts/demo_switching_state_space.py --obs_noise 0.3
-    python scripts/demo_switching_state_space.py --subsample 500
+    python demos/demo_switching_state_space.py
+    python demos/demo_switching_state_space.py --obs_noise 0.3
+    python demos/demo_switching_state_space.py --subsample 500
 """
 
 import os
@@ -585,7 +585,7 @@ def main():
     args = parser.parse_args()
 
     # Load config
-    default_config_path = Path(__file__).parent.parent / "configs" / "scripts" / "demo_switching_state_space.yaml"
+    default_config_path = Path(__file__).parent.parent / "configs" / "demos" / "demo_switching_state_space.yaml"
 
     if args.config:
         cfg = load_config(args.config)

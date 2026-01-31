@@ -11,7 +11,7 @@ Generates an animated GIF showing:
 3. Discrete Morse skeleton with detected cycles
 
 Usage:
-    python torus_dm_demo.py
+    python demos/torus_dm_demo.py
 
 Output:
     torus_dm_demo.gif
