@@ -125,8 +125,8 @@ rendering:
 cluster_merging:
   enabled: false
   # Threshold method: "fixed", "percentile", or "both" (computes both separately)
-  threshold_method: "both"
-  dtw_threshold: 0.1  # Fixed DTW threshold (pairs below this are similar)
+  threshold_method: "fixed"
+  dtw_threshold: 0.2  # Fixed DTW threshold (pairs below this are similar)
   dtw_percentile: 10.0  # Percentile threshold (bottom X% are similar)
   top_k_similar_pairs: 5  # Return top-k most similar pairs
   render_similar_pairs: true  # Render grid video of top similar pairs

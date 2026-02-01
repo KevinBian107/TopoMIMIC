@@ -36,11 +36,13 @@ clustering:
 redundancy:
   enabled: true
   n_clusters_range: [5, 10, 15, 20, 25]
-  dtw_threshold: 0.1
+  dtw_threshold: 0.2 # empirically about this
   dtw_percentile: 10.0
-  threshold_method: "both"
+  threshold_method: "fixed"
   top_k_similar_pairs: 5
   max_dtw_comparisons: 100
+  cache_clustering: true
+  use_cached_clustering: true
   cache_dtw_matrix: true
   use_cached_dtw: true
   seed: 42

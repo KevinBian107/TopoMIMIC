@@ -63,6 +63,8 @@ class RedundancyConfig:
     threshold_method: str = "both"
     top_k_similar_pairs: int = 5
     max_dtw_comparisons: int = 100
+    cache_clustering: bool = True
+    use_cached_clustering: bool = False
     cache_dtw_matrix: bool = True
     use_cached_dtw: bool = False
     seed: int = 42
