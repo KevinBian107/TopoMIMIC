@@ -1,11 +1,11 @@
 # Discrete Morse Pipeline Configuration
 # Run this first to extract DM cycles
 
-output_dir: "out/dm_pipeline_ar_latest"
+output_dir: "out/dm_pipeline_ar_0.75"
 
 data:
   dm_key: "intention"
-  rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar_latest.h5"
+  rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
   split: "train"
 
 # Takens delay embedding parameters
@@ -16,7 +16,7 @@ takens:
 
 # Discrete Morse parameters
 dm:
-  pers_delta: 1.0
+  pers_delta: 0.75
   k_neighbors: 3
   epsilon: 0.99
   skip: false  # Set to true to load existing results

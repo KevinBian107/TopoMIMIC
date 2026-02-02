@@ -13,7 +13,7 @@ data:
 
 # DM results directory (required - run dm_pipeline first)
 dm:
-  results_dir: "out/dm_pipeline_ar"
+  results_dir: "out/dm_pipeline_ar_0.75"
 
 # Keypoint configuration (for kpms_keypoint method)
 keypoint:
@@ -30,7 +30,7 @@ clustering:
 
 # K selection configuration
 k_selection:
-  n_clusters: 15
+  n_clusters: 25
 
 # Seeds for reproducibility (multiple seeds for stability analysis)
 seeds: [0]
@@ -40,7 +40,7 @@ aggregate_seeds: true
 methods:
   - name: "w2_dm_kmeans"
     type: "clustering"
-    enabled: false
+    enabled: true
     params:
       mds_components: 3
 
@@ -95,7 +95,7 @@ methods:
   # Achieves intention reconstruction MSE ~2.71e-05
   - name: "custom_vae"
     type: "state_space"
-    enabled: true
+    enabled: false
     params:
       latent_dim: 30
       time_window: 30
@@ -123,7 +123,7 @@ rendering:
 # Computes both fixed and percentile thresholds (like granularity/redundancy.py)
 # Renders video showing similar cluster pairs side-by-side for verification
 cluster_merging:
-  enabled: false
+  enabled: true
   # Threshold method: "fixed", "percentile", or "both" (computes both separately)
   threshold_method: "fixed"
   dtw_threshold: 0.2  # Fixed DTW threshold (pairs below this are similar)
