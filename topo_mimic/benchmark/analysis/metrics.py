@@ -7,7 +7,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-from .ground_truth import find_all_transitions, TransitionSegment
+from .ground_truth import (
+    find_all_transitions,
+    find_pure_behavior_segments,
+    TransitionSegment,
+    BehaviorSegment,
+)
 from .behavior_parsing import (
     parse_cluster_label,
     TurnDirection,
@@ -174,6 +179,47 @@ def extract_sequences_for_gt_label(
 
         valid_frames = np.sort(valid_frames)
         seq = data[t.clip_id, valid_frames]
+        sequences.append(seq)
+
+    if len(sequences) > max_seqs:
+        np.random.seed(42)
+        indices = np.random.choice(len(sequences), max_seqs, replace=False)
+        sequences = [sequences[i] for i in indices]
+
+    return sequences
+
+
+def extract_sequences_from_behavior_segments(
+    segments: list[BehaviorSegment],
+    data: np.ndarray,
+    min_seq_length: int = 3,
+    max_seqs: int = 50,
+) -> list[np.ndarray]:
+    """
+    Extract trajectory sequences from pure behavior segments (frame ranges).
+
+    Args:
+        segments: List of BehaviorSegment with clip_id and frame ranges
+        data: (num_clips, num_frames, dim) feature array
+        min_seq_length: Minimum sequence length to include
+        max_seqs: Maximum sequences to return
+
+    Returns:
+        List of (T, D) sequence arrays
+    """
+    sequences = []
+
+    for seg in segments:
+        if seg.clip_id >= len(data):
+            continue
+
+        frames = np.arange(seg.start_frame, seg.end_frame + 1)
+        valid_frames = frames[(frames >= 0) & (frames < len(data[seg.clip_id]))]
+
+        if len(valid_frames) < min_seq_length:
+            continue
+
+        seq = data[seg.clip_id, valid_frames]
         sequences.append(seq)
 
     if len(sequences) > max_seqs:
@@ -398,6 +444,8 @@ def run_dtw_analysis(
     merge_rear: bool = True,
     skip_root_dims: int = 7,
     min_seq_length: int = 3,
+    pure_behavior_labels: list[str] | None = None,
+    pure_behavior_min_length: int = 30,
 ) -> list[DTWResult]:
     """
     Compare discovered clusters to their corresponding GT using DTW distance.
@@ -538,6 +586,82 @@ def run_dtw_analysis(
         if len(skipped) > 5:
             print(f"      ... and {len(skipped) - 5} more")
 
+    pure_labels = pure_behavior_labels if pure_behavior_labels is not None else ["Grooming"]
+    if pure_labels:
+        print(f"\n    Computing DTW for pure behaviors: {pure_labels}")
+
+        pure_grouped = defaultdict(list)
+        for cluster_id, label in cluster_labels.items():
+            if not label or label.startswith("C"):
+                continue
+
+            parsed = parse_cluster_label(label, merge_rear=merge_rear)
+            if parsed is None or parsed.comparison_type != "single":
+                continue
+
+            for target_behavior in pure_labels:
+                from .behavior_parsing import normalize_behavior_name, merge_rear_category
+                normalized = normalize_behavior_name(target_behavior)
+                if merge_rear:
+                    normalized = merge_rear_category(normalized)
+                if normalized in parsed.primitives:
+                    turn_dir_str = turn_directions.get(cluster_id)
+                    key = (normalized, turn_dir_str)
+                    pure_grouped[key].append(cluster_id)
+
+        gt_segments = find_pure_behavior_segments(
+            behavior_labels_csv,
+            target_behaviors=pure_labels,
+            min_length=pure_behavior_min_length,
+            merge_rear=merge_rear,
+        )
+
+        if gt_segments:
+            gt_seqs = extract_sequences_from_behavior_segments(
+                gt_segments, data, min_seq_length=min_seq_length, max_seqs=max_samples,
+            )
+            print(f"    Found {len(gt_segments)} GT segments -> {len(gt_seqs)} sequences")
+        else:
+            gt_seqs = []
+            print(f"    No GT segments found for {pure_labels}")
+
+        for (behavior_name, turn_dir_str), cluster_ids in pure_grouped.items():
+            combined_seqs = []
+            for cid in cluster_ids:
+                entries = cluster_dict.get(cid, [])
+                seqs = extract_sequences_from_cluster(entries, data, min_seq_length)
+                combined_seqs.extend(seqs)
+
+            if not combined_seqs or not gt_seqs:
+                cluster_str = ", ".join(f"C{c}" for c in cluster_ids)
+                print(f"      {behavior_name} ({cluster_str}): skipped (no sequences)")
+                continue
+
+            if len(combined_seqs) > max_samples:
+                np.random.seed(42)
+                indices = np.random.choice(len(combined_seqs), max_samples, replace=False)
+                combined_seqs = [combined_seqs[i] for i in indices]
+
+            mean_dtw, std_dtw = compute_cluster_dtw_distance(
+                combined_seqs, gt_seqs, max_comparisons=max_comparisons,
+            )
+
+            results.append(DTWResult(
+                label=behavior_name,
+                turn_direction=turn_dir_str,
+                cluster_ids=cluster_ids,
+                mean_dtw=mean_dtw,
+                std_dtw=std_dtw,
+                n_discovered_seqs=len(combined_seqs),
+                n_gt_seqs=len(gt_seqs),
+            ))
+
+            turn_info = f" [{turn_dir_str}]" if turn_dir_str else ""
+            cluster_str = ", ".join(f"C{c}" for c in cluster_ids)
+            print(f"      {behavior_name}{turn_info} ({cluster_str}): "
+                  f"DTW={mean_dtw:.3f}±{std_dtw:.3f} "
+                  f"(n={len(combined_seqs)} vs {len(gt_seqs)})")
+
     prefix = f"{method_name}_seed{seed}" if method_name else f"seed{seed}"
 
     if results:
@@ -589,6 +713,8 @@ def run_per_joint_dtw_analysis(
     short_threshold: int = 10,
     merge_rear: bool = True,
     min_seq_length: int = 3,
+    pure_behavior_labels: list[str] | None = None,
+    pure_behavior_min_length: int = 30,
 ) -> list[PerJointDTWResult]:
     """
     Compute per-joint DTW for discovered clusters vs corresponding GT.
@@ -704,6 +830,75 @@ def run_per_joint_dtw_analysis(
             n_discovered_seqs=len(combined_seqs),
             n_gt_seqs=len(gt_seqs),
         ))
+
+    pure_labels = pure_behavior_labels if pure_behavior_labels is not None else ["Grooming"]
+    if pure_labels:
+        print(f"\n    Computing per-joint DTW for pure behaviors: {pure_labels}")
+
+        pure_grouped = defaultdict(list)
+        for cluster_id, label in cluster_labels.items():
+            if not label or label.startswith("C"):
+                continue
+
+            parsed = parse_cluster_label(label, merge_rear=merge_rear)
+            if parsed is None or parsed.comparison_type != "single":
+                continue
+
+            for target_behavior in pure_labels:
+                from .behavior_parsing import normalize_behavior_name, merge_rear_category
+                normalized = normalize_behavior_name(target_behavior)
+                if merge_rear:
+                    normalized = merge_rear_category(normalized)
+                if normalized in parsed.primitives:
+                    turn_dir_str = turn_directions.get(cluster_id)
+                    key = (normalized, turn_dir_str)
+                    pure_grouped[key].append(cluster_id)
+
+        gt_segments = find_pure_behavior_segments(
+            behavior_labels_csv,
+            target_behaviors=pure_labels,
+            min_length=pure_behavior_min_length,
+            merge_rear=merge_rear,
+        )
+
+        if gt_segments:
+            gt_seqs = extract_sequences_from_behavior_segments(
+                gt_segments, data, min_seq_length=min_seq_length, max_seqs=max_samples,
+            )
+        else:
+            gt_seqs = []
+
+        for (behavior_name, turn_dir_str), cluster_ids in pure_grouped.items():
+            combined_seqs = []
+            for cid in cluster_ids:
+                entries = cluster_dict.get(cid, [])
+                seqs = extract_sequences_from_cluster(entries, data, min_seq_length)
+                combined_seqs.extend(seqs)
+
+            if not combined_seqs or not gt_seqs:
+                continue
+
+            if len(combined_seqs) > max_samples:
+                np.random.seed(42)
+                indices = np.random.choice(len(combined_seqs), max_samples, replace=False)
+                combined_seqs = [combined_seqs[i] for i in indices]
+
+            mean_dtw, std_dtw = compute_cluster_per_joint_dtw(
+                combined_seqs, gt_seqs, joint_indices, max_comparisons=max_comparisons,
+            )
+
+            joint_dtw_named = {joint_names[i]: mean_dtw[joint_indices[i]] for i in range(len(joint_indices))}
+            joint_std_named = {joint_names[i]: std_dtw[joint_indices[i]] for i in range(len(joint_indices))}
+
+            results.append(PerJointDTWResult(
+                label=behavior_name,
+                turn_direction=turn_dir_str,
+                cluster_ids=cluster_ids,
+                joint_dtw=joint_dtw_named,
+                joint_std=joint_std_named,
+                n_discovered_seqs=len(combined_seqs),
+                n_gt_seqs=len(gt_seqs),
+            ))
 
     prefix = f"{method_name}_seed{seed}" if method_name else f"seed{seed}"
 

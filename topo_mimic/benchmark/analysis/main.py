@@ -420,6 +420,8 @@ def run_analysis(config: AnalysisConfig) -> None:
                             merge_rear=config.merge_rear,
                             skip_root_dims=config.dtw_skip_root_dims,
                             min_seq_length=config.dtw_min_seq_length,
+                            pure_behavior_labels=config.pure_behavior_labels,
+                            pure_behavior_min_length=config.pure_behavior_min_length,
                         )
                         method_key = f"{method_name}_seed{seed}"
                         all_dtw_results[method_key] = dtw_results
@@ -476,6 +478,8 @@ def run_analysis(config: AnalysisConfig) -> None:
                             short_threshold=config.short_behavior_threshold,
                             merge_rear=config.merge_rear,
                             min_seq_length=config.dtw_min_seq_length,
+                            pure_behavior_labels=config.pure_behavior_labels,
+                            pure_behavior_min_length=config.pure_behavior_min_length,
                         )
                         method_key = f"{method_name}_seed{seed}"
                         all_per_joint_results[method_key] = per_joint_results

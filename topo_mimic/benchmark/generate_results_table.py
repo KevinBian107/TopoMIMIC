@@ -174,15 +174,12 @@ def create_per_joint_pivot_table(agg_df: pd.DataFrame) -> pd.DataFrame:
 
 def aggregate_results(
     individual_results: dict[str, pd.DataFrame],
-    expand_nd: bool = True,
 ) -> pd.DataFrame:
     """
     Aggregate individual DTW results into a single DataFrame.
 
     Args:
         individual_results: Dict mapping result_key to DataFrame
-        expand_nd: If True, copy non-deterministic values to left/right/straight
-                   entries to fill in the table
     """
     all_rows = []
 
@@ -203,45 +200,7 @@ def aggregate_results(
                 "N_GT": row.get("N_GT_Seqs", 0),
             })
 
-    df = pd.DataFrame(all_rows)
-
-    if expand_nd and len(df) > 0:
-        df = _expand_non_deterministic(df)
-
-    return df
-
-
-def _expand_non_deterministic(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Expand non-deterministic entries to fill left/right/straight.
-
-    When a method has Turn="non-deterministic" for a Label, copy that
-    DTW value to left, right, and straight entries (if they don't exist).
-    This helps fill in the comparison table.
-    """
-    expanded_rows = []
-    directions_to_fill = ["left", "right", "straight"]
-
-    for (method, seed, label), group in df.groupby(["Method", "Seed", "Label"]):
-        existing_turns = set(group["Turn"].values)
-
-        for _, row in group.iterrows():
-            expanded_rows.append(row.to_dict())
-
-            if row["Turn"] == "non-deterministic":
-                for direction in directions_to_fill:
-                    if direction not in existing_turns:
-                        new_row = row.to_dict()
-                        new_row["Turn"] = direction
-                        new_row["_from_nd"] = True
-                        expanded_rows.append(new_row)
-
-    result_df = pd.DataFrame(expanded_rows)
-
-    if "_from_nd" in result_df.columns:
-        result_df = result_df.drop(columns=["_from_nd"])
-
-    return result_df
+    return pd.DataFrame(all_rows)
 
 
 def create_summary_table(agg_df: pd.DataFrame) -> pd.DataFrame:
@@ -270,7 +229,6 @@ def create_summary_table(agg_df: pd.DataFrame) -> pd.DataFrame:
 def create_pivot_table(
     agg_df: pd.DataFrame,
     include_turn: bool = True,
-    exclude_nd: bool = True,
 ) -> pd.DataFrame:
     """
     Create pivot table with methods as columns and transitions as rows.
@@ -278,12 +236,8 @@ def create_pivot_table(
     Args:
         agg_df: Aggregated results DataFrame
         include_turn: If True, show turn direction in row labels
-        exclude_nd: If True, exclude "non-deterministic" rows (since expanded)
     """
     df = agg_df.copy()
-
-    if exclude_nd:
-        df = df[df["Turn"] != "non-deterministic"]
 
     if include_turn:
         df["Transition"] = df["Label"] + " [" + df["Turn"] + "]"
@@ -375,28 +329,36 @@ def render_nature_table(
 
     numeric_cols = display_df.select_dtypes(include=[np.number]).columns.tolist()
 
+    nd_row_indices = set()
+    for idx, row_name in enumerate(display_df.index):
+        if "[non-deterministic]" in str(row_name):
+            nd_row_indices.add(idx)
+
     for idx, (row_name, row) in enumerate(display_df.iterrows()):
         row_text = []
         row_colors = []
+        is_nd = idx in nd_row_indices
 
         row_numeric_vals = row[numeric_cols].dropna()
         row_min = row_numeric_vals.min() if len(row_numeric_vals) > 0 else None
+
+        default_bg = "#ffcdd2" if is_nd else "white"
 
         for col in display_df.columns:
             val = row[col]
             if pd.isna(val):
                 row_text.append("—")
-                row_colors.append("white")
+                row_colors.append(default_bg)
             elif col in numeric_cols:
                 row_text.append(f"{val:.3f}")
 
-                if highlight_best and row_min is not None and val == row_min:
+                if highlight_best and row_min is not None and val == row_min and not is_nd:
                     row_colors.append("#c8e6c9")
                 else:
-                    row_colors.append("white")
+                    row_colors.append(default_bg)
             else:
                 row_text.append(str(val))
-                row_colors.append("white")
+                row_colors.append(default_bg)
 
         cell_text.append(row_text)
         cell_colors.append(row_colors)
@@ -425,7 +387,10 @@ def render_nature_table(
             cell.set_width(cell.get_width() * 1.3)
         if col == -1:
             cell.set_text_props(fontweight="bold" if row == len(cell_text) else "normal")
-            cell.set_facecolor("#f5f5f5")
+            if (row - 1) in nd_row_indices:
+                cell.set_facecolor("#ffcdd2")
+            else:
+                cell.set_facecolor("#f5f5f5")
             cell.set_width(cell.get_width() * 1.5)
 
         if row == len(cell_text) and col >= 0:
@@ -436,7 +401,7 @@ def render_nature_table(
 
     fig.text(
         0.5, 0.02,
-        "Green = best (lowest) per row. Lower DTW = closer match to ground truth.",
+        "Green = best (lowest) per row. Red = non-deterministic. Lower DTW = closer match to ground truth.",
         ha="center",
         fontsize=config.font_size - 1,
         style="italic",
@@ -713,7 +678,7 @@ def generate_all_tables(config: TableConfig) -> None:
     )
 
     print("\n=== Detailed Pivot Table (with turn direction) ===")
-    pivot_df = create_pivot_table(agg_df, include_turn=True, exclude_nd=True)
+    pivot_df = create_pivot_table(agg_df, include_turn=True)
     print(pivot_df.to_string())
 
     pivot_path = output_dir / f"{config.table_name}_detailed.png"

@@ -10,7 +10,7 @@ behavior_labels_csv: "/home/jovyan/vast/kaiwen/TopoVNL/behavior_labels.csv"
 # Filter to specific methods and seeds (null = all)
 # Example: methods: ["gw_kmeans", "w2_kmeans"]
 # Example: seeds: [0, 123]
-methods: ["w2_dm_kmeans"]
+methods: ["w2_dm_kmeans", "w2_unif_kmeans", "kpms_intention", "kpms_keypoint", "custom_vae"]
 seeds: [0]
 
 # =============================================================================
@@ -86,14 +86,14 @@ dtw_skip_root_dims: 7  # Skip first N dims of qpos (root pos + quat)
 # =============================================================================
 # Generates per-cluster visualizations showing DTW alignment details
 # For each cluster: warping path on cost matrix, aligned joint trajectories, and video
-run_dtw_visualization: true  # Enable detailed DTW visualization (slower)
+run_dtw_visualization: false  # Enable detailed DTW visualization (slower)
 
 # =============================================================================
 # Per-Joint DTW Analysis
 # =============================================================================
 # Computes DTW distance for individual joints
 # Produces: J x num_clusters table per method, J x methods summary table
-run_per_joint_dtw: true
+run_per_joint_dtw: false
 # Joints to analyze (null = use defaults)
 # Available joints: see JOINT_NAMES in dtw_visualization.py
 per_joint_dtw_joints:
