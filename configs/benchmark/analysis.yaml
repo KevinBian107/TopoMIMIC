@@ -88,26 +88,3 @@ dtw_skip_root_dims: 7  # Skip first N dims of qpos (root pos + quat)
 # For each cluster: warping path on cost matrix, aligned joint trajectories, and video
 run_dtw_visualization: false  # Enable detailed DTW visualization (slower)
 
-# =============================================================================
-# Per-Joint DTW Analysis
-# =============================================================================
-# Computes DTW distance for individual joints
-# Produces: J x num_clusters table per method, J x methods summary table
-run_per_joint_dtw: false
-# Joints to analyze (null = use defaults)
-# Available joints: see JOINT_NAMES in dtw_visualization.py
-per_joint_dtw_joints:
-  # Legs
-  - hip_L_extend
-  - hip_R_extend
-  - knee_L
-  - knee_R
-  # Arms
-  - elbow_L
-  - elbow_R
-  # Head (for orienting)
-  - atlas
-  - vertebra_axis_twist
-  # Torso
-  - vertebra_6_twist
-  - vertebra_3_twist
