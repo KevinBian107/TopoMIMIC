@@ -80,6 +80,7 @@ dtw_max_seqs: 50  # Max sequences per cluster
 dtw_max_comparisons: 100  # Max pairwise DTW comparisons per cluster pair
 dtw_min_seq_length: 3  # Minimum sequence length to include
 dtw_skip_root_dims: 7  # Skip first N dims of qpos (root pos + quat)
+consistency_n_samples: 5  # Sequences to sample per cluster for internal consistency
 
 # =============================================================================
 # DTW Visualization (detailed alignment visualization)

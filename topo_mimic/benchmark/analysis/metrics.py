@@ -553,6 +553,158 @@ def run_dtw_analysis(
     return results
 
 
+@dataclass
+class InternalConsistencyResult:
+    label: str
+    turn_direction: str | None
+    cluster_ids: list[int]
+    mean_intra_dtw: float
+    std_intra_dtw: float
+    n_sequences: int
+    avg_frames: float
+
+
+def run_internal_consistency_analysis(
+    cluster_dict: dict,
+    cluster_labels: dict[int, str],
+    turn_directions: dict[int, str] | None,
+    data: np.ndarray,
+    output_dir: str,
+    method_name: str = "",
+    seed: int = 0,
+    skip_root_dims: int = 7,
+    min_seq_length: int = 3,
+    merge_rear: bool = True,
+    n_samples: int = 5,
+) -> list[InternalConsistencyResult]:
+    """
+    Measure internal cluster consistency via pairwise DTW among sampled sequences.
+
+    Args:
+        cluster_dict: Mapping cluster_id -> list of (clip_id, frames)
+        cluster_labels: Mapping cluster_id -> label string
+        turn_directions: Mapping cluster_id -> turn direction string
+        data: (num_clips, num_frames, dim) feature array
+        output_dir: Directory to save outputs
+        method_name: Name for output files
+        seed: Seed for output files
+        skip_root_dims: Number of root dimensions to skip
+        min_seq_length: Minimum sequence length to include
+        merge_rear: Merge rear categories
+        n_samples: Number of sequences to sample per cluster group
+
+    Returns:
+        List of InternalConsistencyResult for each (label, turn_direction) group
+    """
+    import os
+    import pandas as pd
+    from itertools import combinations
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    if turn_directions is None:
+        turn_directions = {}
+
+    if skip_root_dims > 0:
+        data = data[..., skip_root_dims:]
+
+    grouped_clusters: dict[tuple, list[int]] = defaultdict(list)
+
+    for cluster_id, label in cluster_labels.items():
+        if not label or label.startswith("C"):
+            continue
+
+        parsed = parse_cluster_label(label, merge_rear=merge_rear)
+        if parsed is None:
+            continue
+
+        if parsed.comparison_type == "transition" and len(parsed.primitives) >= 2:
+            label_str = f"{parsed.primitives[0]}↔{parsed.primitives[1]}"
+            target = tuple(sorted(parsed.primitives[:2]))
+            label_str = f"{target[0]}↔{target[1]}"
+        elif parsed.comparison_type == "single":
+            behavior = parsed.primitives[0] if parsed.primitives else parsed.compositional[0]
+            label_str = behavior
+        else:
+            continue
+
+        turn_dir_str = turn_directions.get(cluster_id)
+        key = (label_str, turn_dir_str)
+        grouped_clusters[key].append(cluster_id)
+
+    print(f"    Internal consistency: {len(grouped_clusters)} (label, turn) groups")
+
+    results = []
+    rng = np.random.RandomState(42)
+
+    for (label_str, turn_dir_str), cluster_ids in sorted(grouped_clusters.items()):
+        combined_seqs = []
+        for cid in cluster_ids:
+            entries = cluster_dict.get(cid, [])
+            seqs = extract_sequences_from_cluster(entries, data, min_seq_length)
+            combined_seqs.extend(seqs)
+
+        if len(combined_seqs) < 2:
+            continue
+
+        if len(combined_seqs) > n_samples:
+            indices = rng.choice(len(combined_seqs), n_samples, replace=False)
+            sampled = [combined_seqs[i] for i in indices]
+        else:
+            sampled = combined_seqs
+
+        dtw_distances = []
+        for (seq_a, seq_b) in combinations(sampled, 2):
+            d = compute_dtw(seq_a, seq_b)
+            if np.isfinite(d):
+                dtw_distances.append(d)
+
+        if not dtw_distances:
+            continue
+
+        avg_frames = float(np.mean([len(s) for s in combined_seqs]))
+
+        result = InternalConsistencyResult(
+            label=label_str,
+            turn_direction=turn_dir_str,
+            cluster_ids=cluster_ids,
+            mean_intra_dtw=float(np.mean(dtw_distances)),
+            std_intra_dtw=float(np.std(dtw_distances)),
+            n_sequences=len(combined_seqs),
+            avg_frames=avg_frames,
+        )
+        results.append(result)
+
+        turn_info = f" [{turn_dir_str}]" if turn_dir_str else ""
+        cluster_str = ", ".join(f"C{c}" for c in cluster_ids)
+        print(f"      {label_str}{turn_info} ({cluster_str}): "
+              f"intra-DTW={result.mean_intra_dtw:.3f}±{result.std_intra_dtw:.3f} "
+              f"(n={len(combined_seqs)}, sampled={len(sampled)}, "
+              f"avg_frames={avg_frames:.1f})")
+
+    prefix = f"{method_name}_seed{seed}" if method_name else f"seed{seed}"
+
+    if results:
+        df = pd.DataFrame([
+            {
+                "Label": r.label,
+                "Turn_Direction": r.turn_direction or "none",
+                "Cluster_IDs": ",".join(str(c) for c in r.cluster_ids),
+                "Mean_Intra_DTW": r.mean_intra_dtw,
+                "Std_Intra_DTW": r.std_intra_dtw,
+                "N_Sequences": r.n_sequences,
+                "Avg_Frames": r.avg_frames,
+            }
+            for r in results
+        ])
+        df = df.sort_values("Mean_Intra_DTW", ascending=True)
+        csv_path = os.path.join(output_dir, f"{prefix}_consistency.csv")
+        df.to_csv(csv_path, index=False, float_format="%.4f")
+        print(f"\n    Saved consistency results to {csv_path}")
+
+    return results
+
+
 def plot_dtw_bar_chart(
     results: list[DTWResult],
     output_dir: str,

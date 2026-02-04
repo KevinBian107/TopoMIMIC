@@ -414,6 +414,93 @@ def render_summary_table(
     print(f"Saved summary table to {output_path}")
 
 
+def load_individual_consistency_results(analysis_dir: str) -> dict[str, pd.DataFrame]:
+    results = {}
+    analysis_path = Path(analysis_dir)
+
+    for method_dir in analysis_path.iterdir():
+        if not method_dir.is_dir():
+            continue
+
+        for seed_dir in method_dir.iterdir():
+            if not seed_dir.is_dir() or not seed_dir.name.startswith("seed_"):
+                continue
+
+            consistency_dir = seed_dir / "consistency"
+            if not consistency_dir.exists():
+                continue
+
+            for csv_file in consistency_dir.glob("*_consistency.csv"):
+                df = pd.read_csv(csv_file)
+                key = csv_file.stem.replace("_consistency", "")
+                results[key] = df
+
+    return results
+
+
+def aggregate_consistency_results(
+    individual_results: dict[str, pd.DataFrame],
+) -> pd.DataFrame:
+    all_rows = []
+
+    for result_key, df in individual_results.items():
+        parts = result_key.rsplit("_seed", 1)
+        method_name = parts[0]
+        seed = int(parts[1]) if len(parts) > 1 else 0
+
+        for _, row in df.iterrows():
+            all_rows.append({
+                "Method": method_name,
+                "Seed": seed,
+                "Label": row["Label"],
+                "Turn": row.get("Turn_Direction", "none"),
+                "Mean_Intra_DTW": row["Mean_Intra_DTW"],
+                "Avg_Frames": row.get("Avg_Frames", 0),
+            })
+
+    return pd.DataFrame(all_rows)
+
+
+def create_consistency_pivot_table(agg_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Create pivot table for consistency: rows = "Label [Turn]", cols = methods,
+    values = Mean_Intra_DTW. Add bottom row for average frames per method.
+    """
+    df = agg_df.copy()
+    df["Transition"] = df["Label"] + " [" + df["Turn"] + "]"
+
+    pivot = df.pivot_table(
+        index="Transition",
+        columns="Method",
+        values="Mean_Intra_DTW",
+        aggfunc="mean",
+    )
+
+    method_order = []
+    for m in ["w2_dm_kmeans", "w2_unif_kmeans", "kpms_intention", "kpms_keypoint", "custom_vae", "gw_dm_kmeans"]:
+        if m in pivot.columns:
+            method_order.append(m)
+    for m in pivot.columns:
+        if m not in method_order:
+            method_order.append(m)
+
+    pivot = pivot[method_order]
+
+    avg_frames_row = {}
+    for method in pivot.columns:
+        method_df = df[df["Method"] == method]
+        if len(method_df) > 0:
+            avg_frames_row[method] = method_df["Avg_Frames"].mean()
+        else:
+            avg_frames_row[method] = np.nan
+    avg_frames_series = pd.Series(avg_frames_row, name="Avg Frames")
+    pivot = pd.concat([pivot, avg_frames_series.to_frame().T])
+
+    pivot.columns = [METHOD_DISPLAY_NAMES.get(c, c) for c in pivot.columns]
+
+    return pivot
+
+
 def generate_all_tables(config: TableConfig) -> None:
     output_dir = Path(config.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -487,6 +574,41 @@ def generate_all_tables(config: TableConfig) -> None:
     )
     summary_df_export.to_csv(csv_path, index=False, float_format="%.4f")
     print(f"\nSaved CSV to {csv_path}")
+
+    consistency_results = load_individual_consistency_results(config.analysis_dir)
+    if consistency_results:
+        print(f"\n=== Internal Consistency Table ===")
+        print(f"Found {len(consistency_results)} consistency result files")
+
+        consistency_agg_df = aggregate_consistency_results(consistency_results)
+        print(f"Aggregated {len(consistency_agg_df)} consistency rows")
+
+        consistency_pivot_df = create_consistency_pivot_table(consistency_agg_df)
+        print(consistency_pivot_df.to_string())
+
+        consistency_png_path = output_dir / "consistency_table.png"
+        render_nature_table(
+            consistency_pivot_df,
+            str(consistency_png_path),
+            config,
+            title="Internal Cluster Consistency (↓ lower = more consistent)",
+            show_mean_row=False,
+        )
+
+        consistency_pdf_path = output_dir / "consistency_table.pdf"
+        render_nature_table(
+            consistency_pivot_df,
+            str(consistency_pdf_path),
+            config,
+            title="Internal Cluster Consistency (↓ lower = more consistent)",
+            show_mean_row=False,
+        )
+
+        consistency_csv_path = output_dir / "consistency_table.csv"
+        consistency_pivot_df.to_csv(consistency_csv_path, float_format="%.4f")
+        print(f"Saved consistency CSV to {consistency_csv_path}")
+    else:
+        print("\nNo consistency results found, skipping consistency table.")
 
     print(f"\nAll tables saved to {output_dir}")
 

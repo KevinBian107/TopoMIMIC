@@ -22,6 +22,8 @@ from .visualization import (
 from .metrics import (
     run_dtw_analysis,
     DTWResult,
+    run_internal_consistency_analysis,
+    InternalConsistencyResult,
 )
 from .gt_sanity_check import run_gt_dtw_sanity_check
 from .dtw_visualization import run_dtw_visualization
@@ -84,6 +86,53 @@ def create_dtw_comparison_table(
                     vals.append(float(v))
             if vals:
                 print(f"  {method}: {np.mean(vals):.4f} (n={len(vals)})")
+
+
+def create_consistency_comparison_table(
+    all_consistency_results: dict[str, list[InternalConsistencyResult]],
+    output_dir: str,
+) -> None:
+    """
+    Create a comparison table of internal consistency results across methods.
+
+    Rows are (label, turn_direction) combinations, columns are methods.
+    """
+    all_keys = set()
+    for results in all_consistency_results.values():
+        for r in results:
+            key = (r.label, r.turn_direction or "none")
+            all_keys.add(key)
+
+    all_keys = sorted(all_keys)
+    methods = sorted(all_consistency_results.keys())
+
+    rows = []
+    for label, turn in all_keys:
+        row = {"Label": label, "Turn": turn}
+        for method in methods:
+            results = all_consistency_results.get(method, [])
+            found = None
+            for r in results:
+                r_turn = r.turn_direction or "none"
+                if r.label == label and r_turn == turn:
+                    found = r
+                    break
+            if found:
+                row[method] = f"{found.mean_intra_dtw:.4f}"
+            else:
+                row[method] = "N/A"
+        rows.append(row)
+
+    df = pd.DataFrame(rows)
+
+    csv_path = os.path.join(output_dir, "consistency_comparison_table.csv")
+    df.to_csv(csv_path, index=False)
+    print(f"Saved consistency comparison table to {csv_path}")
+
+    print("\nInternal Consistency Comparison Table:")
+    print("-" * 80)
+    print(df.to_string(index=False))
+    print("-" * 80)
 
 
 def load_trajectory_data(rodent_rollout_dir: str, data_key: str) -> np.ndarray:
@@ -171,6 +220,7 @@ def run_analysis(config: AnalysisConfig) -> None:
             config.run_dtw_metrics = False
 
     all_dtw_results: dict[str, list[DTWResult]] = {}
+    all_consistency_results: dict[str, list[InternalConsistencyResult]] = {}
 
     for method_name, method_results in all_results.items():
         if config.methods and method_name not in config.methods:
@@ -314,6 +364,29 @@ def run_analysis(config: AnalysisConfig) -> None:
                         import traceback
                         traceback.print_exc()
 
+                    print(f"    Running internal consistency analysis...")
+                    try:
+                        consistency_dir = os.path.join(seed_output_dir, "consistency")
+                        consistency_results = run_internal_consistency_analysis(
+                            cluster_dict=cluster_dict,
+                            cluster_labels=cluster_labels,
+                            turn_directions=turn_directions,
+                            data=dtw_data,
+                            output_dir=consistency_dir,
+                            method_name=method_name,
+                            seed=seed,
+                            skip_root_dims=config.dtw_skip_root_dims,
+                            min_seq_length=config.dtw_min_seq_length,
+                            merge_rear=config.merge_rear,
+                            n_samples=config.consistency_n_samples,
+                        )
+                        method_key = f"{method_name}_seed{seed}"
+                        all_consistency_results[method_key] = consistency_results
+                    except Exception as e:
+                        print(f"    Internal consistency analysis failed: {e}")
+                        import traceback
+                        traceback.print_exc()
+
             if config.run_dtw_visualization and dtw_data is not None:
                 if os.path.exists(config.behavior_labels_csv):
                     print(f"    Running DTW visualization...")
@@ -344,6 +417,10 @@ def run_analysis(config: AnalysisConfig) -> None:
     if config.run_dtw_metrics and all_dtw_results:
         print("\n=== Generating DTW Comparison Table ===")
         create_dtw_comparison_table(all_dtw_results, config.output_dir)
+
+    if config.run_dtw_metrics and all_consistency_results:
+        print("\n=== Generating Consistency Comparison Table ===")
+        create_consistency_comparison_table(all_consistency_results, config.output_dir)
 
     print("\n" + "=" * 60)
     print("Analysis Complete!")

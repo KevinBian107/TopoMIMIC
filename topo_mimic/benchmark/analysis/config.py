@@ -54,6 +54,8 @@ class AnalysisConfig:
     merge_rear: bool = True
     max_gap_between_segments: int = 10
 
+    consistency_n_samples: int = 5
+
     transition_graph_k: int = 3
     transition_graph_gt_top_k: int = 10
     transition_graph_layout: str = "spring"
@@ -102,6 +104,7 @@ def load_config(config_path: str | Path) -> AnalysisConfig:
         short_behavior_threshold=cfg.get("short_behavior_threshold", 10),
         merge_rear=cfg.get("merge_rear", True),
         max_gap_between_segments=cfg.get("max_gap_between_segments", 10),
+        consistency_n_samples=cfg.get("consistency_n_samples", 5),
         transition_graph_k=cfg.get("transition_graph_k", 3),
         transition_graph_gt_top_k=cfg.get("transition_graph_gt_top_k", 10),
         transition_graph_layout=cfg.get("transition_graph_layout", "spring"),
