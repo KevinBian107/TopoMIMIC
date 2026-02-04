@@ -506,15 +506,31 @@ def run_redundancy_analysis(
             if len(windows) < n_clusters:
                 continue
 
-            print(f"    Running clustering for k={n_clusters}...")
-            clustering_result = run_clustering_for_k(
-                windows, intention_data, n_clusters, config, clip_indices
-            )
+            cache_dir = output_dir / f"pers_{pers_delta:.2f}" / f"n_clusters_{n_clusters}"
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            clustering_cache_path = cache_dir / "clustering_result.pkl"
+
+            if config.redundancy.use_cached_clustering and clustering_cache_path.exists():
+                with open(clustering_cache_path, "rb") as f:
+                    clustering_result = pkl.load(f)
+                print(f"    Loaded cached clustering for k={n_clusters} from {clustering_cache_path}")
+            else:
+                print(f"    Running clustering for k={n_clusters}...")
+                clustering_result = run_clustering_for_k(
+                    windows, intention_data, n_clusters, config, clip_indices
+                )
+
+                if clustering_result is None:
+                    continue
+
+                clustering_result.pers_delta = pers_delta
+
+                if config.redundancy.cache_clustering:
+                    with open(clustering_cache_path, "wb") as f:
+                        pkl.dump(clustering_result, f)
 
             if clustering_result is None:
                 continue
-
-            clustering_result.pers_delta = pers_delta
 
             print(f"    Computing redundancy for k={n_clusters}...")
             result = run_redundancy_for_config(

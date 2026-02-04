@@ -7,7 +7,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-from .ground_truth import find_all_transitions, TransitionSegment
+from .ground_truth import (
+    find_all_transitions,
+    find_pure_behavior_segments,
+    TransitionSegment,
+    BehaviorSegment,
+)
 from .behavior_parsing import (
     parse_cluster_label,
     TurnDirection,
@@ -184,6 +189,47 @@ def extract_sequences_for_gt_label(
     return sequences
 
 
+def extract_sequences_from_behavior_segments(
+    segments: list[BehaviorSegment],
+    data: np.ndarray,
+    min_seq_length: int = 3,
+    max_seqs: int = 50,
+) -> list[np.ndarray]:
+    """
+    Extract trajectory sequences from pure behavior segments (frame ranges).
+
+    Args:
+        segments: List of BehaviorSegment with clip_id and frame ranges
+        data: (num_clips, num_frames, dim) feature array
+        min_seq_length: Minimum sequence length to include
+        max_seqs: Maximum sequences to return
+
+    Returns:
+        List of (T, D) sequence arrays
+    """
+    sequences = []
+
+    for seg in segments:
+        if seg.clip_id >= len(data):
+            continue
+
+        frames = np.arange(seg.start_frame, seg.end_frame + 1)
+        valid_frames = frames[(frames >= 0) & (frames < len(data[seg.clip_id]))]
+
+        if len(valid_frames) < min_seq_length:
+            continue
+
+        seq = data[seg.clip_id, valid_frames]
+        sequences.append(seq)
+
+    if len(sequences) > max_seqs:
+        np.random.seed(42)
+        indices = np.random.choice(len(sequences), max_seqs, replace=False)
+        sequences = [sequences[i] for i in indices]
+
+    return sequences
+
+
 def compute_cluster_dtw_distance(
     seqs_a: list[np.ndarray],
     seqs_b: list[np.ndarray],
@@ -239,150 +285,6 @@ class DTWResult:
     n_gt_seqs: int
 
 
-@dataclass
-class PerJointDTWResult:
-    label: str
-    turn_direction: str | None
-    cluster_ids: list[int]
-    joint_dtw: dict[str, float]
-    joint_std: dict[str, float]
-    n_discovered_seqs: int
-    n_gt_seqs: int
-
-
-DEFAULT_ANALYSIS_JOINTS = [
-    # Legs
-    "hip_L_extend",
-    "hip_R_extend",
-    "knee_L",
-    "knee_R",
-    # Arms
-    "elbow_L",
-    "elbow_R",
-    # Head (for orienting)
-    "atlas",
-    "vertebra_axis_twist",
-    # Torso
-    "vertebra_6_twist",
-    "vertebra_3_twist",
-]
-
-
-def resolve_joint_config(
-    joint_names_config: list[str] | None,
-    skip_root_dims: int = 7,
-) -> tuple[list[int], list[str]]:
-    """
-    Resolve configured joint names to indices.
-
-    Args:
-        joint_names_config: List of joint names from config, or None for defaults
-        skip_root_dims: Not used (kept for API compatibility)
-
-    Returns:
-        (joint_indices, joint_names) - indices into the data array (after root dims skipped)
-    """
-    from .dtw_visualization import JOINT_NAMES
-
-    if joint_names_config is None:
-        joint_names_config = DEFAULT_ANALYSIS_JOINTS
-
-    joint_indices = []
-    joint_names = []
-
-    for name in joint_names_config:
-        if name in JOINT_NAMES:
-            joint_idx = JOINT_NAMES.index(name)
-            joint_indices.append(joint_idx)
-            joint_names.append(name)
-        else:
-            print(f"Warning: Joint '{name}' not found in JOINT_NAMES")
-
-    return joint_indices, joint_names
-
-
-def compute_per_joint_dtw(
-    seq_a: np.ndarray,
-    seq_b: np.ndarray,
-    joint_indices: list[int],
-) -> dict[int, float]:
-    """
-    Compute DTW distance for each joint separately.
-
-    Args:
-        seq_a: (T1, D) first sequence
-        seq_b: (T2, D) second sequence
-        joint_indices: List of joint indices to compute DTW for
-
-    Returns:
-        Dict mapping joint_index -> DTW distance
-    """
-    results = {}
-    for joint_idx in joint_indices:
-        seq_a_joint = seq_a[:, joint_idx:joint_idx+1]
-        seq_b_joint = seq_b[:, joint_idx:joint_idx+1]
-        results[joint_idx] = compute_dtw(seq_a_joint, seq_b_joint)
-    return results
-
-
-def compute_cluster_per_joint_dtw(
-    seqs_a: list[np.ndarray],
-    seqs_b: list[np.ndarray],
-    joint_indices: list[int],
-    max_comparisons: int = 100,
-) -> tuple[dict[int, float], dict[int, float]]:
-    """
-    Compute average per-joint DTW between two sets of sequences.
-
-    Args:
-        seqs_a: List of sequences from cluster A
-        seqs_b: List of sequences from cluster B
-        joint_indices: List of joint indices to compute DTW for
-        max_comparisons: Max pairwise comparisons
-
-    Returns:
-        (mean_dtw_per_joint, std_dtw_per_joint)
-    """
-    if not seqs_a or not seqs_b:
-        return (
-            {j: float('inf') for j in joint_indices},
-            {j: 0.0 for j in joint_indices},
-        )
-
-    n_a, n_b = len(seqs_a), len(seqs_b)
-    total_pairs = n_a * n_b
-
-    if total_pairs <= max_comparisons:
-        pairs = [(i, j) for i in range(n_a) for j in range(n_b)]
-    else:
-        np.random.seed(42)
-        pairs = []
-        for _ in range(max_comparisons):
-            i = np.random.randint(n_a)
-            j = np.random.randint(n_b)
-            pairs.append((i, j))
-
-    joint_distances = {j: [] for j in joint_indices}
-    for i, j in pairs:
-        per_joint = compute_per_joint_dtw(seqs_a[i], seqs_b[j], joint_indices)
-        for joint_idx, dist in per_joint.items():
-            if np.isfinite(dist):
-                joint_distances[joint_idx].append(dist)
-
-    mean_dtw = {}
-    std_dtw = {}
-    for joint_idx in joint_indices:
-        dists = joint_distances[joint_idx]
-        if dists:
-            mean_dtw[joint_idx] = float(np.mean(dists))
-            std_dtw[joint_idx] = float(np.std(dists))
-        else:
-            mean_dtw[joint_idx] = float('inf')
-            std_dtw[joint_idx] = 0.0
-
-    return mean_dtw, std_dtw
-
-
 def run_dtw_analysis(
     cluster_dict: dict,
     cluster_labels: dict[int, str],
@@ -398,6 +300,8 @@ def run_dtw_analysis(
     merge_rear: bool = True,
     skip_root_dims: int = 7,
     min_seq_length: int = 3,
+    pure_behavior_labels: list[str] | None = None,
+    pure_behavior_min_length: int = 30,
 ) -> list[DTWResult]:
     """
     Compare discovered clusters to their corresponding GT using DTW distance.
@@ -538,6 +442,82 @@ def run_dtw_analysis(
         if len(skipped) > 5:
             print(f"      ... and {len(skipped) - 5} more")
 
+    pure_labels = pure_behavior_labels if pure_behavior_labels is not None else ["Grooming"]
+    if pure_labels:
+        print(f"\n    Computing DTW for pure behaviors: {pure_labels}")
+
+        pure_grouped = defaultdict(list)
+        for cluster_id, label in cluster_labels.items():
+            if not label or label.startswith("C"):
+                continue
+
+            parsed = parse_cluster_label(label, merge_rear=merge_rear)
+            if parsed is None or parsed.comparison_type != "single":
+                continue
+
+            for target_behavior in pure_labels:
+                from .behavior_parsing import normalize_behavior_name, merge_rear_category
+                normalized = normalize_behavior_name(target_behavior)
+                if merge_rear:
+                    normalized = merge_rear_category(normalized)
+                if normalized in parsed.primitives:
+                    turn_dir_str = turn_directions.get(cluster_id)
+                    key = (normalized, turn_dir_str)
+                    pure_grouped[key].append(cluster_id)
+
+        gt_segments = find_pure_behavior_segments(
+            behavior_labels_csv,
+            target_behaviors=pure_labels,
+            min_length=pure_behavior_min_length,
+            merge_rear=merge_rear,
+        )
+
+        if gt_segments:
+            gt_seqs = extract_sequences_from_behavior_segments(
+                gt_segments, data, min_seq_length=min_seq_length, max_seqs=max_samples,
+            )
+            print(f"    Found {len(gt_segments)} GT segments -> {len(gt_seqs)} sequences")
+        else:
+            gt_seqs = []
+            print(f"    No GT segments found for {pure_labels}")
+
+        for (behavior_name, turn_dir_str), cluster_ids in pure_grouped.items():
+            combined_seqs = []
+            for cid in cluster_ids:
+                entries = cluster_dict.get(cid, [])
+                seqs = extract_sequences_from_cluster(entries, data, min_seq_length)
+                combined_seqs.extend(seqs)
+
+            if not combined_seqs or not gt_seqs:
+                cluster_str = ", ".join(f"C{c}" for c in cluster_ids)
+                print(f"      {behavior_name} ({cluster_str}): skipped (no sequences)")
+                continue
+
+            if len(combined_seqs) > max_samples:
+                np.random.seed(42)
+                indices = np.random.choice(len(combined_seqs), max_samples, replace=False)
+                combined_seqs = [combined_seqs[i] for i in indices]
+
+            mean_dtw, std_dtw = compute_cluster_dtw_distance(
+                combined_seqs, gt_seqs, max_comparisons=max_comparisons,
+            )
+
+            results.append(DTWResult(
+                label=behavior_name,
+                turn_direction=turn_dir_str,
+                cluster_ids=cluster_ids,
+                mean_dtw=mean_dtw,
+                std_dtw=std_dtw,
+                n_discovered_seqs=len(combined_seqs),
+                n_gt_seqs=len(gt_seqs),
+            ))
+
+            turn_info = f" [{turn_dir_str}]" if turn_dir_str else ""
+            cluster_str = ", ".join(f"C{c}" for c in cluster_ids)
+            print(f"      {behavior_name}{turn_info} ({cluster_str}): "
+                  f"DTW={mean_dtw:.3f}±{std_dtw:.3f} "
+                  f"(n={len(combined_seqs)} vs {len(gt_seqs)})")
+
     prefix = f"{method_name}_seed{seed}" if method_name else f"seed{seed}"
 
     if results:
@@ -573,212 +553,156 @@ def run_dtw_analysis(
     return results
 
 
-def run_per_joint_dtw_analysis(
+@dataclass
+class InternalConsistencyResult:
+    label: str
+    turn_direction: str | None
+    cluster_ids: list[int]
+    mean_intra_dtw: float
+    std_intra_dtw: float
+    n_sequences: int
+    avg_frames: float
+
+
+def run_internal_consistency_analysis(
     cluster_dict: dict,
     cluster_labels: dict[int, str],
     turn_directions: dict[int, str] | None,
-    behavior_labels_csv: str,
     data: np.ndarray,
     output_dir: str,
-    joint_indices: list[int],
-    joint_names: list[str],
     method_name: str = "",
     seed: int = 0,
-    max_samples: int = 50,
-    max_comparisons: int = 100,
-    short_threshold: int = 10,
-    merge_rear: bool = True,
+    skip_root_dims: int = 7,
     min_seq_length: int = 3,
-) -> list[PerJointDTWResult]:
+    merge_rear: bool = True,
+    n_samples: int = 5,
+) -> list[InternalConsistencyResult]:
     """
-    Compute per-joint DTW for discovered clusters vs corresponding GT.
+    Measure internal cluster consistency via pairwise DTW among sampled sequences.
 
     Args:
         cluster_dict: Mapping cluster_id -> list of (clip_id, frames)
         cluster_labels: Mapping cluster_id -> label string
-        turn_directions: Mapping cluster_id -> turn direction
-        behavior_labels_csv: Path to behavior labels CSV
-        data: (num_clips, num_frames, dim) feature array (already root-skipped)
+        turn_directions: Mapping cluster_id -> turn direction string
+        data: (num_clips, num_frames, dim) feature array
         output_dir: Directory to save outputs
-        joint_indices: List of joint indices to analyze
-        joint_names: Names for the joints
         method_name: Name for output files
         seed: Seed for output files
-        max_samples: Max sequences per cluster
-        max_comparisons: Max pairwise DTW comparisons
-        short_threshold: Max frames for intermediate behavior bridging
+        skip_root_dims: Number of root dimensions to skip
+        min_seq_length: Minimum sequence length to include
         merge_rear: Merge rear categories
-        min_seq_length: Minimum sequence length
+        n_samples: Number of sequences to sample per cluster group
 
     Returns:
-        List of PerJointDTWResult for each unique (label, turn_direction) combination
+        List of InternalConsistencyResult for each (label, turn_direction) group
     """
     import os
     import pandas as pd
+    from itertools import combinations
 
     os.makedirs(output_dir, exist_ok=True)
 
     if turn_directions is None:
         turn_directions = {}
 
-    print("    Loading GT transitions for per-joint DTW...")
-    all_transitions = find_all_transitions(
-        behavior_labels_csv,
-        short_threshold=short_threshold,
-        merge_rear=merge_rear,
-    )
+    if skip_root_dims > 0:
+        data = data[..., skip_root_dims:]
 
-    print("    Grouping discovered clusters by (label, turn_direction)...")
-    grouped_clusters = defaultdict(list)
+    grouped_clusters: dict[tuple, list[int]] = defaultdict(list)
 
     for cluster_id, label in cluster_labels.items():
         if not label or label.startswith("C"):
             continue
 
         parsed = parse_cluster_label(label, merge_rear=merge_rear)
-        if parsed is None or parsed.comparison_type != "transition":
+        if parsed is None:
             continue
 
-        if len(parsed.primitives) < 2:
+        if parsed.comparison_type == "transition" and len(parsed.primitives) >= 2:
+            label_str = f"{parsed.primitives[0]}↔{parsed.primitives[1]}"
+            target = tuple(sorted(parsed.primitives[:2]))
+            label_str = f"{target[0]}↔{target[1]}"
+        elif parsed.comparison_type == "single":
+            behavior = parsed.primitives[0] if parsed.primitives else parsed.compositional[0]
+            label_str = behavior
+        else:
             continue
 
-        target_behaviors = tuple(sorted(parsed.primitives[:2]))
         turn_dir_str = turn_directions.get(cluster_id)
-
-        key = (target_behaviors, turn_dir_str)
+        key = (label_str, turn_dir_str)
         grouped_clusters[key].append(cluster_id)
 
+    print(f"    Internal consistency: {len(grouped_clusters)} (label, turn) groups")
+
     results = []
+    rng = np.random.RandomState(42)
 
-    print(f"\n    Computing per-joint DTW ({len(joint_indices)} joints) for {len(grouped_clusters)} groups...")
-
-    for (target_behaviors, turn_dir_str), cluster_ids in tqdm(
-        grouped_clusters.items(), desc="    Per-joint DTW"
-    ):
-        turn_dir = parse_turn_direction(turn_dir_str)
-
+    for (label_str, turn_dir_str), cluster_ids in sorted(grouped_clusters.items()):
         combined_seqs = []
         for cid in cluster_ids:
             entries = cluster_dict.get(cid, [])
             seqs = extract_sequences_from_cluster(entries, data, min_seq_length)
             combined_seqs.extend(seqs)
 
-        if not combined_seqs:
+        if len(combined_seqs) < 2:
             continue
 
-        if len(combined_seqs) > max_samples:
-            np.random.seed(42)
-            indices = np.random.choice(len(combined_seqs), max_samples, replace=False)
-            combined_seqs = [combined_seqs[i] for i in indices]
+        if len(combined_seqs) > n_samples:
+            indices = rng.choice(len(combined_seqs), n_samples, replace=False)
+            sampled = [combined_seqs[i] for i in indices]
+        else:
+            sampled = combined_seqs
 
-        gt_seqs = extract_sequences_for_gt_label(
-            all_transitions,
-            data,
-            target_behaviors,
-            turn_direction=turn_dir,
-            min_seq_length=min_seq_length,
-            max_seqs=max_samples,
-        )
+        dtw_distances = []
+        for (seq_a, seq_b) in combinations(sampled, 2):
+            d = compute_dtw(seq_a, seq_b)
+            if np.isfinite(d):
+                dtw_distances.append(d)
 
-        if not gt_seqs:
+        if not dtw_distances:
             continue
 
-        mean_dtw, std_dtw = compute_cluster_per_joint_dtw(
-            combined_seqs,
-            gt_seqs,
-            joint_indices,
-            max_comparisons=max_comparisons,
-        )
+        avg_frames = float(np.mean([len(s) for s in combined_seqs]))
 
-        label_str = f"{target_behaviors[0]}↔{target_behaviors[1]}"
-
-        joint_dtw_named = {joint_names[i]: mean_dtw[joint_indices[i]] for i in range(len(joint_indices))}
-        joint_std_named = {joint_names[i]: std_dtw[joint_indices[i]] for i in range(len(joint_indices))}
-
-        results.append(PerJointDTWResult(
+        result = InternalConsistencyResult(
             label=label_str,
             turn_direction=turn_dir_str,
             cluster_ids=cluster_ids,
-            joint_dtw=joint_dtw_named,
-            joint_std=joint_std_named,
-            n_discovered_seqs=len(combined_seqs),
-            n_gt_seqs=len(gt_seqs),
-        ))
+            mean_intra_dtw=float(np.mean(dtw_distances)),
+            std_intra_dtw=float(np.std(dtw_distances)),
+            n_sequences=len(combined_seqs),
+            avg_frames=avg_frames,
+        )
+        results.append(result)
+
+        turn_info = f" [{turn_dir_str}]" if turn_dir_str else ""
+        cluster_str = ", ".join(f"C{c}" for c in cluster_ids)
+        print(f"      {label_str}{turn_info} ({cluster_str}): "
+              f"intra-DTW={result.mean_intra_dtw:.3f}±{result.std_intra_dtw:.3f} "
+              f"(n={len(combined_seqs)}, sampled={len(sampled)}, "
+              f"avg_frames={avg_frames:.1f})")
 
     prefix = f"{method_name}_seed{seed}" if method_name else f"seed{seed}"
 
     if results:
-        rows = []
-        for r in results:
-            row = {
+        df = pd.DataFrame([
+            {
                 "Label": r.label,
                 "Turn_Direction": r.turn_direction or "none",
                 "Cluster_IDs": ",".join(str(c) for c in r.cluster_ids),
+                "Mean_Intra_DTW": r.mean_intra_dtw,
+                "Std_Intra_DTW": r.std_intra_dtw,
+                "N_Sequences": r.n_sequences,
+                "Avg_Frames": r.avg_frames,
             }
-            for jname in joint_names:
-                row[f"DTW_{jname}"] = r.joint_dtw.get(jname, float('inf'))
-            rows.append(row)
-
-        df = pd.DataFrame(rows)
-        csv_path = os.path.join(output_dir, f"{prefix}_per_joint_dtw.csv")
+            for r in results
+        ])
+        df = df.sort_values("Mean_Intra_DTW", ascending=True)
+        csv_path = os.path.join(output_dir, f"{prefix}_consistency.csv")
         df.to_csv(csv_path, index=False, float_format="%.4f")
-        print(f"\n    Saved per-joint DTW results to {csv_path}")
-
-        plot_per_joint_dtw_heatmap(results, joint_names, output_dir, prefix)
+        print(f"\n    Saved consistency results to {csv_path}")
 
     return results
-
-
-def plot_per_joint_dtw_heatmap(
-    results: list[PerJointDTWResult],
-    joint_names: list[str],
-    output_dir: str,
-    prefix: str = "",
-) -> None:
-    """Plot per-joint DTW results as a heatmap (clusters x joints)."""
-    import os
-
-    if not results:
-        return
-
-    labels = []
-    for r in results:
-        turn_suffix = f" [{r.turn_direction}]" if r.turn_direction else ""
-        labels.append(f"{r.label}{turn_suffix}")
-
-    matrix = np.zeros((len(results), len(joint_names)))
-    for i, r in enumerate(results):
-        for j, jname in enumerate(joint_names):
-            matrix[i, j] = r.joint_dtw.get(jname, float('inf'))
-
-    matrix = np.nan_to_num(matrix, nan=0.0, posinf=np.nanmax(matrix[np.isfinite(matrix)]))
-
-    fig, ax = plt.subplots(figsize=(max(8, len(joint_names) * 0.8), max(4, len(results) * 0.4)))
-
-    im = ax.imshow(matrix, cmap='YlOrRd', aspect='auto')
-    ax.set_xticks(np.arange(len(joint_names)))
-    ax.set_yticks(np.arange(len(labels)))
-    ax.set_xticklabels(joint_names, rotation=45, ha='right', fontsize=9)
-    ax.set_yticklabels(labels, fontsize=9)
-
-    for i in range(len(results)):
-        for j in range(len(joint_names)):
-            val = matrix[i, j]
-            text_color = 'white' if val > matrix.max() * 0.6 else 'black'
-            ax.text(j, i, f'{val:.3f}', ha='center', va='center', fontsize=7, color=text_color)
-
-    cbar = plt.colorbar(im, ax=ax, shrink=0.8)
-    cbar.ax.set_ylabel("DTW Distance", fontsize=10)
-
-    ax.set_xlabel("Joint", fontsize=11)
-    ax.set_ylabel("Cluster", fontsize=11)
-    ax.set_title("Per-Joint DTW: Discovered vs GT", fontsize=12, fontweight='bold')
-
-    plt.tight_layout()
-    save_path = os.path.join(output_dir, f"{prefix}_per_joint_dtw_heatmap.pdf")
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    plt.close()
-    print(f"    Saved per-joint DTW heatmap to {save_path}")
 
 
 def plot_dtw_bar_chart(

@@ -680,7 +680,8 @@ def run_cluster_merging_analysis(
     threshold_percentile = np.percentile(distances, config.dtw_percentile) if distances else None
 
     print(f"  Fixed threshold ({config.dtw_threshold}): {len(similar_pairs_fixed)} similar pairs")
-    print(f"  Percentile threshold ({config.dtw_percentile}%={threshold_percentile:.4f if threshold_percentile else 'N/A'}): {len(similar_pairs_percentile)} similar pairs")
+    threshold_str = f"{threshold_percentile:.4f}" if threshold_percentile is not None else "N/A"
+    print(f"  Percentile threshold ({config.dtw_percentile}%={threshold_str}): {len(similar_pairs_percentile)} similar pairs")
 
     return ClusterMergingResult(
         dtw_matrix=dtw_matrix,
@@ -722,7 +723,7 @@ def render_similar_cluster_pairs(
         List of rendered video paths
     """
     import cv2
-    from topo_mimic.dmwk.skeletonization.postprocess import render_frame_range
+    from topo_mimic.benchmark.analysis.dtw_visualization import render_frames_for_sequence
 
     os.makedirs(output_dir, exist_ok=True)
     rendered_videos = []
@@ -751,9 +752,8 @@ def render_similar_cluster_pairs(
         for sample_idx in range(samples_per_cluster):
             if sample_idx < len(samples_i):
                 abs_clip_id, frames = samples_i[sample_idx]
-                frames_i = render_frame_range(
-                    abs_clip_id, frames[0], frames[-1],
-                    pad=0, path=rodent_rollout_dir
+                frames_i = render_frames_for_sequence(
+                    abs_clip_id, frames, rodent_rollout_dir
                 )
                 row_clips.append(frames_i)
             else:
@@ -761,9 +761,8 @@ def render_similar_cluster_pairs(
 
             if sample_idx < len(samples_j):
                 abs_clip_id, frames = samples_j[sample_idx]
-                frames_j = render_frame_range(
-                    abs_clip_id, frames[0], frames[-1],
-                    pad=0, path=rodent_rollout_dir
+                frames_j = render_frames_for_sequence(
+                    abs_clip_id, frames, rodent_rollout_dir
                 )
                 row_clips.append(frames_j)
             else:

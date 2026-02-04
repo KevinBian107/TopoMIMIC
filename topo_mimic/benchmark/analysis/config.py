@@ -36,8 +36,8 @@ class AnalysisConfig:
     dtw_min_seq_length: int = 3
     dtw_skip_root_dims: int = 7
 
-    run_per_joint_dtw: bool = False
-    per_joint_dtw_joints: list[str] = None  # Joint names to analyze (None = use defaults)
+    pure_behavior_labels: list[str] = None
+    pure_behavior_min_length: int = 30
 
     gt_render_max_samples: int = 5
     gt_render_framerate: int = 30
@@ -53,6 +53,8 @@ class AnalysisConfig:
     short_behavior_threshold: int = 10
     merge_rear: bool = True
     max_gap_between_segments: int = 10
+
+    consistency_n_samples: int = 5
 
     transition_graph_k: int = 3
     transition_graph_gt_top_k: int = 10
@@ -88,8 +90,8 @@ def load_config(config_path: str | Path) -> AnalysisConfig:
         dtw_max_comparisons=cfg.get("dtw_max_comparisons", 100),
         dtw_min_seq_length=cfg.get("dtw_min_seq_length", 3),
         dtw_skip_root_dims=cfg.get("dtw_skip_root_dims", 7),
-        run_per_joint_dtw=cfg.get("run_per_joint_dtw", False),
-        per_joint_dtw_joints=cfg.get("per_joint_dtw_joints", None),
+        pure_behavior_labels=cfg.get("pure_behavior_labels", None),
+        pure_behavior_min_length=cfg.get("pure_behavior_min_length", 30),
         gt_render_max_samples=cfg.get("gt_render_max_samples", 5),
         gt_render_framerate=cfg.get("gt_render_framerate", 30),
         gt_render_target_size=tuple(cfg.get("gt_render_target_size", [320, 240])),
@@ -102,6 +104,7 @@ def load_config(config_path: str | Path) -> AnalysisConfig:
         short_behavior_threshold=cfg.get("short_behavior_threshold", 10),
         merge_rear=cfg.get("merge_rear", True),
         max_gap_between_segments=cfg.get("max_gap_between_segments", 10),
+        consistency_n_samples=cfg.get("consistency_n_samples", 5),
         transition_graph_k=cfg.get("transition_graph_k", 3),
         transition_graph_gt_top_k=cfg.get("transition_graph_gt_top_k", 10),
         transition_graph_layout=cfg.get("transition_graph_layout", "spring"),
