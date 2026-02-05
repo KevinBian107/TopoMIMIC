@@ -1,5 +1,5 @@
 """
-Close Basins Hypothesis Investigation.
+DM Dimensionality Reduction Effect Analysis.
 
 Empirically tests why DM finds cycles in PCA-reduced space but not in raw high-D space.
 
@@ -15,7 +15,7 @@ Metrics computed:
 4. Local Betti numbers (β₁) via persistent homology
 
 Usage:
-    python scripts/close_basins_analysis.py [config.yaml]
+    python scripts/dm_dim_reduction_effect.py [config.yaml]
 """
 
 import os
@@ -35,7 +35,6 @@ from collections import defaultdict
 
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.gridspec import GridSpec
 from sklearn.decomposition import PCA
 from sklearn.neighbors import NearestNeighbors
 from sklearn.cluster import MeanShift
@@ -59,7 +58,7 @@ class AnalysisConfig:
     neighborhood_radius_percentile: float = 10.0
     rips_max_dim: int = 1
     persistence_threshold: float = 0.1
-    output_dir: str = "out/close_basins_analysis"
+    output_dir: str = "out/dm_dim_reduction_effect"
     rodent_rollout_dir: str = "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
     split: str = "train"
     xml_path: str = "topo_mimic/dmwk/xml/rodent.xml"
@@ -506,103 +505,6 @@ def aggregate_results(results: dict) -> dict:
     return summary
 
 
-def create_summary_figure(results: dict, config: AnalysisConfig) -> plt.Figure:
-    summary = aggregate_results(results)
-
-    pca_dims = []
-    actual_dims = []
-    knn_norm = []
-    basin_counts = []
-    crossover_means = []
-    multi_route_fracs = []
-    beta1_means = []
-    h1_positive_fracs = []
-
-    for pca_dim in config.pca_dims_list:
-        dim_label = f"pca_{pca_dim}" if pca_dim > 0 else "raw"
-        if dim_label not in summary:
-            continue
-
-        s = summary[dim_label]
-        pca_dims.append(pca_dim if pca_dim > 0 else s["actual_dim"])
-        actual_dims.append(s["actual_dim"])
-        knn_norm.append(s["knn_normalized_mean"])
-        basin_counts.append(s["basin_count_mean_mean"])
-        crossover_means.append(s["crossover_mean_mean"])
-        multi_route_fracs.append(s["crossover_multi_route_frac_mean"])
-        beta1_means.append(s["beta1_mean_mean"])
-        h1_positive_fracs.append(s["h1_positive_frac_mean"])
-
-    fig = plt.figure(figsize=(16, 10))
-    gs = GridSpec(2, 3, figure=fig, hspace=0.3, wspace=0.3)
-
-    ax1 = fig.add_subplot(gs[0, 0])
-    ax1.plot(actual_dims, knn_norm, "o-", color="blue", linewidth=2, markersize=8)
-    ax1.set_xlabel("Dimensionality", fontsize=11)
-    ax1.set_ylabel("Normalized k-NN Distance", fontsize=11)
-    ax1.set_title("Neighborhood Density vs Dimension", fontsize=12, fontweight="bold")
-    ax1.grid(True, alpha=0.3)
-    ax1.invert_xaxis()
-
-    ax2 = fig.add_subplot(gs[0, 1])
-    ax2.plot(actual_dims, basin_counts, "o-", color="green", linewidth=2, markersize=8)
-    ax2.set_xlabel("Dimensionality", fontsize=11)
-    ax2.set_ylabel("Mean Basin Count per Neighborhood", fontsize=11)
-    ax2.set_title("Local Basins vs Dimension", fontsize=12, fontweight="bold")
-    ax2.grid(True, alpha=0.3)
-    ax2.invert_xaxis()
-
-    ax3 = fig.add_subplot(gs[0, 2])
-    ax3.plot(actual_dims, crossover_means, "o-", color="purple", linewidth=2, markersize=8, label="Mean routes")
-    ax3.set_xlabel("Dimensionality", fontsize=11)
-    ax3.set_ylabel("Crossover Routes", fontsize=11)
-    ax3.set_title("Crossover Routes vs Dimension", fontsize=12, fontweight="bold")
-    ax3.grid(True, alpha=0.3)
-    ax3.invert_xaxis()
-
-    ax3_twin = ax3.twinx()
-    ax3_twin.plot(actual_dims, multi_route_fracs, "s--", color="orange", linewidth=2, markersize=6, label="Multi-route frac")
-    ax3_twin.set_ylabel("Multi-route Fraction", fontsize=10, color="orange")
-    ax3_twin.tick_params(axis="y", labelcolor="orange")
-
-    ax4 = fig.add_subplot(gs[1, 0])
-    ax4.plot(actual_dims, beta1_means, "o-", color="red", linewidth=2, markersize=8)
-    ax4.set_xlabel("Dimensionality", fontsize=11)
-    ax4.set_ylabel("Mean β₁ (Local)", fontsize=11)
-    ax4.set_title("Local Betti Number β₁ vs Dimension", fontsize=12, fontweight="bold")
-    ax4.grid(True, alpha=0.3)
-    ax4.invert_xaxis()
-
-    ax5 = fig.add_subplot(gs[1, 1])
-    ax5.plot(actual_dims, h1_positive_fracs, "o-", color="darkred", linewidth=2, markersize=8)
-    ax5.set_xlabel("Dimensionality", fontsize=11)
-    ax5.set_ylabel("Fraction with β₁ > 0", fontsize=11)
-    ax5.set_title("Cycle Detection Rate vs Dimension", fontsize=12, fontweight="bold")
-    ax5.grid(True, alpha=0.3)
-    ax5.invert_xaxis()
-
-    ax6 = fig.add_subplot(gs[1, 2])
-    scatter = ax6.scatter(knn_norm, h1_positive_fracs, c=actual_dims, cmap="viridis", s=100, edgecolors="black")
-    ax6.set_xlabel("Normalized k-NN Distance", fontsize=11)
-    ax6.set_ylabel("Cycle Detection Rate", fontsize=11)
-    ax6.set_title("Cycle Rate vs Neighborhood Density", fontsize=12, fontweight="bold")
-    ax6.grid(True, alpha=0.3)
-    cbar = plt.colorbar(scatter, ax=ax6)
-    cbar.set_label("Dimensionality", fontsize=10)
-
-    for i, dim in enumerate(actual_dims):
-        ax6.annotate(f"{dim}D", (knn_norm[i], h1_positive_fracs[i]),
-                    textcoords="offset points", xytext=(5, 5), fontsize=8)
-
-    fig.suptitle(
-        f"Close Basins Hypothesis Analysis\n"
-        f"Feature Space: {config.dm_key} | k={config.k_neighbors} | {len(results.get('raw', []))} clips",
-        fontsize=14, fontweight="bold"
-    )
-
-    return fig
-
-
 def create_per_dimension_boxplots(results: dict, config: AnalysisConfig) -> plt.Figure:
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
 
@@ -659,7 +561,7 @@ def create_per_dimension_boxplots(results: dict, config: AnalysisConfig) -> plt.
                    fontsize=10, verticalalignment="top", fontfamily="monospace")
 
     fig.suptitle(
-        f"Close Basins Analysis: Per-Clip Distributions ({config.dm_key})",
+        f"DM Dim Reduction Effect: Per-Clip Distributions ({config.dm_key})",
         fontsize=14, fontweight="bold"
     )
     plt.tight_layout()
@@ -671,7 +573,7 @@ def run_analysis(config: AnalysisConfig) -> dict:
     os.makedirs(config.output_dir, exist_ok=True)
 
     print("=" * 60)
-    print("Close Basins Hypothesis Analysis")
+    print("DM Dimensionality Reduction Effect Analysis")
     print("=" * 60)
     print(f"Feature space: {config.dm_key}")
     print(f"PCA dimensions to test: {config.pca_dims_list}")
@@ -706,12 +608,6 @@ def run_analysis(config: AnalysisConfig) -> dict:
     print(f"Saved summary to {summary_path}")
 
     print("\n=== Creating visualizations ===")
-
-    fig_summary = create_summary_figure(results, config)
-    summary_fig_path = os.path.join(config.output_dir, "combined_analysis.png")
-    fig_summary.savefig(summary_fig_path, dpi=config.dpi, bbox_inches="tight", facecolor="white")
-    plt.close(fig_summary)
-    print(f"Saved: {summary_fig_path}")
 
     fig_boxplots = create_per_dimension_boxplots(results, config)
     boxplot_path = os.path.join(config.output_dir, "distributions.png")
