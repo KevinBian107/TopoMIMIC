@@ -4,10 +4,13 @@
 output_dir: "out/dm_hypertune"
 
 data:
-  dm_key: "intention"
+  dm_key: "intention"  # Options: "intention", "qpos", "ekp"
   rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
   num_clips_total: 842
   num_clips_eval: 30  # Number of clips for grid search evaluation
+  pca_dims: null  # Optional PCA pre-reduction before Takens (useful for high-D spaces)
+  xml_path: "topo_mimic/dmwk/xml/rodent.xml"  # Required for ekp transform
+  stac_data_path: "data/rodent_reference_clips.h5"  # Required for ekp transform
 
 # Takens parameters
 takens:
