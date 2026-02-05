@@ -33,6 +33,68 @@ from topo_mimic.dmwk.skeletonization.postprocess import (
 from topo_mimic.dmwk.skeletonization.rendering import render_grid_clusters_side_by_side
 
 
+def plot_ami_fnn_diagnostics(
+    diagnostics: dict,
+    tau_star: int,
+    m_star: int,
+    output_path: str,
+    fnn_thr: float = 0.05,
+    figsize: tuple[float, float] = (12, 4.5),
+) -> None:
+    """
+    Plot AMI and FNN diagnostic curves from saved diagnostics.
+
+    Args:
+        diagnostics: Dict containing I_mean, I_se, fnn_mean, fnn_se, ms arrays
+        tau_star: Selected delay parameter
+        m_star: Selected embedding dimension
+        output_path: Path to save the plot
+        fnn_thr: FNN threshold used
+        figsize: Figure size
+    """
+    import matplotlib.pyplot as plt
+
+    I_mean = diagnostics["I_mean"]
+    I_se = diagnostics["I_se"]
+    fnn_mean = diagnostics["fnn_mean"]
+    fnn_se = diagnostics["fnn_se"]
+    ms = diagnostics["ms"]
+    theiler_used = diagnostics.get("theiler_used", tau_star)
+
+    taus = np.arange(1, len(I_mean) + 1)
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize)
+
+    ax1.plot(taus, I_mean, label="mean AMI")
+    if np.all(np.isfinite(I_se)):
+        ax1.fill_between(taus, I_mean - I_se, I_mean + I_se, alpha=0.2, linewidth=0)
+    ax1.axvline(tau_star, ls="--", color="red", label=f"τ* = {tau_star}")
+    ax1.set_xlabel("Delay τ")
+    ax1.set_ylabel("AMI")
+    ax1.set_title("Average Mutual Information")
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+
+    ax2.plot(ms, fnn_mean, label="mean FNN")
+    if np.all(np.isfinite(fnn_se)):
+        ax2.fill_between(ms, fnn_mean - fnn_se, fnn_mean + fnn_se, alpha=0.2, linewidth=0)
+    ax2.axhline(fnn_thr, ls=":", color="gray", label=f"threshold = {fnn_thr}")
+    ax2.axvline(m_star, ls="--", color="red", label=f"m* = {m_star}")
+    ax2.set_xlabel("Embedding dimension m")
+    ax2.set_ylabel("Fraction of false neighbors")
+    ax2.set_title(f"FNN at τ = {tau_star} (Theiler={theiler_used})")
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+
+    fig.suptitle("Delay-Embedding Parameter Selection (AMI → τ*, FNN → m*)")
+    fig.tight_layout()
+
+    os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else ".", exist_ok=True)
+    fig.savefig(output_path, dpi=150, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+    print(f"Saved AMI/FNN plot to {output_path}")
+
+
 @dataclass
 class DataConfig:
     dm_key: str = "intention"
@@ -310,6 +372,15 @@ def run_pipeline(config: PipelineConfig) -> tuple[list, list]:
             with open(diag_path, "wb") as f:
                 pkl.dump({"tau_star": tau_star, "m_star": m_star, "diagnostics": diagnostics}, f)
             print(f"Saved diagnostics to {diag_path}")
+
+            plot_path = os.path.join(config.output_dir, "ami_fnn_diagnostics.png")
+            plot_ami_fnn_diagnostics(
+                diagnostics,
+                tau_star,
+                m_star,
+                plot_path,
+                fnn_thr=config.takens.fnn_thr,
+            )
         else:
             print(f"\n=== Stage 2: Using fixed Takens parameters (m={config.takens.m}, tau={config.takens.tau}) ===")
 
@@ -334,6 +405,43 @@ def run_pipeline(config: PipelineConfig) -> tuple[list, list]:
     print("=" * 60)
 
     return all_cycle_dm, all_G_sm
+
+
+def plot_diagnostics_from_pickle(
+    pickle_path: str,
+    output_path: str | None = None,
+    fnn_thr: float = 0.05,
+) -> tuple[int, int]:
+    """
+    Load diagnostics from pickle and generate AMI/FNN plot.
+
+    Args:
+        pickle_path: Path to ami_fnn_diagnostics.pkl
+        output_path: Path to save plot (defaults to same dir as pickle)
+        fnn_thr: FNN threshold for plot
+
+    Returns:
+        Tuple of (tau_star, m_star)
+    """
+    with open(pickle_path, "rb") as f:
+        data = pkl.load(f)
+
+    tau_star = data["tau_star"]
+    m_star = data["m_star"]
+    diagnostics = data["diagnostics"]
+
+    if output_path is None:
+        output_path = pickle_path.replace(".pkl", ".png")
+
+    plot_ami_fnn_diagnostics(
+        diagnostics,
+        tau_star,
+        m_star,
+        output_path,
+        fnn_thr=fnn_thr,
+    )
+
+    return tau_star, m_star
 
 
 def main(config_path: str = "configs/dmwkc/dm_pipeline.yaml"):

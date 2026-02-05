@@ -13,6 +13,9 @@ class DataConfig:
     qpos_key: str = "qpos"
     rodent_rollout_dir: str = ""
     split: str = "train"
+    pca_dims: int | None = None
+    xml_path: str = "topo_mimic/dmwk/xml/rodent.xml"
+    stac_data_path: str = "data/rodent_reference_clips.h5"
 
 
 @dataclass
