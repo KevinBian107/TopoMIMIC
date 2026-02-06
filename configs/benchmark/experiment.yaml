@@ -6,7 +6,7 @@ rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
 split: "train"
 n_clips: null  # Number of clips to use from split (null = all clips in split)
 
-# Data configuration
+# Data configuration (legacy)
 data:
   dm_key: "intention"
   evaluation_key: "qpos"
@@ -60,14 +60,14 @@ methods:
   - name: "w2_dm_qpos_kmeans"
     type: "clustering"
     dm_source: "qpos"
-    enabled: false
+    enabled: true
     params:
       mds_components: 3
 
   - name: "w2_dm_ekp_kmeans"
     type: "clustering"
     dm_source: "ekp"
-    enabled: true
+    enabled: false
     params:
       mds_components: 3
 

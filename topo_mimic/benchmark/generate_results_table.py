@@ -21,8 +21,10 @@ class TableConfig:
 
 
 METHOD_DISPLAY_NAMES = {
-    "w2_dm_kmeans": "W₂+DM",
-    "w2_unif_kmeans": "W₂+Unif",
+    "w2_dm_kmeans": "W₂+DM+Int (ours)",
+    "w2_dm_qpos_kmeans": "W₂+DM+qpos (ours)",
+    "w2_dm_ekp_kmeans": "W₂+DM+EKP (ours)",
+    "w2_unif_kmeans": "W₂+Unif+Int",
     "kpms_intention": "KPMS-Int",
     "kpms_keypoint": "KPMS-KP",
     "gw_dm_kmeans": "GW+DM",
@@ -142,7 +144,7 @@ def create_pivot_table(
     )
 
     method_order = []
-    for m in ["w2_dm_kmeans", "w2_unif_kmeans", "kpms_intention", "kpms_keypoint", "custom_vae", "gw_dm_kmeans"]:
+    for m in ["w2_dm_kmeans", "w2_dm_qpos_kmeans", "w2_dm_ekp_kmeans", "w2_unif_kmeans", "kpms_intention", "kpms_keypoint", "custom_vae", "gw_dm_kmeans"]:
         if m in pivot.columns:
             method_order.append(m)
     for m in pivot.columns:
@@ -171,7 +173,7 @@ def create_simple_pivot_table(agg_df: pd.DataFrame) -> pd.DataFrame:
     )
 
     method_order = []
-    for m in ["w2_dm_kmeans", "w2_unif_kmeans", "kpms_intention", "kpms_keypoint", "custom_vae", "gw_dm_kmeans"]:
+    for m in ["w2_dm_kmeans", "w2_dm_qpos_kmeans", "w2_dm_ekp_kmeans", "w2_unif_kmeans", "kpms_intention", "kpms_keypoint", "custom_vae", "gw_dm_kmeans"]:
         if m in pivot.columns:
             method_order.append(m)
     for m in pivot.columns:
@@ -477,7 +479,7 @@ def create_consistency_pivot_table(agg_df: pd.DataFrame) -> pd.DataFrame:
     )
 
     method_order = []
-    for m in ["w2_dm_kmeans", "w2_unif_kmeans", "kpms_intention", "kpms_keypoint", "custom_vae", "gw_dm_kmeans"]:
+    for m in ["w2_dm_kmeans", "w2_dm_qpos_kmeans", "w2_dm_ekp_kmeans", "w2_unif_kmeans", "kpms_intention", "kpms_keypoint", "custom_vae", "gw_dm_kmeans"]:
         if m in pivot.columns:
             method_order.append(m)
     for m in pivot.columns:
