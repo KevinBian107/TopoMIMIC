@@ -34,7 +34,7 @@ def load_data(
     Load data from HDF5 files.
 
     Args:
-        data_key: Key to load (e.g., "intention", "qpos")
+        data_key: Key to load (e.g., "intention", "qpos", "qpos_rollout")
         rodent_rollout_dir: Path to data directory or consolidated H5 file
         split: Data split ("train", "test", "all")
         n_clips: Number of clips to load (None for all)
@@ -73,6 +73,58 @@ def load_data(
     data = data[:, :min_frames, :]
 
     print(f"Loaded {data_key}: {data.shape} (split={split}, clips={clip_indices[0]}-{clip_indices[-1]})")
+    return data, clip_indices
+
+
+def load_dm_feature_data(config: GranularityConfig) -> tuple[np.ndarray, list[int]]:
+    """
+    Load and transform data for DM extraction based on dm_key.
+
+    Handles feature transforms for qpos/ekp and optional PCA reduction.
+
+    Args:
+        config: GranularityConfig with data settings
+
+    Returns:
+        Tuple of (transformed_data, clip_indices)
+    """
+    from topo_mimic.dmwk.utils.feature_transforms import (
+        get_hdf5_key_for_dm_key,
+        apply_dm_key_transform,
+    )
+    from sklearn.decomposition import PCA
+
+    dm_key = config.data.dm_key
+    hdf5_key = get_hdf5_key_for_dm_key(dm_key)
+
+    data, clip_indices = load_data(
+        hdf5_key,
+        config.data.rodent_rollout_dir,
+        config.data.split,
+    )
+
+    if dm_key != "intention":
+        print(f"Applying {dm_key} transform...")
+        data = apply_dm_key_transform(
+            data,
+            dm_key,
+            xml_path=config.data.xml_path,
+            stac_data_path=config.data.stac_data_path,
+        )
+        print(f"Transformed data shape: {data.shape}")
+
+        if config.data.pca_dims is not None and config.data.pca_dims > 0:
+            n_clips, n_frames, n_features = data.shape
+            if config.data.pca_dims < n_features:
+                print(f"Applying PCA: {n_features}D -> {config.data.pca_dims}D")
+                data_flat = data.reshape(-1, n_features)
+                pca = PCA(n_components=config.data.pca_dims)
+                data_reduced = pca.fit_transform(data_flat)
+                var_explained = pca.explained_variance_ratio_.sum()
+                data = data_reduced.reshape(n_clips, n_frames, config.data.pca_dims)
+                print(f"PCA variance explained: {var_explained:.3f}")
+                print(f"PCA-reduced data shape: {data.shape}")
+
     return data, clip_indices
 
 
@@ -160,11 +212,7 @@ def run_granularity_analysis(config: GranularityConfig) -> None:
     print(f"Output directory: {output_dir}")
 
     print(f"\n=== Stage 1: Loading {config.data.dm_key} data ===")
-    intention_data, clip_indices = load_data(
-        config.data.dm_key,
-        config.data.rodent_rollout_dir,
-        config.data.split,
-    )
+    intention_data, clip_indices = load_dm_feature_data(config)
 
     print(f"\n=== Stage 2: Loading {config.data.qpos_key} data ===")
     qpos_data, _ = load_data(

@@ -1,14 +1,20 @@
-output_dir: "out/granularity"
+output_dir: "out/granularity_qpos"
 
 data:
-  dm_key: "intention"
+  # dm_key: feature space for DM extraction ("intention" (m3t6), "qpos" (m3t9), or "ekp" (m3t8))
+  dm_key: "qpos"
   qpos_key: "qpos"
   rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
   split: "train"
+  # pca_dims: optional PCA reduction (only applies to qpos/ekp, ignored for intention)
+  pca_dims: 10
+  # xml_path/stac_data_path: required for ekp feature space
+  xml_path: "topo_mimic/dmwk/xml/rodent.xml"
+  stac_data_path: "data/rodent_reference_clips.h5"
 
 takens:
   m: 3
-  tau: 6
+  tau: 9
 
 dm:
   k_neighbors: 3
@@ -16,7 +22,7 @@ dm:
 
 multi_persistence:
   enabled: true
-  pers_delta_values: [0.1, 0.25, 0.5, 0.75, 1.0]
+  pers_delta_values: [0.01, 0.1, 0.15, 0.2, 1.25] #[0.1, 0.25, 0.5, 0.75, 1.0]
 
 joints:
   head_joints: ["atlas", "vertebra_axis_twist"]

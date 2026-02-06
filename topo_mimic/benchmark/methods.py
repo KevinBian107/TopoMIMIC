@@ -961,8 +961,22 @@ class CustomVAEMethod(BaseMethod):
         )
 
 
+class W2DMQposKMeans(W2DMKMeans):
+    def __init__(self, params: dict = None):
+        BaseMethod.__init__(self, "w2_dm_qpos_kmeans", params)
+        self.mds_components = self.params.get("mds_components", 3)
+
+
+class W2DMEkpKMeans(W2DMKMeans):
+    def __init__(self, params: dict = None):
+        BaseMethod.__init__(self, "w2_dm_ekp_kmeans", params)
+        self.mds_components = self.params.get("mds_components", 3)
+
+
 METHOD_REGISTRY: dict[str, type[BaseMethod]] = {
     "w2_dm_kmeans": W2DMKMeans,
+    "w2_dm_qpos_kmeans": W2DMQposKMeans,
+    "w2_dm_ekp_kmeans": W2DMEkpKMeans,
     "w2_unif_kmeans": W2UnifKMeans,
     "gw_dm_kmeans": GWDMKMeans,
     "kpms_intention": KPMSIntentionMethod,

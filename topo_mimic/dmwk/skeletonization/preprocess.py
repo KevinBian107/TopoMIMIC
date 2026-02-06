@@ -25,6 +25,7 @@ def estimate_delay_embedding_params(
     processes: int | None = None,
     plot: bool = True,
     figsize: tuple[float, float] = (12, 4.5),
+    transform_fn: Callable | None = None,
 ) -> tuple[int, int, dict]:
     """
     Estimate optimal delay embedding parameters (tau, m) via AMI and FNN.
@@ -180,6 +181,20 @@ def estimate_delay_embedding_params(
         clips = list(tqdm(pool.imap(work, clip_indices),
                           total=len(list(clip_indices)),
                           desc="Loading clips"))
+
+    if transform_fn is not None:
+        first_clip = clips[0]
+        if first_clip.ndim == 2:
+            n_dim = first_clip.shape[1]
+        else:
+            n_dim = first_clip.size // 500
+        stacked = np.array([
+            c.reshape(-1, n_dim) if c.ndim != 2 else c for c in clips
+        ])
+        min_frames = min(c.shape[0] if c.ndim == 2 else 500 for c in clips)
+        stacked = stacked[:, :min_frames, :]
+        stacked = transform_fn(stacked)
+        clips = [stacked[i] for i in range(stacked.shape[0])]
 
     # ----------------- AMI over clips -----------------
     taus_list, I_list, tau_star_each = [], [], []

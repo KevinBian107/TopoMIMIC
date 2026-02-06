@@ -245,6 +245,9 @@ class LabelingGUI:
             for k, v in existing_turns.items():
                 if v:
                     self.turn_directions[int(k)] = v
+            print(f"[GUI] Loaded {len(self.labels)} labels and {len(self.turn_directions)} turn directions from {labels_path}")
+        else:
+            print(f"[GUI] No existing labels found at {labels_path}")
 
     def _get_video_path(self, cluster_id: int) -> str | None:
         """Get path to cluster video if it exists, extracting row from grid video if needed."""
@@ -357,7 +360,7 @@ class LabelingGUI:
 
             with gr.Row():
                 with gr.Column(scale=1):
-                    video_player = gr.Video(label="Cluster Video")
+                    video_player = gr.Video(label="Cluster Video", autoplay=True)
 
                 with gr.Column(scale=1):
                     gr.Markdown("### Recommendations")
@@ -386,21 +389,36 @@ class LabelingGUI:
                         )
                         current_turn = gr.Textbox(label="Current Turn", interactive=False)
 
-                    apply_btn = gr.Button("Apply Label", variant="primary")
+            gr.Markdown("### Labels Progress")
+            summary_table = gr.Dataframe(
+                headers=["Cluster", "Assigned", "Turn", "Top Rec", "Distance"],
+                datatype=["number", "str", "str", "str", "str"],
+            )
 
             with gr.Row():
                 progress_md = gr.Markdown()
                 save_btn = gr.Button("Save All Labels", variant="secondary")
                 status_md = gr.Markdown()
 
-            with gr.Accordion("Labels Summary", open=False):
-                summary_table = gr.Dataframe(
-                    headers=["Cluster", "Assigned", "Turn", "Top Rec", "Distance"],
-                    datatype=["number", "str", "str", "str", "str"],
-                )
+            nav_outputs = [
+                cluster_title, video_player, recommendations_md, current_label,
+                label_dropdown, custom_label, turn_dropdown, current_turn,
+                progress_md, summary_table,
+            ]
+
+            label_apply_outputs = [current_label, custom_label, current_turn, progress_md, summary_table]
+            turn_apply_outputs = [current_label, current_turn, progress_md, summary_table]
+
+            def _get_status(idx):
+                cid, _, _, cur_label, cur_turn = self.get_cluster_info(int(idx))
+                labeled = sum(1 for c in self.cluster_ids if c in self.labels)
+                progress = f"**Labeled:** {labeled}/{len(self.cluster_ids)} clusters"
+                summary = self.get_summary_df()
+                return cur_label, cur_turn, progress, summary
 
             def update_display(idx):
-                cid, title, recs, cur_label, cur_turn = self.get_cluster_info(int(idx))
+                idx = int(idx)
+                cid, title, recs, cur_label, cur_turn = self.get_cluster_info(idx)
                 video = self._get_video_path(cid)
 
                 rec_md = ""
@@ -415,29 +433,54 @@ class LabelingGUI:
 
                 summary = self.get_summary_df()
 
+                if cur_label:
+                    if cur_label not in choices:
+                        choices.insert(0, cur_label)
+                    dropdown_value = cur_label
+                elif choices:
+                    dropdown_value = choices[0]
+                else:
+                    dropdown_value = None
+
                 return (
                     f"### {title}",
                     video,
                     rec_md,
                     cur_label,
-                    gr.Dropdown(choices=choices, value=choices[0] if choices else None),
+                    gr.Dropdown(choices=choices, value=dropdown_value),
+                    "",
+                    cur_turn or "",
                     cur_turn,
                     progress,
                     summary,
                 )
 
             def go_prev(idx):
-                return max(0, idx - 1)
+                new_idx = max(0, int(idx) - 1)
+                return (new_idx,) + update_display(new_idx)
 
             def go_next(idx):
-                return min(len(self.cluster_ids) - 1, idx + 1)
+                new_idx = min(len(self.cluster_ids) - 1, int(idx) + 1)
+                return (new_idx,) + update_display(new_idx)
 
-            def apply_label_fn(idx, dropdown_val, custom_val, turn_val):
+            def on_dropdown_change(idx, dropdown_val):
+                if dropdown_val:
+                    cid, _, _, _, _ = self.get_cluster_info(int(idx))
+                    self.assign_label(cid, dropdown_val)
+                cur_label, cur_turn, progress, summary = _get_status(int(idx))
+                return cur_label, "", cur_turn, progress, summary
+
+            def on_custom_submit(idx, custom_val):
+                if custom_val.strip():
+                    cid, _, _, _, _ = self.get_cluster_info(int(idx))
+                    self.assign_label(cid, custom_val.strip())
+                cur_label, cur_turn, progress, summary = _get_status(int(idx))
+                return cur_label, "", cur_turn, progress, summary
+
+            def on_turn_change(idx, turn_val):
                 cid, _, _, _, _ = self.get_cluster_info(int(idx))
-                label = custom_val.strip() if custom_val.strip() else dropdown_val
-                self.assign_label(cid, label or "")
                 self.assign_turn_direction(cid, turn_val or "")
-                return update_display(idx)
+                return _get_status(int(idx))
 
             def save_labels_fn():
                 msg = self.save_labels()
@@ -446,18 +489,28 @@ class LabelingGUI:
             cluster_nav.change(
                 update_display,
                 inputs=[cluster_nav],
-                outputs=[cluster_title, video_player, recommendations_md, current_label,
-                         label_dropdown, current_turn, progress_md, summary_table],
+                outputs=nav_outputs,
             )
 
-            prev_btn.click(go_prev, inputs=[cluster_nav], outputs=[cluster_nav])
-            next_btn.click(go_next, inputs=[cluster_nav], outputs=[cluster_nav])
+            prev_btn.click(go_prev, inputs=[cluster_nav], outputs=[cluster_nav] + nav_outputs)
+            next_btn.click(go_next, inputs=[cluster_nav], outputs=[cluster_nav] + nav_outputs)
 
-            apply_btn.click(
-                apply_label_fn,
-                inputs=[cluster_nav, label_dropdown, custom_label, turn_dropdown],
-                outputs=[cluster_title, video_player, recommendations_md, current_label,
-                         label_dropdown, current_turn, progress_md, summary_table],
+            label_dropdown.input(
+                on_dropdown_change,
+                inputs=[cluster_nav, label_dropdown],
+                outputs=label_apply_outputs,
+            )
+
+            custom_label.submit(
+                on_custom_submit,
+                inputs=[cluster_nav, custom_label],
+                outputs=label_apply_outputs,
+            )
+
+            turn_dropdown.input(
+                on_turn_change,
+                inputs=[cluster_nav, turn_dropdown],
+                outputs=turn_apply_outputs,
             )
 
             save_btn.click(save_labels_fn, outputs=[status_md])
@@ -465,8 +518,7 @@ class LabelingGUI:
             demo.load(
                 update_display,
                 inputs=[cluster_nav],
-                outputs=[cluster_title, video_player, recommendations_md, current_label,
-                         label_dropdown, current_turn, progress_md, summary_table],
+                outputs=nav_outputs,
             )
 
         return demo

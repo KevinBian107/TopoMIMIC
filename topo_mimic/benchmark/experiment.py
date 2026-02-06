@@ -26,6 +26,7 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 
 from topo_mimic.dmwk.utils.load_utils import get_aggregate_data, get_clip_indices
+from topo_mimic.dmwk.utils.feature_transforms import apply_dm_key_transform, get_hdf5_key_for_dm_key
 from topo_mimic.dmwk.skeletonization.postprocess import (
     _expand_frames_nonconsec,
     _uniform_downsample,
@@ -90,6 +91,15 @@ class DMConfig:
 
 
 @dataclass
+class DMSourceConfig:
+    results_dir: str = ""
+    dm_key: str = "intention"
+    pca_dims: int | None = None
+    xml_path: str = "topo_mimic/dmwk/xml/rodent.xml"
+    stac_data_path: str = "data/rodent_reference_clips.h5"
+
+
+@dataclass
 class ClusteringConfig:
     min_len: int = 0
     max_len: int = 500
@@ -104,6 +114,7 @@ class MethodEntry:
     type: str = "clustering"
     enabled: bool = True
     params: dict = field(default_factory=dict)
+    dm_source: str = "default"
 
 
 @dataclass
@@ -139,10 +150,11 @@ class ExperimentConfig:
     output_dir: str = "out/experiment"
     rodent_rollout_dir: str = "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
     split: str = "train"
-    n_clips: int | None = None  # Number of clips to use (None = all clips in split)
+    n_clips: int | None = None
 
     data: DataConfig = None
     dm: DMConfig = None
+    dm_sources: dict[str, DMSourceConfig] = field(default_factory=dict)
     clustering: ClusteringConfig = None
     keypoint: KeypointConfig = None
 
@@ -169,6 +181,13 @@ class ExperimentConfig:
             self.rendering = RenderingConfig()
         if self.cluster_merging is None:
             self.cluster_merging = ClusterMergingConfig()
+        if not self.dm_sources:
+            self.dm_sources = {
+                "default": DMSourceConfig(
+                    results_dir=self.dm.results_dir,
+                    dm_key=self.data.dm_key,
+                )
+            }
 
     @property
     def n_clusters(self) -> int:
@@ -207,6 +226,11 @@ def load_config(config_path: str) -> ExperimentConfig:
     else:
         k_selection_cfg = KSelectionConfig()
 
+    dm_sources = {}
+    if "dm_sources" in cfg:
+        for src_name, src_dict in cfg["dm_sources"].items():
+            dm_sources[src_name] = DMSourceConfig(**src_dict)
+
     methods_list = []
     for m in cfg.get("methods", []):
         methods_list.append(MethodEntry(
@@ -214,6 +238,7 @@ def load_config(config_path: str) -> ExperimentConfig:
             type=m.get("type", "clustering"),
             enabled=m.get("enabled", True),
             params=m.get("params", {}),
+            dm_source=m.get("dm_source", "default"),
         ))
 
     rendering_dict = cfg.get("rendering", {})
@@ -234,6 +259,7 @@ def load_config(config_path: str) -> ExperimentConfig:
         n_clips=cfg.get("n_clips", None),
         data=data_cfg,
         dm=dm_cfg,
+        dm_sources=dm_sources,
         clustering=clustering_cfg,
         keypoint=keypoint_cfg,
         k_selection=k_selection_cfg,
@@ -275,6 +301,32 @@ def load_data(
     data = data[:, :min_frames, :]
 
     print(f"Loaded {data_key}: {data.shape} (split={split}, clips={clip_indices[0]}-{clip_indices[-1]})")
+    return data, clip_indices
+
+
+def load_source_data(
+    source_cfg: DMSourceConfig,
+    rodent_rollout_dir: str,
+    split: str,
+    n_clips: int | None,
+) -> tuple[np.ndarray, list[int]]:
+    hdf5_key = get_hdf5_key_for_dm_key(source_cfg.dm_key)
+    data, clip_indices = load_data(hdf5_key, rodent_rollout_dir, split, n_clips)
+
+    data = apply_dm_key_transform(
+        data, source_cfg.dm_key, source_cfg.xml_path, source_cfg.stac_data_path
+    )
+    print(f"After transform ({source_cfg.dm_key}): {data.shape}")
+
+    if source_cfg.pca_dims is not None:
+        from sklearn.decomposition import PCA
+        n_clips_d, n_frames_d, n_dim_d = data.shape
+        flat = data.reshape(-1, n_dim_d)
+        pca = PCA(n_components=source_cfg.pca_dims)
+        flat_reduced = pca.fit_transform(flat)
+        data = flat_reduced.reshape(n_clips_d, n_frames_d, source_cfg.pca_dims)
+        print(f"PCA reduced: {n_dim_d} -> {source_cfg.pca_dims} dims (var explained: {pca.explained_variance_ratio_.sum():.3f})")
+
     return data, clip_indices
 
 
@@ -1000,108 +1052,24 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
     print(f"Output dir: {config.output_dir}")
     print(f"n_clusters: {config.k_selection.n_clusters}")
     print(f"Seeds: {config.seeds}")
+    print(f"DM sources: {list(config.dm_sources.keys())}")
 
-    print(f"\n=== Stage 1: Loading {config.data.dm_key} data ===")
-    dm_data, clip_indices = load_data(config.data.dm_key, config.rodent_rollout_dir, config.split, config.n_clips)
+    print(f"\n=== Stage 1: Loading {config.data.evaluation_key} data ===")
+    eval_data, clip_indices = load_data(config.data.evaluation_key, config.rodent_rollout_dir, config.split, config.n_clips)
     print(f"Loaded {len(clip_indices)} clips: {clip_indices[0]}-{clip_indices[-1]}")
 
-    print(f"\n=== Stage 2: Loading {config.data.evaluation_key} data ===")
-    eval_data, _ = load_data(config.data.evaluation_key, config.rodent_rollout_dir, config.split, config.n_clips)
-
-    min_frames = min(dm_data.shape[1], eval_data.shape[1])
-    dm_data = dm_data[:, :min_frames, :]
-    eval_data = eval_data[:, :min_frames, :]
-
-    print("\n=== Stage 3: Loading DM cycles ===")
-    if not config.dm.results_dir:
-        raise ValueError("dm.results_dir required")
-    cycles_path = os.path.join(config.dm.results_dir, "all_cycle_dm.pkl")
-    with open(cycles_path, "rb") as f:
-        all_cycle_dm = pkl.load(f)
-    print(f"Loaded {len(all_cycle_dm)} cycle sets")
-
-    print("\n=== Stage 4: Preparing windows ===")
-    windows, cleaned_loops = prepare_windows_for_clustering(
-        all_cycle_dm, dm_data, config.clustering, clip_indices
-    )
-    print(f"Prepared {len(windows)} windows (from topological cycles)")
-
-    if len(windows) == 0:
-        raise RuntimeError("No valid windows for clustering")
-
-    X = build_feature_matrix(windows, dm_data)
-    print(f"Feature matrix: {X.shape}")
-
-    baseline_needed = any(m.name == "w2_unif_kmeans" and m.enabled for m in config.methods)
-    windows_baseline = None
-    X_baseline = None
-    if baseline_needed:
-        print("\n=== Stage 4b: Preparing baseline windows (all frames) ===")
-        windows_baseline = prepare_all_frames_for_clustering(dm_data, config.clustering, clip_indices)
-        X_baseline = build_feature_matrix(windows_baseline, dm_data)
-        print(f"Baseline feature matrix: {X_baseline.shape}")
-
-    D_w2, Dn_w2 = None, None
-    D_gw, Dn_gw = None, None
-    D_w2_baseline, Dn_w2_baseline = None, None
-
-    w2_needed = any(m.name == "w2_dm_kmeans" and m.enabled for m in config.methods)
-    if w2_needed:
-        w2_cache_path = os.path.join(config.output_dir, "w2_distance_matrix.pkl")
-        if os.path.exists(w2_cache_path):
-            print("Loading cached W2 distance matrix...")
-            with open(w2_cache_path, "rb") as f:
-                w2_data = pkl.load(f)
-            D_w2, Dn_w2 = w2_data["D"], w2_data["Dn"]
-        else:
-            D_w2, Dn_w2 = compute_w2_distance_matrix(
-                windows, dm_data, config.clustering.target_len
-            )
-            with open(w2_cache_path, "wb") as f:
-                pkl.dump({"D": D_w2, "Dn": Dn_w2}, f)
-            print(f"Cached W2 matrix to {w2_cache_path}")
-
-    if baseline_needed:
-        w2_baseline_cache_path = os.path.join(config.output_dir, "w2_distance_matrix_baseline.pkl")
-        if os.path.exists(w2_baseline_cache_path):
-            print("Loading cached W2 baseline distance matrix...")
-            with open(w2_baseline_cache_path, "rb") as f:
-                w2_data = pkl.load(f)
-            D_w2_baseline, Dn_w2_baseline = w2_data["D"], w2_data["Dn"]
-        else:
-            print("Computing W2 baseline distance matrix (all frames)...")
-            D_w2_baseline, Dn_w2_baseline = compute_w2_distance_matrix(
-                windows_baseline, dm_data, config.clustering.target_len
-            )
-            with open(w2_baseline_cache_path, "wb") as f:
-                pkl.dump({"D": D_w2_baseline, "Dn": Dn_w2_baseline}, f)
-            print(f"Cached W2 baseline matrix to {w2_baseline_cache_path}")
-
-    gw_needed = any(m.name == "gw_dm_kmeans" and m.enabled for m in config.methods)
-    if gw_needed:
-        gw_method = next((m for m in config.methods if m.name == "gw_dm_kmeans"), None)
-        gw_params = gw_method.params if gw_method else {}
-        loss_fun = gw_params.get("loss_fun", "square_loss")
-        max_iter = gw_params.get("max_iter", 1000)
-
-        gw_cache_path = os.path.join(config.output_dir, "gw_distance_matrix.pkl")
-        if os.path.exists(gw_cache_path):
-            print("Loading cached GW distance matrix...")
-            with open(gw_cache_path, "rb") as f:
-                gw_data = pkl.load(f)
-            D_gw, Dn_gw = gw_data["D"], gw_data["Dn"]
-        else:
-            D_gw, Dn_gw = compute_gw_distance_matrix(
-                windows, dm_data, config.clustering.target_len,
-                loss_fun=loss_fun, max_iter=max_iter
-            )
-            with open(gw_cache_path, "wb") as f:
-                pkl.dump({"D": D_gw, "Dn": Dn_gw}, f)
-            print(f"Cached GW matrix to {gw_cache_path}")
-
-    print("\n=== Stage 5: Running methods ===")
+    print("\n=== Stage 2: Running methods by DM source ===")
     enabled_methods = [m for m in config.methods if m.enabled]
     print(f"Enabled methods: {[m.name for m in enabled_methods]}")
+
+    source_groups: dict[str, list[MethodEntry]] = {}
+    state_space_methods: list[MethodEntry] = []
+    for m in enabled_methods:
+        method_obj = get_method(m.name, m.params)
+        if method_obj.method_type == MethodType.STATE_SPACE:
+            state_space_methods.append(m)
+        else:
+            source_groups.setdefault(m.dm_source, []).append(m)
 
     results_path = os.path.join(config.output_dir, "all_results.pkl")
     if os.path.exists(results_path):
@@ -1114,96 +1082,121 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
     from datetime import datetime
     experiment_id = f"experiment_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}"
 
-    for method_entry in enabled_methods:
+    for source_name, source_methods in source_groups.items():
+        source_cfg = config.dm_sources.get(source_name)
+        if source_cfg is None:
+            raise ValueError(f"DM source '{source_name}' not found in dm_sources config")
+
         print(f"\n{'='*60}")
-        print(f"Method: {method_entry.name}")
+        print(f"DM Source: {source_name} (dm_key={source_cfg.dm_key})")
         print(f"{'='*60}")
 
-        method_output_dir = os.path.join(config.output_dir, method_entry.name)
-        os.makedirs(method_output_dir, exist_ok=True)
+        source_data, source_clip_indices = load_source_data(
+            source_cfg, config.rodent_rollout_dir, config.split, config.n_clips
+        )
 
-        method = get_method(method_entry.name, method_entry.params)
-        method_results = {}
+        min_frames = min(source_data.shape[1], eval_data.shape[1])
+        source_data = source_data[:, :min_frames, :]
 
-        if method_entry.name == "w2_dm_kmeans":
-            method.params["distance_matrix"] = Dn_w2
-        elif method_entry.name == "w2_unif_kmeans":
-            method.params["distance_matrix"] = Dn_w2_baseline
-        elif method_entry.name == "gw_dm_kmeans":
-            method.params["distance_matrix"] = Dn_gw
+        if not source_cfg.results_dir:
+            raise ValueError(f"results_dir required for DM source '{source_name}'")
+        cycles_path = os.path.join(source_cfg.results_dir, "all_cycle_dm.pkl")
+        with open(cycles_path, "rb") as f:
+            all_cycle_dm = pkl.load(f)
+        print(f"Loaded {len(all_cycle_dm)} cycle sets from {source_cfg.results_dir}")
 
-        current_windows = windows_baseline if method_entry.name == "w2_unif_kmeans" else windows
-        current_X = X_baseline if method_entry.name == "w2_unif_kmeans" else X
+        windows, cleaned_loops = prepare_windows_for_clustering(
+            all_cycle_dm, source_data, config.clustering, clip_indices
+        )
+        print(f"Prepared {len(windows)} windows (from topological cycles)")
 
-        if method.method_type == MethodType.STATE_SPACE:
-            n_clusters_to_use = config.k_selection.n_clusters
+        if len(windows) == 0:
+            print(f"WARNING: No valid windows for source '{source_name}', skipping")
+            continue
 
-            skip_set = set(config.clustering.skip_clips)
-            keep_indices = [i for i in range(dm_data.shape[0]) if i not in skip_set]
+        X = build_feature_matrix(windows, source_data)
+        print(f"Feature matrix: {X.shape}")
 
-            is_keypoint_method = method_entry.name == "kpms_keypoint"
+        baseline_needed = any(m.name == "w2_unif_kmeans" for m in source_methods)
+        windows_baseline = None
+        X_baseline = None
+        if baseline_needed:
+            windows_baseline = prepare_all_frames_for_clustering(source_data, config.clustering, clip_indices)
+            X_baseline = build_feature_matrix(windows_baseline, source_data)
+            print(f"Baseline feature matrix: {X_baseline.shape}")
 
-            if is_keypoint_method:
-                print(f"  Loading keypoint data for {method_entry.name}...")
-                kp_data, kp_names = load_keypoint_data(
-                    config.rodent_rollout_dir, config.split, config.n_clips, config.keypoint
-                )
-                kp_data_filtered = kp_data[keep_indices]
-                print(f"  Filtered {kp_data.shape[0]} -> {kp_data_filtered.shape[0]} clips")
-                data_for_method = kp_data_filtered
+        w2_dm_methods = [m for m in source_methods if m.name not in ("w2_unif_kmeans", "gw_dm_kmeans")]
+        Dn_w2 = None
+        if w2_dm_methods:
+            w2_cache_path = os.path.join(config.output_dir, f"w2_distance_matrix_{source_name}.pkl")
+            if os.path.exists(w2_cache_path):
+                print(f"Loading cached W2 distance matrix for {source_name}...")
+                with open(w2_cache_path, "rb") as f:
+                    w2_data = pkl.load(f)
+                Dn_w2 = w2_data["Dn"]
             else:
-                dm_data_filtered = dm_data[keep_indices]
-                print(f"  Filtered {dm_data.shape[0]} -> {dm_data_filtered.shape[0]} clips (skipped {len(skip_set)})")
-                data_for_method = dm_data_filtered
-
-            for seed in config.seeds:
-                seed_dir = os.path.join(method_output_dir, f"seed_{seed}")
-
-                if is_keypoint_method:
-                    kpms_result = method.fit(
-                        data_for_method, n_clusters_to_use, seed_dir, seed,
-                        kp_names=kp_names if 'kp_names' in locals() else None
-                    )
-                else:
-                    kpms_result = method.fit(
-                        data_for_method, n_clusters_to_use, seed_dir, seed
-                    )
-
-                cluster_dict_filtered = kpms_result.transition_cluster_dict
-                cluster_dict = {
-                    cluster_id: [
-                        (clip_indices[keep_indices[clip_id]], frames)
-                        for clip_id, frames in instances
-                    ]
-                    for cluster_id, instances in cluster_dict_filtered.items()
-                }
-                stats = kpms_result.transition_stats
-
-                method_results[seed] = {
-                    "n_clusters": len(cluster_dict),
-                    "cluster_dict": cluster_dict,
-                    "labels": kpms_result.labels,
-                    "transition_stats": stats,
-                    "reconstruction_mse": kpms_result.reconstruction_mse,
-                }
-
-                print(f"  Seed {seed}: {stats['n_sustained_segments']} sustained segments, "
-                      f"{stats['n_transition_types']} transition types, "
-                      f"{len(cluster_dict)} clusters")
-                if kpms_result.reconstruction_mse is not None:
-                    print(f"  Seed {seed}: Reconstruction MSE = {kpms_result.reconstruction_mse:.6f}")
-
-                print(f"\n  Generating reconstruction plots for seed {seed}...")
-                plot_paths = plot_kpms_reconstruction(
-                    kpms_result=kpms_result,
-                    output_dir=seed_dir,
-                    method_name=method_entry.name,
-                    seed=seed,
-                    n_dims=5,
-                    n_clips=3,
+                D_w2, Dn_w2 = compute_w2_distance_matrix(
+                    windows, source_data, config.clustering.target_len
                 )
-                method_results[seed]["reconstruction_plots"] = plot_paths
-        else:
+                with open(w2_cache_path, "wb") as f:
+                    pkl.dump({"D": D_w2, "Dn": Dn_w2}, f)
+                print(f"Cached W2 matrix to {w2_cache_path}")
+
+        Dn_w2_baseline = None
+        if baseline_needed:
+            w2_baseline_cache = os.path.join(config.output_dir, f"w2_distance_matrix_baseline_{source_name}.pkl")
+            if os.path.exists(w2_baseline_cache):
+                with open(w2_baseline_cache, "rb") as f:
+                    w2_data = pkl.load(f)
+                Dn_w2_baseline = w2_data["Dn"]
+            else:
+                D_w2_baseline, Dn_w2_baseline = compute_w2_distance_matrix(
+                    windows_baseline, source_data, config.clustering.target_len
+                )
+                with open(w2_baseline_cache, "wb") as f:
+                    pkl.dump({"D": D_w2_baseline, "Dn": Dn_w2_baseline}, f)
+
+        Dn_gw = None
+        gw_methods = [m for m in source_methods if m.name == "gw_dm_kmeans"]
+        if gw_methods:
+            gw_params = gw_methods[0].params
+            loss_fun = gw_params.get("loss_fun", "square_loss")
+            max_iter = gw_params.get("max_iter", 1000)
+            gw_cache_path = os.path.join(config.output_dir, f"gw_distance_matrix_{source_name}.pkl")
+            if os.path.exists(gw_cache_path):
+                with open(gw_cache_path, "rb") as f:
+                    gw_data = pkl.load(f)
+                Dn_gw = gw_data["Dn"]
+            else:
+                D_gw, Dn_gw = compute_gw_distance_matrix(
+                    windows, source_data, config.clustering.target_len,
+                    loss_fun=loss_fun, max_iter=max_iter
+                )
+                with open(gw_cache_path, "wb") as f:
+                    pkl.dump({"D": D_gw, "Dn": Dn_gw}, f)
+
+        for method_entry in source_methods:
+            print(f"\n  --- Method: {method_entry.name} (source={source_name}) ---")
+
+            method_output_dir = os.path.join(config.output_dir, method_entry.name)
+            os.makedirs(method_output_dir, exist_ok=True)
+
+            method = get_method(method_entry.name, method_entry.params)
+            method_results = {}
+
+            if method_entry.name == "w2_unif_kmeans":
+                method.params["distance_matrix"] = Dn_w2_baseline
+                current_windows = windows_baseline
+                current_X = X_baseline
+            elif method_entry.name == "gw_dm_kmeans":
+                method.params["distance_matrix"] = Dn_gw
+                current_windows = windows
+                current_X = X
+            else:
+                method.params["distance_matrix"] = Dn_w2
+                current_windows = windows
+                current_X = X
+
             for seed in config.seeds:
                 labels = method.fit_predict(current_X, config.k_selection.n_clusters, seed)
                 cluster_dict = labels_to_cluster_dict(
@@ -1216,7 +1209,107 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
                     "labels": labels,
                 }
 
-                print(f"  Seed {seed}: complete")
+                print(f"    Seed {seed}: complete")
+
+            for seed in config.seeds:
+                result_n_clusters = method_results[seed].get("n_clusters", config.k_selection.n_clusters)
+                generate_labels_yaml(
+                    method_name=method_entry.name,
+                    n_clusters=result_n_clusters,
+                    seed=seed,
+                    output_dir=method_output_dir,
+                    experiment_id=experiment_id,
+                )
+
+            with open(os.path.join(method_output_dir, "results.pkl"), "wb") as f:
+                pkl.dump(method_results, f)
+
+            all_results[method_entry.name] = method_results
+
+    dm_data_for_ss = None
+    for method_entry in state_space_methods:
+        print(f"\n{'='*60}")
+        print(f"Method: {method_entry.name} (state-space)")
+        print(f"{'='*60}")
+
+        if dm_data_for_ss is None:
+            hdf5_key = get_hdf5_key_for_dm_key(config.data.dm_key)
+            dm_data_for_ss, _ = load_data(hdf5_key, config.rodent_rollout_dir, config.split, config.n_clips)
+            min_frames = min(dm_data_for_ss.shape[1], eval_data.shape[1])
+            dm_data_for_ss = dm_data_for_ss[:, :min_frames, :]
+
+        method_output_dir = os.path.join(config.output_dir, method_entry.name)
+        os.makedirs(method_output_dir, exist_ok=True)
+
+        method = get_method(method_entry.name, method_entry.params)
+        method_results = {}
+
+        n_clusters_to_use = config.k_selection.n_clusters
+        skip_set = set(config.clustering.skip_clips)
+        keep_indices = [i for i in range(dm_data_for_ss.shape[0]) if i not in skip_set]
+
+        is_keypoint_method = method_entry.name == "kpms_keypoint"
+
+        if is_keypoint_method:
+            print(f"  Loading keypoint data for {method_entry.name}...")
+            kp_data, kp_names = load_keypoint_data(
+                config.rodent_rollout_dir, config.split, config.n_clips, config.keypoint
+            )
+            kp_data_filtered = kp_data[keep_indices]
+            print(f"  Filtered {kp_data.shape[0]} -> {kp_data_filtered.shape[0]} clips")
+            data_for_method = kp_data_filtered
+        else:
+            dm_data_filtered = dm_data_for_ss[keep_indices]
+            print(f"  Filtered {dm_data_for_ss.shape[0]} -> {dm_data_filtered.shape[0]} clips (skipped {len(skip_set)})")
+            data_for_method = dm_data_filtered
+
+        for seed in config.seeds:
+            seed_dir = os.path.join(method_output_dir, f"seed_{seed}")
+
+            if is_keypoint_method:
+                kpms_result = method.fit(
+                    data_for_method, n_clusters_to_use, seed_dir, seed,
+                    kp_names=kp_names if 'kp_names' in locals() else None
+                )
+            else:
+                kpms_result = method.fit(
+                    data_for_method, n_clusters_to_use, seed_dir, seed
+                )
+
+            cluster_dict_filtered = kpms_result.transition_cluster_dict
+            cluster_dict = {
+                cluster_id: [
+                    (clip_indices[keep_indices[clip_id]], frames)
+                    for clip_id, frames in instances
+                ]
+                for cluster_id, instances in cluster_dict_filtered.items()
+            }
+            stats = kpms_result.transition_stats
+
+            method_results[seed] = {
+                "n_clusters": len(cluster_dict),
+                "cluster_dict": cluster_dict,
+                "labels": kpms_result.labels,
+                "transition_stats": stats,
+                "reconstruction_mse": kpms_result.reconstruction_mse,
+            }
+
+            print(f"  Seed {seed}: {stats['n_sustained_segments']} sustained segments, "
+                  f"{stats['n_transition_types']} transition types, "
+                  f"{len(cluster_dict)} clusters")
+            if kpms_result.reconstruction_mse is not None:
+                print(f"  Seed {seed}: Reconstruction MSE = {kpms_result.reconstruction_mse:.6f}")
+
+            print(f"\n  Generating reconstruction plots for seed {seed}...")
+            plot_paths = plot_kpms_reconstruction(
+                kpms_result=kpms_result,
+                output_dir=seed_dir,
+                method_name=method_entry.name,
+                seed=seed,
+                n_dims=5,
+                n_clips=3,
+            )
+            method_results[seed]["reconstruction_plots"] = plot_paths
 
         for seed in config.seeds:
             result_n_clusters = method_results[seed].get("n_clusters", config.k_selection.n_clusters)

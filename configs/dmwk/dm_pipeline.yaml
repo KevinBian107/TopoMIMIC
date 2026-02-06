@@ -1,22 +1,33 @@
 # Discrete Morse Pipeline Configuration
 # Run this first to extract DM cycles
 
-output_dir: "out/dm_pipeline_ar_0.75"
+output_dir: "out/dm_pipeline_qpos"
 
 data:
-  dm_key: "intention"
+  dm_key: "qpos"  # Options: "intention (m3t6)", "qpos (m3t9)", "ekp (m3t8)"
   rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
   split: "train"
+  pca_dims: 10  # Optional PCA pre-reduction before Takens (useful for high-D spaces)
+  xml_path: "topo_mimic/dmwk/xml/rodent.xml"  # Required for ekp transform
+  stac_data_path: "data/rodent_reference_clips.h5"  # Required for ekp transform
 
 # Takens delay embedding parameters
-# Use dm_hypertune to find optimal values
 takens:
-  m: 3
-  tau: 6
+  auto_estimate: false  # Set to true to auto-tune via AMI + FNN
+  m: 3  # Used when auto_estimate is false
+  tau: 9  # Used when auto_estimate is false
+  max_tau: 200
+  bins: 64
+  m_max: 15
+  R_tol: 15.0
+  A_tol: 2.0
+  fnn_thr: 0.05
+  theiler: "auto"
+  max_points: 20000
 
 # Discrete Morse parameters
 dm:
-  pers_delta: 0.75
+  pers_delta: 0.2 # intention (0.75), qpos (0.2), ekp (0.15)
   k_neighbors: 3
   epsilon: 0.99
   skip: false  # Set to true to load existing results

@@ -25,6 +25,7 @@ from sklearn.decomposition import PCA
 from sklearn.model_selection import ParameterGrid
 
 from topo_mimic.dmwk.utils.load_utils import get_aggregate_data
+from topo_mimic.dmwk.utils.feature_transforms import apply_dm_key_transform, get_hdf5_key_for_dm_key
 from topo_mimic.dmwk.skeletonization.skeletonization import extract_skeleton_pcd_dm
 from topo_mimic.dmwk.skeletonization.preprocess import estimate_delay_embedding_params
 
@@ -35,6 +36,9 @@ class DataConfig:
     rodent_rollout_dir: str = "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
     num_clips_total: int = 800
     num_clips_eval: int = 10
+    pca_dims: int | None = None
+    xml_path: str = "topo_mimic/dmwk/xml/rodent.xml"
+    stac_data_path: str = "data/rodent_reference_clips.h5"
 
 
 @dataclass
@@ -87,7 +91,10 @@ def load_config(config_path: str) -> HypertuneConfig:
     with open(config_path, "r") as f:
         cfg = yaml.safe_load(f)
 
-    data_cfg = DataConfig(**cfg.get("data", {}))
+    data_dict = cfg.get("data", {})
+    if "pca_dims" in data_dict and data_dict["pca_dims"] is None:
+        data_dict["pca_dims"] = None
+    data_cfg = DataConfig(**data_dict)
 
     takens_raw = cfg.get("takens", {})
     theiler_val = takens_raw.get("theiler", "auto")
@@ -117,11 +124,12 @@ def load_config(config_path: str) -> HypertuneConfig:
 
 
 def load_data(config: DataConfig) -> np.ndarray:
+    hdf5_key = get_hdf5_key_for_dm_key(config.dm_key)
     work_fn = functools.partial(
-        get_aggregate_data, f"/{config.dm_key}", [], path=config.rodent_rollout_dir
+        get_aggregate_data, f"/{hdf5_key}", [], path=config.rodent_rollout_dir
     )
     with mp.Pool(processes=mp.cpu_count()) as pool:
-        data_list = list(tqdm(pool.imap(work_fn, range(config.num_clips_total)), total=config.num_clips_total, desc="Loading data"))
+        data_list = list(tqdm(pool.imap(work_fn, range(config.num_clips_total)), total=config.num_clips_total, desc=f"Loading {hdf5_key}"))
 
     first_clip = data_list[0]
     if first_clip.ndim == 2:
@@ -138,8 +146,21 @@ def load_data(config: DataConfig) -> np.ndarray:
 
     min_frames = min(d.shape[0] for d in data)
     data = data[:, :min_frames, :]
+    print(f"Loaded {hdf5_key}: {data.shape}")
 
-    print(f"Loaded: {data.shape}")
+    data = apply_dm_key_transform(
+        data, config.dm_key, config.xml_path, config.stac_data_path
+    )
+    print(f"After transform ({config.dm_key}): {data.shape}")
+
+    if config.pca_dims is not None:
+        n_clips, n_frames_d, n_dim_d = data.shape
+        flat = data.reshape(-1, n_dim_d)
+        pca = PCA(n_components=config.pca_dims)
+        flat_reduced = pca.fit_transform(flat)
+        data = flat_reduced.reshape(n_clips, n_frames_d, config.pca_dims)
+        print(f"PCA reduced: {n_dim_d} -> {config.pca_dims} dims (var explained: {pca.explained_variance_ratio_.sum():.3f})")
+
     return data
 
 
@@ -276,12 +297,22 @@ def estimate_takens_params(
 ) -> tuple[int, int, dict]:
     print("=== Auto-estimating Takens parameters (AMI + FNN) ===")
 
+    hdf5_key = get_hdf5_key_for_dm_key(config.data.dm_key)
+    transform_fn = None
+    if config.data.dm_key != "intention":
+        transform_fn = functools.partial(
+            apply_dm_key_transform,
+            dm_key=config.data.dm_key,
+            xml_path=config.data.xml_path,
+            stac_data_path=config.data.stac_data_path,
+        )
     tau_star, m_star, diagnostics = estimate_delay_embedding_params(
         rodent_rollout_dir=config.data.rodent_rollout_dir,
         get_aggregate_data_fn=get_aggregate_data,
         num_clips=config.data.num_clips_total,
-        intention_key=f"/{config.data.dm_key}",
+        intention_key=f"/{hdf5_key}",
         clip_indices=range(config.data.num_clips_total),
+        transform_fn=transform_fn,
         max_tau=config.takens.max_tau,
         bins=config.takens.bins,
         m_max=config.takens.m_max,

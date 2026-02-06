@@ -6,14 +6,26 @@ rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
 split: "train"
 n_clips: null  # Number of clips to use from split (null = all clips in split)
 
-# Data configuration
+# Data configuration (legacy)
 data:
   dm_key: "intention"
   evaluation_key: "qpos"
 
-# DM results directory (required - run dm_pipeline first)
+# DM results directory (legacy field, used as fallback when dm_sources not set)
 dm:
   results_dir: "out/dm_pipeline_ar_0.75"
+
+# Multi-feature-space DM sources
+dm_sources:
+  intention:
+    results_dir: "out/dm_pipeline_ar_0.75"
+    dm_key: "intention"
+  qpos:
+    results_dir: "out/dm_pipeline_qpos"
+    dm_key: "qpos"
+  ekp:
+    results_dir: "out/dm_pipeline_ekp"
+    dm_key: "ekp"
 
 # Keypoint configuration (for kpms_keypoint method)
 keypoint:
@@ -40,18 +52,35 @@ aggregate_seeds: true
 methods:
   - name: "w2_dm_kmeans"
     type: "clustering"
+    dm_source: "intention"
+    enabled: false
+    params:
+      mds_components: 3
+
+  - name: "w2_dm_qpos_kmeans"
+    type: "clustering"
+    dm_source: "qpos"
     enabled: true
+    params:
+      mds_components: 3
+
+  - name: "w2_dm_ekp_kmeans"
+    type: "clustering"
+    dm_source: "ekp"
+    enabled: false
     params:
       mds_components: 3
 
   - name: "w2_unif_kmeans"
     type: "clustering"
+    dm_source: "intention"
     enabled: false
     params:
       mds_components: 3
 
   - name: "gw_dm_kmeans"
     type: "clustering"
+    dm_source: "intention"
     enabled: false
     params:
       mds_components: 3
