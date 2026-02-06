@@ -245,6 +245,9 @@ class LabelingGUI:
             for k, v in existing_turns.items():
                 if v:
                     self.turn_directions[int(k)] = v
+            print(f"[GUI] Loaded {len(self.labels)} labels and {len(self.turn_directions)} turn directions from {labels_path}")
+        else:
+            print(f"[GUI] No existing labels found at {labels_path}")
 
     def _get_video_path(self, cluster_id: int) -> str | None:
         """Get path to cluster video if it exists, extracting row from grid video if needed."""
@@ -357,7 +360,7 @@ class LabelingGUI:
 
             with gr.Row():
                 with gr.Column(scale=1):
-                    video_player = gr.Video(label="Cluster Video")
+                    video_player = gr.Video(label="Cluster Video", autoplay=True)
 
                 with gr.Column(scale=1):
                     gr.Markdown("### Recommendations")
@@ -430,12 +433,21 @@ class LabelingGUI:
 
                 summary = self.get_summary_df()
 
+                if cur_label:
+                    if cur_label not in choices:
+                        choices.insert(0, cur_label)
+                    dropdown_value = cur_label
+                elif choices:
+                    dropdown_value = choices[0]
+                else:
+                    dropdown_value = None
+
                 return (
                     f"### {title}",
                     video,
                     rec_md,
                     cur_label,
-                    gr.Dropdown(choices=choices, value=None),
+                    gr.Dropdown(choices=choices, value=dropdown_value),
                     "",
                     cur_turn or "",
                     cur_turn,
@@ -483,7 +495,7 @@ class LabelingGUI:
             prev_btn.click(go_prev, inputs=[cluster_nav], outputs=[cluster_nav] + nav_outputs)
             next_btn.click(go_next, inputs=[cluster_nav], outputs=[cluster_nav] + nav_outputs)
 
-            label_dropdown.change(
+            label_dropdown.input(
                 on_dropdown_change,
                 inputs=[cluster_nav, label_dropdown],
                 outputs=label_apply_outputs,
@@ -495,7 +507,7 @@ class LabelingGUI:
                 outputs=label_apply_outputs,
             )
 
-            turn_dropdown.change(
+            turn_dropdown.input(
                 on_turn_change,
                 inputs=[cluster_nav, turn_dropdown],
                 outputs=turn_apply_outputs,
