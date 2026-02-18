@@ -1,5 +1,4 @@
-# Seeing the Boundaries: Topological Clustering of Common Behavioral Transitions
-
+# Shaped by What’s Missing: Topological Discovery of Behavioral Transitions
 ![Demo](figures/torus_dm_demo.gif)
 > Demonstration of discrete Morse traversal (cycle) on a torus.
 
