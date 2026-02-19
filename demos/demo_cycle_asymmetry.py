@@ -702,19 +702,29 @@ class CycleAsymmetryAnimation:
 
 
 class SyncedCycleAnimation:
-    """Synced animation showing full clip playback alongside PCA and per-segment panels.
+    """Synced animation with cycle loop, timeline bar, and per-segment panels.
 
-    Layout (GridSpec, 3 rows):
-        Row 0: [PCA 3D plot] [Main Video (full clip)]
-        Row 1: [Timeline bar showing segment locations + playhead]
+    Layout (GridSpec):
+        Row 0: [PCA 3D (cycle loop)] [Main Video (full clip)]
+        Row 1: [Timeline bar with colored segment ranges + playhead]
         Row 2: [Seg 1] [Seg 2] ... [Seg N]
+
+    PCA shows the full cycle as a closed loop (NN-ordered). Edges within a
+    temporal segment are colored by segment; bridge edges connecting different
+    segments are drawn dim. Non-cycle Takens points are grey.
+
+    Segment panels show live video when active; freeze on first frame before
+    the playhead reaches them, and freeze on last frame after it passes.
     """
+
+    BRIDGE_COLOR = "#888888"
 
     def __init__(
         self,
         pts_3d: np.ndarray,
         segments: list[np.ndarray],
         rodent_frames: list[np.ndarray],
+        takens_points: np.ndarray,
         m: int,
         tau: int,
         max_anim_frames: int = 250,
@@ -730,37 +740,82 @@ class SyncedCycleAnimation:
         self.offset = (m - 1) * tau
         n_clip_frames = len(rodent_frames)
 
+        all_cycle_idx = np.concatenate(segments)
+        self.all_cycle_set = set(int(i) for i in all_cycle_idx)
+        self.cycle_ordered = order_cycle_vertices(takens_points, all_cycle_idx)
+
+        self.idx_to_seg: dict[int, int] = {}
+        for si, seg in enumerate(segments):
+            for idx in seg:
+                self.idx_to_seg[int(idx)] = si
+
         self.seg_frame_ranges = []
         for seg in segments:
-            f_start = int(seg[0]) + self.offset
-            f_end = int(seg[-1]) + self.offset
-            f_start = min(f_start, n_clip_frames - 1)
-            f_end = min(f_end, n_clip_frames - 1)
+            f_start = min(int(seg[0]) + self.offset, n_clip_frames - 1)
+            f_end = min(int(seg[-1]) + self.offset, n_clip_frames - 1)
             self.seg_frame_ranges.append((f_start, f_end))
 
+        self._precompute_cycle_edges()
+        self._precompute_non_cycle_mask()
+
+        cycle_clip_frames = set()
+        for idx in all_cycle_idx:
+            cf = int(idx) + self.offset
+            if 0 <= cf < n_clip_frames:
+                cycle_clip_frames.add(cf)
+
         stride = max(1, n_clip_frames // max_anim_frames)
-        self.clip_frame_sequence = list(range(0, n_clip_frames, stride))
+        base_frames = set(range(0, n_clip_frames, stride))
+        self.clip_frame_sequence = sorted(base_frames | cycle_clip_frames)
         self.n_anim_frames = len(self.clip_frame_sequence)
 
         self.n_cols = max(len(segments), 2)
         self._setup_figure()
 
-    def _setup_figure(self):
-        n_seg = len(self.segments)
-        fig_w = max(12, self.n_cols * 3)
-        fig_h = 10 if n_seg > 0 else 6
+    def _precompute_cycle_edges(self):
+        cycle = self.cycle_ordered
+        pts = self.pts_3d
+        n = len(cycle)
 
-        self.fig = plt.figure(figsize=(fig_w, fig_h), facecolor="white")
+        seg_edge_groups: dict[int, list] = {}
+        bridge_edges: list = []
+
+        for i in range(n):
+            j = (i + 1) % n
+            idx_i, idx_j = int(cycle[i]), int(cycle[j])
+            seg_i = self.idx_to_seg.get(idx_i, -1)
+            seg_j = self.idx_to_seg.get(idx_j, -1)
+            edge = [pts[idx_i].tolist(), pts[idx_j].tolist()]
+
+            if seg_i == seg_j and seg_i >= 0:
+                seg_edge_groups.setdefault(seg_i, []).append(edge)
+            else:
+                bridge_edges.append(edge)
+
+        self._seg_edge_groups = seg_edge_groups
+        self._bridge_edges = bridge_edges
+
+    def _precompute_non_cycle_mask(self):
+        mask = np.ones(len(self.pts_3d), dtype=bool)
+        for idx in self.all_cycle_set:
+            if idx < len(mask):
+                mask[idx] = False
+        self._non_cycle_mask = mask
+
+    def _setup_figure(self):
+        fig_w = max(14, self.n_cols * 3)
+        self.fig = plt.figure(figsize=(fig_w, 10), facecolor="white")
+
         half = self.n_cols // 2
 
         gs = GridSpec(
             3, self.n_cols, figure=self.fig,
             height_ratios=[4, 0.4, 2.5],
-            hspace=0.3, wspace=0.3,
+            hspace=0.35, wspace=0.3,
         )
 
         self.ax_pca = self.fig.add_subplot(
-            gs[0, :half], projection="3d", facecolor="white"
+            gs[0, :half], projection="3d", facecolor="white",
         )
         self.ax_main = self.fig.add_subplot(gs[0, half:])
         self.ax_main.set_axis_off()
@@ -777,36 +832,34 @@ class SyncedCycleAnimation:
         clip_frame = self.clip_frame_sequence[anim_idx]
         takens_idx = clip_frame - self.offset
 
+        # --- PCA panel ---
         self.ax_pca.clear()
+
+        nc = self._non_cycle_mask
         self.ax_pca.scatter(
-            self.pts_3d[:, 0], self.pts_3d[:, 1], self.pts_3d[:, 2],
+            self.pts_3d[nc, 0], self.pts_3d[nc, 1], self.pts_3d[nc, 2],
             c="lightgray", s=2, alpha=0.15, edgecolors="none",
         )
+
+        for si, edges in self._seg_edge_groups.items():
+            color = SEGMENT_COLORS[si % len(SEGMENT_COLORS)]
+            lc = Line3DCollection(edges, colors=color, linewidths=2.5, alpha=0.9)
+            self.ax_pca.add_collection3d(lc)
+
+        if self._bridge_edges:
+            lc = Line3DCollection(
+                self._bridge_edges, colors=self.BRIDGE_COLOR,
+                linewidths=1.0, alpha=0.35,
+            )
+            self.ax_pca.add_collection3d(lc)
 
         for si, seg in enumerate(self.segments):
             color = SEGMENT_COLORS[si % len(SEGMENT_COLORS)]
             seg_pts = self.pts_3d[seg]
-
-            visited_mask = seg <= takens_idx
-            if visited_mask.any() and len(seg_pts) > 1:
-                visited_pts = seg_pts[visited_mask]
-                if len(visited_pts) > 1:
-                    self.ax_pca.plot(
-                        visited_pts[:, 0], visited_pts[:, 1], visited_pts[:, 2],
-                        c=color, linewidth=2.5, alpha=0.9,
-                    )
-                future_pts = seg_pts[~visited_mask]
-                if len(future_pts) > 1:
-                    self.ax_pca.plot(
-                        future_pts[:, 0], future_pts[:, 1], future_pts[:, 2],
-                        c=color, linewidth=1.0, alpha=0.2,
-                    )
-            else:
-                if len(seg_pts) > 1:
-                    self.ax_pca.plot(
-                        seg_pts[:, 0], seg_pts[:, 1], seg_pts[:, 2],
-                        c=color, linewidth=1.0, alpha=0.2,
-                    )
+            self.ax_pca.scatter(
+                seg_pts[:, 0], seg_pts[:, 1], seg_pts[:, 2],
+                c=color, s=15, alpha=0.8, edgecolors="none",
+            )
 
         if 0 <= takens_idx < len(self.pts_3d):
             p = self.pts_3d[takens_idx]
@@ -818,14 +871,30 @@ class SyncedCycleAnimation:
         azimuth = (anim_idx / max(self.n_anim_frames - 1, 1)) * 360
         self.ax_pca.view_init(elev=25, azim=azimuth)
         self.ax_pca.set_axis_off()
-        self.ax_pca.set_title("PCA 3D", fontsize=9)
+        self.ax_pca.set_title("Cycle (PCA 3D)", fontsize=10)
 
+        # --- Main video panel ---
         self.ax_main.clear()
         self.ax_main.set_axis_off()
         if 0 <= clip_frame < len(self.rodent_frames):
             self.ax_main.imshow(self.rodent_frames[clip_frame])
-        self.ax_main.set_title(f"Frame {clip_frame}", fontsize=9)
 
+        active_seg = None
+        for si, (fs, fe) in enumerate(self.seg_frame_ranges):
+            if fs <= clip_frame <= fe:
+                active_seg = si
+                break
+
+        if active_seg is not None:
+            color = SEGMENT_COLORS[active_seg % len(SEGMENT_COLORS)]
+            self.ax_main.set_title(
+                f"Frame {clip_frame} | Seg {active_seg + 1} [ACTIVE]",
+                fontsize=10, color=color, fontweight="bold",
+            )
+        else:
+            self.ax_main.set_title(f"Frame {clip_frame}", fontsize=10)
+
+        # --- Timeline bar ---
         self.ax_timeline.clear()
         n_clip = len(self.rodent_frames)
         self.ax_timeline.set_xlim(0, n_clip)
@@ -841,24 +910,40 @@ class SyncedCycleAnimation:
         self.ax_timeline.set_xlabel("Clip frame", fontsize=7)
         self.ax_timeline.tick_params(labelsize=6)
 
+        # --- Segment panels (freeze when not active) ---
         for si, ax in enumerate(self.ax_segs):
             ax.clear()
             ax.set_axis_off()
             color = SEGMENT_COLORS[si % len(SEGMENT_COLORS)]
             fs, fe = self.seg_frame_ranges[si]
-            active = fs <= clip_frame <= fe
 
-            if active and 0 <= clip_frame < len(self.rodent_frames):
-                ax.imshow(self.rodent_frames[clip_frame])
-                ax.set_title(f"Seg {si+1} [ACTIVE]", fontsize=8, color=color, fontweight="bold")
-                for spine in ax.spines.values():
-                    spine.set_visible(True)
-                    spine.set_color(color)
-                    spine.set_linewidth(3)
+            if clip_frame < fs:
+                show_frame = fs
+                label = f"Seg {si + 1} (waiting)"
+                title_color = "gray"
+                border_alpha = 0.3
+            elif clip_frame > fe:
+                show_frame = fe
+                label = f"Seg {si + 1} (done)"
+                title_color = "gray"
+                border_alpha = 0.3
             else:
-                blank = np.full((64, 64, 3), 200, dtype=np.uint8)
-                ax.imshow(blank)
-                ax.set_title(f"Seg {si+1} (f{fs}-{fe})", fontsize=7, color="gray")
+                show_frame = clip_frame
+                label = f"Seg {si + 1} [ACTIVE]"
+                title_color = color
+                border_alpha = 1.0
+
+            if 0 <= show_frame < len(self.rodent_frames):
+                ax.imshow(self.rodent_frames[show_frame])
+            ax.set_title(
+                label, fontsize=8, color=title_color,
+                fontweight="bold" if border_alpha == 1.0 else "normal",
+            )
+            for spine in ax.spines.values():
+                spine.set_visible(True)
+                spine.set_color(color)
+                spine.set_linewidth(3 if border_alpha == 1.0 else 1)
+                spine.set_alpha(border_alpha)
 
         return []
 
@@ -903,6 +988,7 @@ def create_gifs(
                     pts_3d=pts_3d,
                     segments=segments,
                     rodent_frames=rodent_frames,
+                    takens_points=pts,
                     m=fs_cfg.takens_m,
                     tau=fs_cfg.takens_tau,
                     max_anim_frames=vis_cfg.gif_n_frames,
