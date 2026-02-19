@@ -32,6 +32,8 @@ dm:
   epsilon: 0.99
   skip: false  # Set to true to load existing results
   results_dir: null  # Set path when skip is true
+  segment_gap_limit: 50
+  min_segment_len: 50
 
 # Video rendering (optional)
 rendering:
