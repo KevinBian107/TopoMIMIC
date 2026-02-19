@@ -36,3 +36,4 @@ visualization:
   dpi: 150
   gif_n_frames: 120
   gif_fps: 15
+  segment_gap_limit: 50

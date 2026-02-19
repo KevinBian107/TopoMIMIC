@@ -31,6 +31,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from mpl_toolkits.mplot3d.art3d import Line3DCollection
+from matplotlib.gridspec import GridSpec
 from sklearn.decomposition import PCA
 import networkx as nx
 from pathlib import Path
@@ -101,6 +102,7 @@ class VisualizationConfig:
     dpi: int = 150
     gif_n_frames: int = 120
     gif_fps: int = 15
+    segment_gap_limit: int = 50
 
 
 @dataclass
@@ -420,21 +422,69 @@ def run_dm_path_extraction(
 # ---------------------------------------------------------------------------
 
 
-def remap_indices_to_original(
-    indices: list[int] | np.ndarray,
+def order_cycle_vertices(points: np.ndarray, cycle_indices: np.ndarray) -> np.ndarray:
+    """Order cycle vertices via nearest-neighbor traversal in point cloud space."""
+    if len(cycle_indices) < 3:
+        return cycle_indices
+
+    cycle_points = points[cycle_indices]
+
+    ordered = [0]
+    remaining = set(range(1, len(cycle_indices)))
+
+    while remaining:
+        current_pt = cycle_points[ordered[-1]]
+        min_dist = float("inf")
+        nearest = None
+        for r in remaining:
+            dist = np.linalg.norm(cycle_points[r] - current_pt)
+            if dist < min_dist:
+                min_dist = dist
+                nearest = r
+        ordered.append(nearest)
+        remaining.remove(nearest)
+
+    return cycle_indices[ordered]
+
+
+def remap_and_filter(
+    indices: np.ndarray | list[int],
     remap_to_orig: dict[int, int],
-) -> list[int]:
-    """Convert remapped DM indices to original Takens point indices."""
-    return [remap_to_orig[int(i)] for i in indices if int(i) in remap_to_orig]
+    n_takens: int,
+) -> np.ndarray:
+    """Convert remapped DM indices to original Takens indices, filtering invalid."""
+    orig = [remap_to_orig[int(i)] for i in indices if int(i) in remap_to_orig]
+    return np.array([i for i in orig if i < n_takens], dtype=int)
 
 
-def takens_index_to_frame(
-    takens_idx: int,
-    m: int,
-    tau: int,
-) -> int:
-    """Convert Takens point index to original frame index."""
-    return (m - 1) * tau + takens_idx
+SEGMENT_COLORS = [
+    "#e6194b", "#3cb44b", "#4363d8", "#f58231",
+    "#911eb4", "#42d4f4", "#f032e6", "#bfef45",
+    "#fabed4", "#469990", "#dcbeff", "#9A6324",
+]
+
+
+def split_cycle_into_segments(
+    cycle_orig_indices: np.ndarray,
+    gap_limit: int = 50,
+) -> list[np.ndarray]:
+    """Split sorted cycle indices into contiguous segments based on gap limit.
+
+    Args:
+        cycle_orig_indices: Original Takens indices (will be sorted internally)
+        gap_limit: Max allowed gap between consecutive indices within a segment
+
+    Returns:
+        List of arrays, each a contiguous segment of sorted indices
+    """
+    sorted_idx = np.sort(cycle_orig_indices)
+    if len(sorted_idx) == 0:
+        return []
+
+    diffs = np.diff(sorted_idx)
+    split_points = np.where(diffs > gap_limit)[0] + 1
+    segments = np.split(sorted_idx, split_points)
+    return [seg for seg in segments if len(seg) > 0]
 
 
 def plot_static_3d(
@@ -448,6 +498,7 @@ def plot_static_3d(
 ) -> None:
     """Create static 3D PCA scatter plot with cycle and DM-path highlighted."""
     pts = dm_result.takens_points
+    n_takens = len(pts)
     pca_3d = PCA(n_components=3)
     pts_3d = pca_3d.fit_transform(pts)
 
@@ -474,9 +525,9 @@ def plot_static_3d(
 
         if dm_result.cycles:
             cycle = dm_result.cycles[0]
-            cycle_orig = remap_indices_to_original(cycle, remap_to_orig)
-            valid = [i for i in cycle_orig if i < len(pts_3d)]
+            valid = remap_and_filter(cycle, remap_to_orig, n_takens)
             if len(valid) > 1:
+                valid = order_cycle_vertices(pts, valid)
                 cycle_pts = pts_3d[valid]
                 ax.plot(
                     cycle_pts[:, 0],
@@ -489,10 +540,9 @@ def plot_static_3d(
                 )
 
         if path_result.path_indices_remapped:
-            path_orig = remap_indices_to_original(
-                path_result.path_indices_remapped, remap_to_orig
+            valid = remap_and_filter(
+                path_result.path_indices_remapped, remap_to_orig, n_takens
             )
-            valid = [i for i in path_orig if i < len(pts_3d)]
             if len(valid) > 1:
                 path_pts = pts_3d[valid]
                 ax.plot(
@@ -505,12 +555,14 @@ def plot_static_3d(
                     label=f"DM-path (L={len(valid)})",
                 )
 
-        if path_result.min1_orig is not None and path_result.min1_orig < len(pts_3d):
-            p = pts_3d[path_result.min1_orig]
-            ax.scatter([p[0]], [p[1]], [p[2]], c="gold", s=200, marker="*", zorder=200)
-        if path_result.min2_orig is not None and path_result.min2_orig < len(pts_3d):
-            p = pts_3d[path_result.min2_orig]
-            ax.scatter([p[0]], [p[1]], [p[2]], c="gold", s=200, marker="*", zorder=200)
+        for min_remapped in [path_result.min1_remapped, path_result.min2_remapped]:
+            if min_remapped is not None and min_remapped in remap_to_orig:
+                orig_idx = remap_to_orig[min_remapped]
+                if orig_idx < n_takens:
+                    p = pts_3d[orig_idx]
+                    ax.scatter(
+                        [p[0]], [p[1]], [p[2]], c="gold", s=200, marker="*", zorder=200
+                    )
 
         ax.view_init(elev=elev, azim=azim)
         ax.set_axis_off()
@@ -536,12 +588,16 @@ def plot_static_3d(
 
 
 class CycleAsymmetryAnimation:
-    """Side-by-side rotating 3D PCA + rodent rendering animation."""
+    """Side-by-side rotating 3D PCA + rodent rendering animation.
+
+    Takes Takens point indices (already remapped from DM graph space via
+    remap_to_orig) and offsets by (m-1)*tau to get frame indices.
+    """
 
     def __init__(
         self,
         pts_3d: np.ndarray,
-        trace_indices_orig: list[int],
+        trace_takens_indices: list[int],
         trace_color: str,
         trace_label: str,
         rodent_frames: list[np.ndarray],
@@ -552,22 +608,17 @@ class CycleAsymmetryAnimation:
         dpi: int = 150,
     ):
         self.pts_3d = pts_3d
-        self.trace_indices_orig = trace_indices_orig
+        self.trace_takens_indices = trace_takens_indices
         self.trace_color = trace_color
         self.trace_label = trace_label
         self.rodent_frames = rodent_frames
-        self.m = m
-        self.tau = tau
         self.n_frames = n_frames
         self.fps = fps
         self.dpi = dpi
 
-        self.frame_indices = [
-            takens_index_to_frame(i, m, tau) for i in trace_indices_orig
-        ]
-        self.frame_indices = [
-            fi for fi in self.frame_indices if fi < len(rodent_frames)
-        ]
+        offset = (m - 1) * tau
+        self.frame_indices = [i + offset for i in trace_takens_indices]
+        self.frame_indices = [fi for fi in self.frame_indices if fi < len(rodent_frames)]
 
         self._setup_figure()
 
@@ -597,8 +648,8 @@ class CycleAsymmetryAnimation:
         )
 
         progress = frame / max(self.n_frames - 1, 1)
-        n_trace = max(1, int(len(self.trace_indices_orig) * progress))
-        shown = self.trace_indices_orig[:n_trace]
+        n_trace = max(1, int(len(self.trace_takens_indices) * progress))
+        shown = self.trace_takens_indices[:n_trace]
         valid = [i for i in shown if i < len(self.pts_3d)]
 
         if len(valid) > 1:
@@ -650,6 +701,179 @@ class CycleAsymmetryAnimation:
         print(f"    Saved GIF: {output_path}")
 
 
+class SyncedCycleAnimation:
+    """Synced animation showing full clip playback alongside PCA and per-segment panels.
+
+    Layout (GridSpec, 3 rows):
+        Row 0: [PCA 3D plot] [Main Video (full clip)]
+        Row 1: [Timeline bar showing segment locations + playhead]
+        Row 2: [Seg 1] [Seg 2] ... [Seg N]
+    """
+
+    def __init__(
+        self,
+        pts_3d: np.ndarray,
+        segments: list[np.ndarray],
+        rodent_frames: list[np.ndarray],
+        m: int,
+        tau: int,
+        max_anim_frames: int = 250,
+        fps: int = 15,
+        dpi: int = 100,
+    ):
+        self.pts_3d = pts_3d
+        self.segments = segments
+        self.rodent_frames = rodent_frames
+        self.fps = fps
+        self.dpi = dpi
+
+        self.offset = (m - 1) * tau
+        n_clip_frames = len(rodent_frames)
+
+        self.seg_frame_ranges = []
+        for seg in segments:
+            f_start = int(seg[0]) + self.offset
+            f_end = int(seg[-1]) + self.offset
+            f_start = min(f_start, n_clip_frames - 1)
+            f_end = min(f_end, n_clip_frames - 1)
+            self.seg_frame_ranges.append((f_start, f_end))
+
+        stride = max(1, n_clip_frames // max_anim_frames)
+        self.clip_frame_sequence = list(range(0, n_clip_frames, stride))
+        self.n_anim_frames = len(self.clip_frame_sequence)
+
+        self.n_cols = max(len(segments), 2)
+        self._setup_figure()
+
+    def _setup_figure(self):
+        n_seg = len(self.segments)
+        fig_w = max(12, self.n_cols * 3)
+        fig_h = 10 if n_seg > 0 else 6
+
+        self.fig = plt.figure(figsize=(fig_w, fig_h), facecolor="white")
+        half = self.n_cols // 2
+
+        gs = GridSpec(
+            3, self.n_cols, figure=self.fig,
+            height_ratios=[4, 0.4, 2.5],
+            hspace=0.3, wspace=0.3,
+        )
+
+        self.ax_pca = self.fig.add_subplot(
+            gs[0, :half], projection="3d", facecolor="white"
+        )
+        self.ax_main = self.fig.add_subplot(gs[0, half:])
+        self.ax_main.set_axis_off()
+
+        self.ax_timeline = self.fig.add_subplot(gs[1, :])
+
+        self.ax_segs = []
+        for i in range(len(self.segments)):
+            ax = self.fig.add_subplot(gs[2, i])
+            ax.set_axis_off()
+            self.ax_segs.append(ax)
+
+    def animate(self, anim_idx: int):
+        clip_frame = self.clip_frame_sequence[anim_idx]
+        takens_idx = clip_frame - self.offset
+
+        self.ax_pca.clear()
+        self.ax_pca.scatter(
+            self.pts_3d[:, 0], self.pts_3d[:, 1], self.pts_3d[:, 2],
+            c="lightgray", s=2, alpha=0.15, edgecolors="none",
+        )
+
+        for si, seg in enumerate(self.segments):
+            color = SEGMENT_COLORS[si % len(SEGMENT_COLORS)]
+            seg_pts = self.pts_3d[seg]
+
+            visited_mask = seg <= takens_idx
+            if visited_mask.any() and len(seg_pts) > 1:
+                visited_pts = seg_pts[visited_mask]
+                if len(visited_pts) > 1:
+                    self.ax_pca.plot(
+                        visited_pts[:, 0], visited_pts[:, 1], visited_pts[:, 2],
+                        c=color, linewidth=2.5, alpha=0.9,
+                    )
+                future_pts = seg_pts[~visited_mask]
+                if len(future_pts) > 1:
+                    self.ax_pca.plot(
+                        future_pts[:, 0], future_pts[:, 1], future_pts[:, 2],
+                        c=color, linewidth=1.0, alpha=0.2,
+                    )
+            else:
+                if len(seg_pts) > 1:
+                    self.ax_pca.plot(
+                        seg_pts[:, 0], seg_pts[:, 1], seg_pts[:, 2],
+                        c=color, linewidth=1.0, alpha=0.2,
+                    )
+
+        if 0 <= takens_idx < len(self.pts_3d):
+            p = self.pts_3d[takens_idx]
+            self.ax_pca.scatter(
+                [p[0]], [p[1]], [p[2]],
+                c="yellow", s=120, edgecolors="black", linewidths=1.5, zorder=200,
+            )
+
+        azimuth = (anim_idx / max(self.n_anim_frames - 1, 1)) * 360
+        self.ax_pca.view_init(elev=25, azim=azimuth)
+        self.ax_pca.set_axis_off()
+        self.ax_pca.set_title("PCA 3D", fontsize=9)
+
+        self.ax_main.clear()
+        self.ax_main.set_axis_off()
+        if 0 <= clip_frame < len(self.rodent_frames):
+            self.ax_main.imshow(self.rodent_frames[clip_frame])
+        self.ax_main.set_title(f"Frame {clip_frame}", fontsize=9)
+
+        self.ax_timeline.clear()
+        n_clip = len(self.rodent_frames)
+        self.ax_timeline.set_xlim(0, n_clip)
+        self.ax_timeline.set_ylim(0, 1)
+        self.ax_timeline.set_yticks([])
+        for si, (fs, fe) in enumerate(self.seg_frame_ranges):
+            color = SEGMENT_COLORS[si % len(SEGMENT_COLORS)]
+            self.ax_timeline.barh(
+                0.5, fe - fs, left=fs, height=0.6,
+                color=color, alpha=0.7, edgecolor="none",
+            )
+        self.ax_timeline.axvline(clip_frame, color="yellow", linewidth=2, zorder=10)
+        self.ax_timeline.set_xlabel("Clip frame", fontsize=7)
+        self.ax_timeline.tick_params(labelsize=6)
+
+        for si, ax in enumerate(self.ax_segs):
+            ax.clear()
+            ax.set_axis_off()
+            color = SEGMENT_COLORS[si % len(SEGMENT_COLORS)]
+            fs, fe = self.seg_frame_ranges[si]
+            active = fs <= clip_frame <= fe
+
+            if active and 0 <= clip_frame < len(self.rodent_frames):
+                ax.imshow(self.rodent_frames[clip_frame])
+                ax.set_title(f"Seg {si+1} [ACTIVE]", fontsize=8, color=color, fontweight="bold")
+                for spine in ax.spines.values():
+                    spine.set_visible(True)
+                    spine.set_color(color)
+                    spine.set_linewidth(3)
+            else:
+                blank = np.full((64, 64, 3), 200, dtype=np.uint8)
+                ax.imshow(blank)
+                ax.set_title(f"Seg {si+1} (f{fs}-{fe})", fontsize=7, color="gray")
+
+        return []
+
+    def save_gif(self, output_path: str):
+        anim = FuncAnimation(
+            self.fig, self.animate,
+            frames=self.n_anim_frames,
+            interval=1000 // self.fps,
+            blit=False,
+        )
+        anim.save(output_path, writer="pillow", fps=self.fps, dpi=self.dpi)
+        plt.close(self.fig)
+        print(f"    Saved synced GIF: {output_path}")
+
+
 def create_gifs(
     dm_result: DMResult,
     path_result: DMPathResult,
@@ -658,8 +882,12 @@ def create_gifs(
     output_dir: str,
     vis_cfg: VisualizationConfig,
 ) -> None:
-    """Create rotating GIFs for cycle and DM-path traces."""
+    """Create rotating GIFs for cycle and DM-path traces.
+
+    Remaps DM graph indices -> original Takens indices -> frame indices.
+    """
     pts = dm_result.takens_points
+    n_takens = len(pts)
     pca_3d = PCA(n_components=3)
     pts_3d = pca_3d.fit_transform(pts)
 
@@ -667,32 +895,30 @@ def create_gifs(
 
     if dm_result.cycles:
         cycle = dm_result.cycles[0]
-        cycle_orig = remap_indices_to_original(cycle, remap_to_orig)
-        valid = [i for i in cycle_orig if i < len(pts_3d)]
+        valid = remap_and_filter(cycle, remap_to_orig, n_takens)
         if len(valid) > 1:
-            anim = CycleAsymmetryAnimation(
-                pts_3d=pts_3d,
-                trace_indices_orig=valid,
-                trace_color="red",
-                trace_label=f"Cycle ({fs_cfg.dm_key})",
-                rodent_frames=rodent_frames,
-                m=fs_cfg.takens_m,
-                tau=fs_cfg.takens_tau,
-                n_frames=vis_cfg.gif_n_frames,
-                fps=vis_cfg.gif_fps,
-                dpi=vis_cfg.dpi,
-            )
-            anim.save_gif(os.path.join(output_dir, "cycle_anim.gif"))
+            segments = split_cycle_into_segments(valid, gap_limit=vis_cfg.segment_gap_limit)
+            if segments:
+                anim = SyncedCycleAnimation(
+                    pts_3d=pts_3d,
+                    segments=segments,
+                    rodent_frames=rodent_frames,
+                    m=fs_cfg.takens_m,
+                    tau=fs_cfg.takens_tau,
+                    max_anim_frames=vis_cfg.gif_n_frames,
+                    fps=vis_cfg.gif_fps,
+                    dpi=vis_cfg.dpi,
+                )
+                anim.save_gif(os.path.join(output_dir, "cycle_synced.gif"))
 
     if path_result.path_indices_remapped:
-        path_orig = remap_indices_to_original(
-            path_result.path_indices_remapped, remap_to_orig
+        valid = remap_and_filter(
+            path_result.path_indices_remapped, remap_to_orig, n_takens
         )
-        valid = [i for i in path_orig if i < len(pts_3d)]
         if len(valid) > 1:
             anim = CycleAsymmetryAnimation(
                 pts_3d=pts_3d,
-                trace_indices_orig=valid,
+                trace_takens_indices=list(valid),
                 trace_color="dodgerblue",
                 trace_label=f"DM-path ({fs_cfg.dm_key})",
                 rodent_frames=rodent_frames,
@@ -766,6 +992,7 @@ def main():
         default=None,
         help="Only run specific feature spaces by dm_key",
     )
+    parser.add_argument("--gap-limit", type=int, default=None)
     args = parser.parse_args()
 
     default_config_path = (
@@ -797,6 +1024,9 @@ def main():
         cfg.data.xml_path = str(project_root / cfg.data.xml_path)
     if not os.path.isabs(cfg.data.stac_data_path):
         cfg.data.stac_data_path = str(project_root / cfg.data.stac_data_path)
+
+    if args.gap_limit is not None:
+        cfg.visualization.segment_gap_limit = args.gap_limit
 
     if args.clip_sets:
         cfg.clip_sets = [cs for cs in cfg.clip_sets if cs.name in args.clip_sets]
