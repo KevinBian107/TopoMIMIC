@@ -134,6 +134,7 @@ python -m demos.demo_behavior_overlap
 python -m demos.demo_torus
 python -m demos.demo_saddle
 python -m demos.demo_switching_state_space
+python -m demos.demo_cycle_asymmetry
 ```
 
 ![Saddle_demo](/figures/saddle_dm.png)
