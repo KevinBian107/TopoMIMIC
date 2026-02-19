@@ -58,7 +58,7 @@ class AnalysisConfig:
     neighborhood_radius_percentile: float = 10.0
     rips_max_dim: int = 1
     persistence_threshold: float = 0.1
-    output_dir: str = "out/dm_dim_reduction_effect"
+    output_dir: str = "outputs/dm_dim_reduction_effect"
     rodent_rollout_dir: str = "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
     split: str = "train"
     xml_path: str = "topo_mimic/dmwk/xml/rodent.xml"

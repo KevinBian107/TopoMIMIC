@@ -1,7 +1,7 @@
 # Discrete Morse Pipeline Configuration
 # Run this first to extract DM cycles
 
-output_dir: "out/dm_pipeline_qpos"
+output_dir: "outputs/dm_pipeline_qpos"
 
 data:
   dm_key: "qpos"  # Options: "intention (m3t6)", "qpos (m3t9)", "ekp (m3t8)"

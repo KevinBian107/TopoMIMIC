@@ -56,7 +56,7 @@ class RenderingConfig:
 
 @dataclass
 class SweepConfig:
-    output_dir: str = "out/hyperparam_sweep"
+    output_dir: str = "outputs/hyperparam_sweep"
     hyperparams: KPMSHyperparams = None
     data: DataConfig = None
     keypoint: KeypointConfig = None

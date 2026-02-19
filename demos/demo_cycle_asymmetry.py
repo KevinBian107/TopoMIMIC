@@ -112,7 +112,7 @@ class VisualizationConfig:
 
 @dataclass
 class Config:
-    output_dir: str = "out/cycle_asymmetry"
+    output_dir: str = "outputs/cycle_asymmetry"
     data: DataConfig = field(default_factory=DataConfig)
     feature_spaces: list[FeatureSpaceConfig] = field(default_factory=list)
     clip_sets: list[ClipSetConfig] = field(default_factory=list)
@@ -139,7 +139,7 @@ def load_config(config_path: str) -> Config:
     vis_cfg = VisualizationConfig(**cfg_dict.get("visualization", {}))
 
     return Config(
-        output_dir=cfg_dict.get("output_dir", "out/cycle_asymmetry"),
+        output_dir=cfg_dict.get("output_dir", "outputs/cycle_asymmetry"),
         data=data_cfg,
         feature_spaces=feature_spaces,
         clip_sets=clip_sets,

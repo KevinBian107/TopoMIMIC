@@ -147,7 +147,7 @@ class ClusterMergingConfig:
 
 @dataclass
 class ExperimentConfig:
-    output_dir: str = "out/experiment"
+    output_dir: str = "outputs/experiment"
     rodent_rollout_dir: str = "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
     split: str = "train"
     n_clips: int | None = None

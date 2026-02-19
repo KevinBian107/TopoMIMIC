@@ -147,7 +147,7 @@ class RenderingConfig:
 
 @dataclass
 class PipelineConfig:
-    output_dir: str = "out/dm_pipeline"
+    output_dir: str = "outputs/dm_pipeline"
     data: DataConfig = None
     takens: TakensConfig = None
     dm: DMConfig = None
@@ -189,7 +189,7 @@ def load_config(config_path: str) -> PipelineConfig:
     rendering_cfg = RenderingConfig(**rendering_dict)
 
     return PipelineConfig(
-        output_dir=cfg.get("output_dir", "out/dm_pipeline"),
+        output_dir=cfg.get("output_dir", "outputs/dm_pipeline"),
         data=data_cfg,
         takens=takens_cfg,
         dm=dm_cfg,

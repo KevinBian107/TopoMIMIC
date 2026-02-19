@@ -465,7 +465,7 @@ class TorusDMAnimation:
 
 
 def main():
-    out_dir = Path(__file__).parent.parent / "out" / "demo_torus"
+    out_dir = Path(__file__).parent.parent / "outputs" / "demo_torus"
     out_dir.mkdir(parents=True, exist_ok=True)
     output_path = out_dir / "torus_dm_demo.gif"
     dm_output_dir = out_dir / "torus_dm_output"

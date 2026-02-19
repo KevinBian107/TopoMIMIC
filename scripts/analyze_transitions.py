@@ -67,7 +67,7 @@ def normalize_pair(a: str, b: str) -> tuple[str, str]:
 class AnalysisConfig:
     labels_path: str = "behavior_labels.csv"
     data_path: str = "data/latest_rodent.h5"
-    output_dir: str = "out/transition_analysis"
+    output_dir: str = "outputs/transition_analysis"
     excluded_behaviors: set[str] = field(default_factory=lambda: EXCLUDED_BEHAVIORS.copy())
     min_gap_frames: int = 0
     max_gap_frames: int = 50

@@ -63,7 +63,7 @@ Set `launch_gui: true` in the config, or launch standalone:
 from topo_mimic.benchmark.labeling.gui import launch_gui_standalone
 
 launch_gui_standalone(
-    experiment_dir="out/benchmark_experiment",
+    experiment_dir="outputs/benchmark_experiment",
     method="w2_kmeans",
     seed=0,
 )

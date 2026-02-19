@@ -1,8 +1,8 @@
 # Render Cycle Comparison: visualize min/median/max cycles per clip
 
 rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
-output_dir: "out/out_render_cycle"
-dm_results_dir: "/home/jovyan/vast/kaiwen/TopoVNL/out/dm_pipeline_ar"
+output_dir: "outputs/out_render_cycle"
+dm_results_dir: "/home/jovyan/vast/kaiwen/TopoVNL/outputs/dm_pipeline_ar"
 
 # Number of clips to render in the grid (rows)
 num_clips_to_render: 10

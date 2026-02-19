@@ -1,4 +1,4 @@
-output_dir: "out/granularity_qpos"
+output_dir: "outputs/granularity_qpos"
 
 data:
   # dm_key: feature space for DM extraction ("intention" (m3t6), "qpos" (m3t9), or "ekp" (m3t8))

@@ -90,7 +90,7 @@ class PlottingConfig:
 
 @dataclass
 class GranularityConfig:
-    output_dir: str = "out/granularity"
+    output_dir: str = "outputs/granularity"
     data: DataConfig = field(default_factory=DataConfig)
     takens: TakensConfig = field(default_factory=TakensConfig)
     dm: DMConfig = field(default_factory=DMConfig)
@@ -127,7 +127,7 @@ def load_config(config_path: str | Path) -> GranularityConfig:
     plotting_cfg = PlottingConfig(**plotting_dict)
 
     return GranularityConfig(
-        output_dir=cfg.get("output_dir", "out/granularity"),
+        output_dir=cfg.get("output_dir", "outputs/granularity"),
         data=data_cfg,
         takens=takens_cfg,
         dm=dm_cfg,

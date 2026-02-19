@@ -64,7 +64,7 @@ class RenderingConfig:
 
 @dataclass
 class VaryingKConfig:
-    output_dir: str = "out/varying_k"
+    output_dir: str = "outputs/varying_k"
     data: DataConfig = field(default_factory=DataConfig)
     clip_selection: ClipSelectionConfig = field(default_factory=ClipSelectionConfig)
     dm: DMConfig = field(default_factory=DMConfig)
@@ -76,7 +76,7 @@ def load_config(config_path: str) -> VaryingKConfig:
         cfg_dict = yaml.safe_load(f)
 
     config = VaryingKConfig(
-        output_dir=cfg_dict.get("output_dir", "out/varying_k"),
+        output_dir=cfg_dict.get("output_dir", "outputs/varying_k"),
         data=DataConfig(**cfg_dict.get("data", {})),
         clip_selection=ClipSelectionConfig(**cfg_dict.get("clip_selection", {})),
         dm=DMConfig(**cfg_dict.get("dm", {})),

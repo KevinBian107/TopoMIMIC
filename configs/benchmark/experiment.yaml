@@ -1,7 +1,7 @@
 # Unified Benchmark Experiment Configuration
 # Single entry point for all clustering methods
 
-output_dir: "out/benchmark_experiment_train"
+output_dir: "outputs/benchmark_experiment_train"
 rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
 split: "train"
 n_clips: null  # Number of clips to use from split (null = all clips in split)
@@ -13,18 +13,18 @@ data:
 
 # DM results directory (legacy field, used as fallback when dm_sources not set)
 dm:
-  results_dir: "out/dm_pipeline_ar_0.75"
+  results_dir: "outputs/dm_pipeline_ar_0.75"
 
 # Multi-feature-space DM sources
 dm_sources:
   intention:
-    results_dir: "out/dm_pipeline_ar_0.75"
+    results_dir: "outputs/dm_pipeline_ar_0.75"
     dm_key: "intention"
   qpos:
-    results_dir: "out/dm_pipeline_qpos"
+    results_dir: "outputs/dm_pipeline_qpos"
     dm_key: "qpos"
   ekp:
-    results_dir: "out/dm_pipeline_ekp"
+    results_dir: "outputs/dm_pipeline_ekp"
     dm_key: "ekp"
 
 # Keypoint configuration (for kpms_keypoint method)

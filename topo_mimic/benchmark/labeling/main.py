@@ -51,7 +51,7 @@ class RecommendationsConfig:
 
 @dataclass
 class LabelingConfig:
-    experiment_dir: str = "out/benchmark_experiment"
+    experiment_dir: str = "outputs/benchmark_experiment"
     rodent_rollout_dir: str = "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
     behavior_labels_csv: str = "/home/jovyan/vast/kaiwen/TopoVNL/behavior_labels.csv"
 

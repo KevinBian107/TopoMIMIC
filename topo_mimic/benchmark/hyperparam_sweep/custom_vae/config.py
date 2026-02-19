@@ -30,7 +30,7 @@ class VAEHyperparams:
 
 @dataclass
 class VAESweepConfig:
-    output_dir: str = "out/vae_hyperparam_sweep"
+    output_dir: str = "outputs/vae_hyperparam_sweep"
     hyperparams: VAEHyperparams = None
     data: DataConfig = None
     keypoint: KeypointConfig = None
