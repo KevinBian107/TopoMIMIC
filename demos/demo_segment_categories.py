@@ -378,7 +378,19 @@ def render_category_video(
     output_path: str,
     fps: int = 30,
     target_size: tuple[int, int] = (320, 240),
+    max_clips_per_category: int = 5,
 ) -> None:
+    """Render a grid video with categories stacked vertically.
+
+    Layout (4 rows, n_show columns):
+        [Multi-Segment title]
+        Row 0: seg 1 of each multi-segment clip
+        Row 1: seg 2 of each multi-segment clip
+        [--- horizontal separator ---]
+        [Single-Major title]
+        Row 2: bridge frame(s) of each single-major clip
+        Row 3: major segment of each single-major clip
+    """
     from PIL import Image, ImageDraw, ImageFont
     import imageio_ffmpeg
     from topo_mimic.dmwk.skeletonization.rendering import (
@@ -398,85 +410,153 @@ def render_category_video(
     Wc, Hc = target_size
     gutter = 8
     label_h = 24
-    row_label_h = 28
+    title_h = 28
     pad = 16
+    sep_h = 6
 
-    # Row 1 (multi-segment): each clip's segments as panels
-    row1_panels = []
-    for clip in multi_clips[:5]:
-        print(f"    Rendering multi-segment clip {clip.clip_idx}...")
-        frames = _load_full_clip_frames(rodent_rollout_dir, clip.clip_idx)
-        for si, seg in enumerate(clip.segments):
-            seg_frames = [frames[min(int(fi), len(frames) - 1)] for fi in seg]
-            row1_panels.append((f"C{clip.clip_idx} S{si + 1}", seg_frames))
-
-    # Row 2 (single-major): major segment only
-    row2_panels = []
-    for clip in single_clips[:5]:
-        print(f"    Rendering single-major clip {clip.clip_idx}...")
-        frames = _load_full_clip_frames(rodent_rollout_dir, clip.clip_idx)
-        major = clip.segments[clip.major_segment_idx]
-        seg_frames = [frames[min(int(fi), len(frames) - 1)] for fi in major]
-        row2_panels.append((f"C{clip.clip_idx} major", seg_frames))
-
-    if not row1_panels and not row2_panels:
-        print("  No panels to render, skipping video")
+    n_show = min(len(multi_clips), len(single_clips), max_clips_per_category)
+    if n_show == 0:
+        print("  Need at least 1 clip in each category to render, skipping video")
         return
 
-    n_cols = max(len(row1_panels), len(row2_panels), 1)
-    n_rows = (1 if row1_panels else 0) + (1 if row2_panels else 0)
+    # Build per-clip segment frame lists
+    # multi_grid[col][row] = (label, frames)
+    multi_grid: list[list[tuple[str, list[np.ndarray]]]] = []
+    for clip in multi_clips[:n_show]:
+        print(f"    Rendering multi-segment clip {clip.clip_idx}...")
+        all_frames = _load_full_clip_frames(rodent_rollout_dir, clip.clip_idx)
+        col_data = []
+        for si, seg in enumerate(clip.segments):
+            seg_frames = [all_frames[min(int(fi), len(all_frames) - 1)] for fi in seg]
+            col_data.append((f"Seg {si + 1} ({len(seg)}f)", seg_frames))
+        multi_grid.append(col_data)
+
+    # single_grid[col][row] = (label, frames); row0=shortest bridge, row1=major
+    single_grid: list[list[tuple[str, list[np.ndarray]]]] = []
+    for clip in single_clips[:n_show]:
+        print(f"    Rendering single-major clip {clip.clip_idx}...")
+        all_frames = _load_full_clip_frames(rodent_rollout_dir, clip.clip_idx)
+        col_data = []
+        shortest_bi = min(clip.bridge_indices, key=lambda bi: len(clip.segments[bi]))
+        bseg = clip.segments[shortest_bi]
+        bframes = [all_frames[min(int(fi), len(all_frames) - 1)] for fi in bseg]
+        col_data.append((f"Bridge ({len(bseg)}f)", bframes))
+        major = clip.segments[clip.major_segment_idx]
+        mframes = [all_frames[min(int(fi), len(all_frames) - 1)] for fi in major]
+        col_data.append((f"Major ({len(major)}f)", mframes))
+        single_grid.append(col_data)
+
+    if not multi_grid and not single_grid:
+        print("  No clips to render, skipping video")
+        return
+
+    multi_n_rows = max((len(c) for c in multi_grid), default=0)
+    single_n_rows = max((len(c) for c in single_grid), default=0)
 
     cell_w = Wc
     cell_h = label_h + Hc
-    W = pad * 2 + n_cols * cell_w + (n_cols - 1) * gutter
-    H = pad * 2 + n_rows * (row_label_h + cell_h) + (n_rows - 1) * gutter
 
+    # Canvas dimensions
+    # Width: n_show columns
+    W = pad * 2 + n_show * cell_w + (n_show - 1) * gutter
+    # Height: title + clip labels + multi rows + gap + sep + gap + title + clip labels + single rows
+    col_label_h = 22
+    cat_gap = 32
+    H = (pad * 2
+         + title_h + col_label_h + multi_n_rows * cell_h + (multi_n_rows - 1) * gutter
+         + cat_gap + sep_h + cat_gap
+         + title_h + col_label_h + single_n_rows * cell_h + (single_n_rows - 1) * gutter)
+
+    # Column x positions (shared by both categories)
+    col_x: list[int] = []
+    x = pad
+    for ci in range(n_show):
+        col_x.append(x)
+        x += cell_w + gutter
+
+    # Y offsets for each category block
+    y_multi_title = pad
+    y_multi_col_labels = y_multi_title + title_h
+    y_multi_grid = y_multi_col_labels + col_label_h
+    y_sep = y_multi_grid + multi_n_rows * cell_h + (multi_n_rows - 1) * gutter + cat_gap
+    y_single_title = y_sep + sep_h + cat_gap
+    y_single_col_labels = y_single_title + title_h
+    y_single_grid = y_single_col_labels + col_label_h
+
+    # Max timeline
     max_t = 0
-    for _, frames in row1_panels + row2_panels:
-        max_t = max(max_t, len(frames))
+    for col_data in multi_grid + single_grid:
+        for _, frames in col_data:
+            max_t = max(max_t, len(frames))
     if max_t == 0:
         print("  No frames to render, skipping video")
         return
+
+    # Clip labels
+    multi_labels = [f"C{clip.clip_idx}" for clip in multi_clips[:n_show]]
+    single_labels = [f"C{clip.clip_idx}" for clip in single_clips[:n_show]]
 
     writer = imageio_ffmpeg.write_frames(
         output_path, (W, H), fps=fps, codec="h264", macro_block_size=1,
     )
     writer.send(None)
 
-    rows_data = []
-    if row1_panels:
-        rows_data.append(("Multi-Segment", row1_panels))
-    if row2_panels:
-        rows_data.append(("Single-Major", row2_panels))
-
     for t in range(max_t):
         canvas = Image.new("RGB", (W, H), (255, 255, 255))
         draw = ImageDraw.Draw(canvas)
 
-        y = pad
-        for row_label, panels in rows_data:
-            tw, th = draw.textbbox((0, 0), row_label, font=font_title)[2:]
-            draw.text(
-                (pad, y + (row_label_h - th) // 2),
-                row_label, font=font_title, fill=(0, 0, 0),
-            )
-            y += row_label_h
+        # Multi-Segment title
+        tw, _ = draw.textbbox((0, 0), "Multi-Segment", font=font_title)[2:]
+        draw.text(((W - tw) // 2, y_multi_title), "Multi-Segment",
+                  font=font_title, fill=(0, 0, 0))
 
-            for col, (panel_label, panel_frames) in enumerate(panels):
-                x = pad + col * (cell_w + gutter)
+        # Multi-segment clip labels
+        for ci in range(len(multi_grid)):
+            tw2, th2 = draw.textbbox((0, 0), multi_labels[ci], font=font)[2:]
+            draw.text((col_x[ci] + (cell_w - tw2) // 2,
+                       y_multi_col_labels + (col_label_h - th2) // 2),
+                      multi_labels[ci], font=font, fill=(0, 0, 0))
 
-                tw2, th2 = draw.textbbox((0, 0), panel_label, font=font)[2:]
-                draw.text(
-                    (x + (cell_w - tw2) // 2, y + (label_h - th2) // 2),
-                    panel_label, font=font, fill=(0, 0, 0),
-                )
-
-                fi = min(t, len(panel_frames) - 1)
-                fr = _ensure_rgb_uint8(panel_frames[fi])
+        # Multi-segment grid cells
+        for ci, col_data in enumerate(multi_grid):
+            for ri, (seg_label, seg_frames) in enumerate(col_data):
+                cx = col_x[ci]
+                cy = y_multi_grid + ri * (cell_h + gutter)
+                tw3, th3 = draw.textbbox((0, 0), seg_label, font=font)[2:]
+                draw.text((cx + (cell_w - tw3) // 2, cy + (label_h - th3) // 2),
+                          seg_label, font=font, fill=(100, 100, 100))
+                fi = min(t, len(seg_frames) - 1)
+                fr = _ensure_rgb_uint8(seg_frames[fi])
                 img = Image.fromarray(fr).resize((Wc, Hc))
-                canvas.paste(img, (x, y + label_h))
+                canvas.paste(img, (cx, cy + label_h))
 
-            y += cell_h + gutter
+        # Horizontal separator
+        draw.rectangle([pad, y_sep, W - pad, y_sep + sep_h - 1], fill=(0, 0, 0))
+
+        # Single-Major title
+        tw, _ = draw.textbbox((0, 0), "Single-Major", font=font_title)[2:]
+        draw.text(((W - tw) // 2, y_single_title), "Single-Major",
+                  font=font_title, fill=(0, 0, 0))
+
+        # Single-major clip labels
+        for ci in range(len(single_grid)):
+            tw2, th2 = draw.textbbox((0, 0), single_labels[ci], font=font)[2:]
+            draw.text((col_x[ci] + (cell_w - tw2) // 2,
+                       y_single_col_labels + (col_label_h - th2) // 2),
+                      single_labels[ci], font=font, fill=(0, 0, 0))
+
+        # Single-major grid cells
+        for ci, col_data in enumerate(single_grid):
+            for ri, (seg_label, seg_frames) in enumerate(col_data):
+                cx = col_x[ci]
+                cy = y_single_grid + ri * (cell_h + gutter)
+                tw3, th3 = draw.textbbox((0, 0), seg_label, font=font)[2:]
+                draw.text((cx + (cell_w - tw3) // 2, cy + (label_h - th3) // 2),
+                          seg_label, font=font, fill=(100, 100, 100))
+                fi = min(t, len(seg_frames) - 1)
+                fr = _ensure_rgb_uint8(seg_frames[fi])
+                img = Image.fromarray(fr).resize((Wc, Hc))
+                canvas.paste(img, (cx, cy + label_h))
 
         writer.send(np.asarray(canvas, dtype=np.uint8))
 
