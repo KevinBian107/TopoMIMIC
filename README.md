@@ -132,7 +132,6 @@ python -m demos.demo_torus
 python -m demos.demo_saddle
 python -m demos.demo_switching_state_space
 python -m demos.demo_cycle_asymmetry
-python -m demos.demo_segment_categories
 ```
 
 ## Acknowledgements
