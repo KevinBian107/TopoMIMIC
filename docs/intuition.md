@@ -40,7 +40,7 @@ High persistence means a deep, well-separated basin — a genuinely distinct beh
 
 We rank all type-0 pairs by persistence and take the **top two**. These are the two most topologically significant density minima: the two dominant behavioral states in the clip.
 
-## The DM Path: The Primary Transition Detector
+## The DM Path: The Primary Transition Recovery Tool
 
 The discrete Morse skeleton is a graph that threads through the point cloud, connecting critical points via descending manifold paths. The two density minima live in this graph, and we can find the **shortest path** between them — the DM path.
 
@@ -108,7 +108,7 @@ Unlike the DM path, which is guided by density minima and follows the densest ro
 - The cycle may **miss intermediate transition frames** that the DM path captures, because the cycle's route through the graph takes a different branch than the one threading through the transition zone.
 - The DM path captures transitions that cycles miss entirely, especially when the return trajectory is fast (few samples) or geometrically similar to the forward trajectory (skeleton merges them into one branch).
 
-This is why the DM path is the primary transition detector and cycles are a secondary, conditional signal.
+This is why the DM path is the primary transition recovery tool and cycles are a secondary, conditional signal.
 
 ### When a Cycle Is Behaviorally Meaningful
 
