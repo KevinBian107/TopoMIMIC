@@ -1,4 +1,4 @@
-output_dir: "out/vae_hyperparam_sweep"
+output_dir: "outputs/vae_hyperparam_sweep"
 
 data:
   rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"

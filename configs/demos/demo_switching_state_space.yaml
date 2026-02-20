@@ -1,7 +1,7 @@
 # Configuration for demo_switching_state_space.py
 # NASCAR Racetrack: DM-G vs SLDS Comparison
 
-output_dir: "out/switching_state_space_demo"
+output_dir: "outputs/switching_state_space_demo"
 
 # NASCAR racetrack parameters
 nascar:

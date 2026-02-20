@@ -147,7 +147,7 @@ class ClusterMergingConfig:
 
 @dataclass
 class ExperimentConfig:
-    output_dir: str = "out/experiment"
+    output_dir: str = "outputs/experiment"
     rodent_rollout_dir: str = "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
     split: str = "train"
     n_clips: int | None = None
@@ -353,8 +353,9 @@ def prepare_windows_for_clustering(
             if clustering_cfg.min_len <= len(loop) <= clustering_cfg.max_len
         ]
 
-        if clustering_cfg.only_max and len(loops) > 0:
-            loops = [max(loops, key=len)]
+        # only_max is handled upstream: dm_pipeline now pre-splits the longest
+        # cycle into segments before pickling, so all entries are already from
+        # the longest cycle. Skipping only_max filter here.
 
         clip_len = len(data[local_idx])
         for loop in loops:
@@ -365,9 +366,9 @@ def prepare_windows_for_clustering(
             windows.append((local_idx, sampled))  # Store local index for data access
             cleaned_loops.append(np.asarray(loop, dtype=int))
 
-    if clustering_cfg.only_max and cleaned_loops:
+    if cleaned_loops:
         loop_lengths = np.array([len(loop) for loop in cleaned_loops])
-        print(f"[only_max] Loop length stats: mean={loop_lengths.mean():.2f}, std={loop_lengths.std():.2f}, n={len(loop_lengths)}")
+        print(f"[segments] Segment length stats: mean={loop_lengths.mean():.2f}, std={loop_lengths.std():.2f}, n={len(loop_lengths)}")
 
     return windows, cleaned_loops
 

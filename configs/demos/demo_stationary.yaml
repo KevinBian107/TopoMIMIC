@@ -1,10 +1,10 @@
 # Render clips that have no cycles (simply connected manifolds)
 # These clips represent continuous behavioral dynamics with no discrete modes
 
-dm_results_dir: "/home/jovyan/vast/kaiwen/TopoVNL/out/dm_pipeline_ar"
+dm_results_dir: "/home/jovyan/vast/kaiwen/TopoVNL/outputs/dm_pipeline_ar"
 
 rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
-output_dir: "out/out_no_cycle_clips"
+output_dir: "outputs/out_no_cycle_clips"
 num_clips: 500
 
 grid_rows: 4

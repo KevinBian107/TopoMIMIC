@@ -2,7 +2,9 @@
 ![Demo](figures/torus_dm_demo.gif)
 > Demonstration of discrete Morse traversal (cycle) on a torus.
 
-This code base is designed to develope an unsupervised behavior clustering algorithm by looking at the latent space of [Mimic-mjx](https://github.com/talmolab/Mimic-mjx).
+This code base is designed to develope an unsupervised algorithm by looking at the latent space of [Mimic-mjx](https://github.com/talmolab/Mimic-mjx).
+
+For intuition of this work, read [this page](/docs/intuition.md).
 
 ## Environment Instantiation
 We setup this repository similar to the [Mimic-mjx package](https://github.com/talmolab/track-mjx). All the `jax` dependency should be following the ones that is specified in `Mimic-mjx`. Besides the `Mimic-mjx` environment, we also need the [Stac-mjx package](https://github.com/talmolab/stac-mjx) for benchmarking (`Stac-mjx` should be installed prior to installing from `requirements.txt`, `KPMS` requires an newer version of jax dependency, which mismatch with `Stac-mjx` but workable).
@@ -132,6 +134,7 @@ python -m demos.demo_torus
 python -m demos.demo_saddle
 python -m demos.demo_switching_state_space
 python -m demos.demo_cycle_asymmetry
+python -m demos.demo_transition_topology
 ```
 
 ## Acknowledgements

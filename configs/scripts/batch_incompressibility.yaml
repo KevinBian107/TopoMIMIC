@@ -10,7 +10,7 @@
 # - Behavioral transitions create H_1 != 0 (loops) - incompressible
 # - Weak Morse Inequalities (m_p >= beta_p) guarantee critical cell retention
 
-output_dir: "out/batch_incompressibility"
+output_dir: "outputs/batch_incompressibility"
 
 data:
   rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"

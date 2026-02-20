@@ -53,6 +53,11 @@ from topo_mimic.dmwk.skeletonization.rendering import (
     _load_full_clip_frames,
     _ensure_rgb_uint8,
 )
+from topo_mimic.dmwk.skeletonization.remap import (
+    parse_swr_remap,
+    remap_cycle_to_original,
+    split_cycle_into_segments,
+)
 
 
 def takens_embedding(X: np.ndarray, m: int, tau: int) -> np.ndarray:
@@ -107,7 +112,7 @@ class VisualizationConfig:
 
 @dataclass
 class Config:
-    output_dir: str = "out/cycle_asymmetry"
+    output_dir: str = "outputs/cycle_asymmetry"
     data: DataConfig = field(default_factory=DataConfig)
     feature_spaces: list[FeatureSpaceConfig] = field(default_factory=list)
     clip_sets: list[ClipSetConfig] = field(default_factory=list)
@@ -134,7 +139,7 @@ def load_config(config_path: str) -> Config:
     vis_cfg = VisualizationConfig(**cfg_dict.get("visualization", {}))
 
     return Config(
-        output_dir=cfg_dict.get("output_dir", "out/cycle_asymmetry"),
+        output_dir=cfg_dict.get("output_dir", "outputs/cycle_asymmetry"),
         data=data_cfg,
         feature_spaces=feature_spaces,
         clip_sets=clip_sets,
@@ -244,181 +249,7 @@ def run_dm_extraction(
 
 
 # ---------------------------------------------------------------------------
-# Step 4: DM-Path extraction
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class DMPathResult:
-    path_indices_remapped: list[int] | None
-    min1_remapped: int | None
-    min2_remapped: int | None
-    min1_orig: int | None
-    min2_orig: int | None
-    path_length: int
-    persistence_pairs: list[tuple]
-
-
-def parse_swr_filtration(output_dir: str) -> dict[int, int]:
-    """Parse sparse_weighted_rips_filtration.txt to build remap_to_orig mapping."""
-    filt_path = os.path.join(output_dir, "sparse_weighted_rips_filtration.txt")
-    remap_to_orig = {}
-    vertex_count = 0
-
-    with open(filt_path) as f:
-        for line in f:
-            parts = line.strip().split()
-            dim = int(parts[0])
-            if dim == 0:
-                orig_idx = int(parts[1])
-                remap_to_orig[vertex_count] = orig_idx
-                vertex_count += 1
-
-    return remap_to_orig
-
-
-def parse_sorted_weights(output_dir: str) -> dict[int, float]:
-    """Parse sorted-weights.txt to get weight per remapped vertex."""
-    weights_path = os.path.join(output_dir, "sorted-weights.txt")
-    weights = {}
-    with open(weights_path) as f:
-        for i, line in enumerate(f):
-            weights[i] = float(line.strip())
-    return weights
-
-
-def parse_persistence_pairs(output_dir: str) -> list[tuple[int, int, int, float]]:
-    """Parse edge_for_morse_only.txt.
-
-    Returns:
-        List of (v0, v1, type, persistence) tuples.
-        type 0: min-saddle pairs
-        type 1: saddle-max pairs
-        type 2: unpaired
-    """
-    edge_path = os.path.join(output_dir, "edge_for_morse_only.txt")
-    pairs = []
-
-    with open(edge_path) as f:
-        for line in f:
-            parts = line.strip().split()
-            if len(parts) < 4:
-                continue
-            v0 = int(parts[0])
-            v1 = int(parts[1])
-            pair_type = int(parts[2])
-            pers_str = parts[3]
-            pers = float("inf") if pers_str == "inf" else float(pers_str)
-            pairs.append((v0, v1, pair_type, pers))
-
-    return pairs
-
-
-def find_persistent_minima(
-    pairs: list[tuple[int, int, int, float]],
-    weights: dict[int, float],
-    top_k: int = 2,
-) -> list[int]:
-    """Find the top-k most persistent density minima from type-0 pairs.
-
-    For each type-0 (min-saddle) pair, the minimum vertex is the endpoint
-    with lower weight (denser region).
-    """
-    type0_pairs = [(v0, v1, pers) for v0, v1, t, pers in pairs if t == 0]
-    type0_pairs.sort(key=lambda x: abs(x[2]), reverse=True)
-
-    seen = set()
-    minima = []
-    for v0, v1, pers in type0_pairs:
-        w0 = weights.get(v0, float("inf"))
-        w1 = weights.get(v1, float("inf"))
-        min_v = v0 if w0 < w1 else v1
-        if min_v not in seen:
-            minima.append(min_v)
-            seen.add(min_v)
-        if len(minima) >= top_k:
-            break
-
-    return minima
-
-
-def extract_dm_path(
-    G_dm: nx.Graph,
-    min1: int,
-    min2: int,
-) -> list[int] | None:
-    """Find shortest path between two minima in the DM graph."""
-    try:
-        path = nx.shortest_path(G_dm, min1, min2)
-        return list(path)
-    except (nx.NetworkXNoPath, nx.NodeNotFound):
-        return None
-
-
-def run_dm_path_extraction(
-    dm_result: DMResult,
-) -> DMPathResult:
-    """Extract DM-path between two most persistent minima."""
-    output_dir = dm_result.dm_output_dir
-
-    pairs_path = os.path.join(output_dir, "edge_for_morse_only.txt")
-    weights_path = os.path.join(output_dir, "sorted-weights.txt")
-
-    if not os.path.exists(pairs_path) or not os.path.exists(weights_path):
-        print("    DM-path: persistence files not found, skipping")
-        return DMPathResult(
-            path_indices_remapped=None,
-            min1_remapped=None,
-            min2_remapped=None,
-            min1_orig=None,
-            min2_orig=None,
-            path_length=0,
-            persistence_pairs=[],
-        )
-
-    pairs = parse_persistence_pairs(output_dir)
-    weights = parse_sorted_weights(output_dir)
-    remap_to_orig = parse_swr_filtration(output_dir)
-
-    minima = find_persistent_minima(pairs, weights, top_k=2)
-
-    if len(minima) < 2:
-        print(f"    DM-path: found only {len(minima)} minima, need 2")
-        return DMPathResult(
-            path_indices_remapped=None,
-            min1_remapped=minima[0] if minima else None,
-            min2_remapped=None,
-            min1_orig=remap_to_orig.get(minima[0]) if minima else None,
-            min2_orig=None,
-            path_length=0,
-            persistence_pairs=pairs,
-        )
-
-    min1, min2 = minima[0], minima[1]
-    path = extract_dm_path(dm_result.G_dm, min1, min2)
-
-    path_length = len(path) if path else 0
-    min1_orig = remap_to_orig.get(min1)
-    min2_orig = remap_to_orig.get(min2)
-
-    if path:
-        print(f"    DM-path: {min1}({min1_orig}) -> {min2}({min2_orig}), length={path_length}")
-    else:
-        print(f"    DM-path: no path found between minima {min1} and {min2}")
-
-    return DMPathResult(
-        path_indices_remapped=path,
-        min1_remapped=min1,
-        min2_remapped=min2,
-        min1_orig=min1_orig,
-        min2_orig=min2_orig,
-        path_length=path_length,
-        persistence_pairs=pairs,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Step 5: 3D PCA visualization (static)
+# Step 4: 3D PCA visualization (static)
 # ---------------------------------------------------------------------------
 
 
@@ -447,16 +278,6 @@ def order_cycle_vertices(points: np.ndarray, cycle_indices: np.ndarray) -> np.nd
     return cycle_indices[ordered]
 
 
-def remap_and_filter(
-    indices: np.ndarray | list[int],
-    remap_to_orig: dict[int, int],
-    n_takens: int,
-) -> np.ndarray:
-    """Convert remapped DM indices to original Takens indices, filtering invalid."""
-    orig = [remap_to_orig[int(i)] for i in indices if int(i) in remap_to_orig]
-    return np.array([i for i in orig if i < n_takens], dtype=int)
-
-
 SEGMENT_COLORS = [
     "#e6194b", "#3cb44b", "#4363d8", "#f58231",
     "#911eb4", "#42d4f4", "#f032e6", "#bfef45",
@@ -464,45 +285,21 @@ SEGMENT_COLORS = [
 ]
 
 
-def split_cycle_into_segments(
-    cycle_orig_indices: np.ndarray,
-    gap_limit: int = 50,
-) -> list[np.ndarray]:
-    """Split sorted cycle indices into contiguous segments based on gap limit.
-
-    Args:
-        cycle_orig_indices: Original Takens indices (will be sorted internally)
-        gap_limit: Max allowed gap between consecutive indices within a segment
-
-    Returns:
-        List of arrays, each a contiguous segment of sorted indices
-    """
-    sorted_idx = np.sort(cycle_orig_indices)
-    if len(sorted_idx) == 0:
-        return []
-
-    diffs = np.diff(sorted_idx)
-    split_points = np.where(diffs > gap_limit)[0] + 1
-    segments = np.split(sorted_idx, split_points)
-    return [seg for seg in segments if len(seg) > 0]
-
-
 def plot_static_3d(
     dm_result: DMResult,
-    path_result: DMPathResult,
     fs_cfg: FeatureSpaceConfig,
     clip_id: int,
     clip_set_name: str,
     output_path: str,
     dpi: int = 150,
 ) -> None:
-    """Create static 3D PCA scatter plot with cycle and DM-path highlighted."""
+    """Create static 3D PCA scatter plot with cycle highlighted."""
     pts = dm_result.takens_points
     n_takens = len(pts)
     pca_3d = PCA(n_components=3)
     pts_3d = pca_3d.fit_transform(pts)
 
-    remap_to_orig = parse_swr_filtration(dm_result.dm_output_dir)
+    remap_to_orig = parse_swr_remap(dm_result.dm_output_dir)
 
     fig = plt.figure(figsize=(12, 5))
 
@@ -525,7 +322,7 @@ def plot_static_3d(
 
         if dm_result.cycles:
             cycle = dm_result.cycles[0]
-            valid = remap_and_filter(cycle, remap_to_orig, n_takens)
+            valid = remap_cycle_to_original(cycle, remap_to_orig, n_takens)
             if len(valid) > 1:
                 valid = order_cycle_vertices(pts, valid)
                 cycle_pts = pts_3d[valid]
@@ -539,31 +336,6 @@ def plot_static_3d(
                     label=f"Cycle (L={len(valid)})",
                 )
 
-        if path_result.path_indices_remapped:
-            valid = remap_and_filter(
-                path_result.path_indices_remapped, remap_to_orig, n_takens
-            )
-            if len(valid) > 1:
-                path_pts = pts_3d[valid]
-                ax.plot(
-                    path_pts[:, 0],
-                    path_pts[:, 1],
-                    path_pts[:, 2],
-                    c="dodgerblue",
-                    linewidth=2.5,
-                    alpha=0.9,
-                    label=f"DM-path (L={len(valid)})",
-                )
-
-        for min_remapped in [path_result.min1_remapped, path_result.min2_remapped]:
-            if min_remapped is not None and min_remapped in remap_to_orig:
-                orig_idx = remap_to_orig[min_remapped]
-                if orig_idx < n_takens:
-                    p = pts_3d[orig_idx]
-                    ax.scatter(
-                        [p[0]], [p[1]], [p[2]], c="gold", s=200, marker="*", zorder=200
-                    )
-
         ax.view_init(elev=elev, azim=azim)
         ax.set_axis_off()
         ax.set_title(title_suffix, fontsize=10)
@@ -572,7 +344,7 @@ def plot_static_3d(
 
     fig.suptitle(
         f"Clip {clip_id} | {fs_cfg.dm_key} | {clip_set_name}\n"
-        f"Cycles: {dm_result.n_cycles} | DM-path len: {path_result.path_length}",
+        f"Cycles: {dm_result.n_cycles}",
         fontsize=11,
         fontweight="bold",
     )
@@ -702,19 +474,29 @@ class CycleAsymmetryAnimation:
 
 
 class SyncedCycleAnimation:
-    """Synced animation showing full clip playback alongside PCA and per-segment panels.
+    """Synced animation with cycle loop, timeline bar, and per-segment panels.
 
-    Layout (GridSpec, 3 rows):
-        Row 0: [PCA 3D plot] [Main Video (full clip)]
-        Row 1: [Timeline bar showing segment locations + playhead]
+    Layout (GridSpec):
+        Row 0: [PCA 3D (cycle loop)] [Main Video (full clip)]
+        Row 1: [Timeline bar with colored segment ranges + playhead]
         Row 2: [Seg 1] [Seg 2] ... [Seg N]
+
+    PCA shows the full cycle as a closed loop (NN-ordered). Edges within a
+    temporal segment are colored by segment; bridge edges connecting different
+    segments are drawn dim. Non-cycle Takens points are grey.
+
+    Segment panels show live video when active; freeze on first frame before
+    the playhead reaches them, and freeze on last frame after it passes.
     """
+
+    BRIDGE_COLOR = "#888888"
 
     def __init__(
         self,
         pts_3d: np.ndarray,
         segments: list[np.ndarray],
         rodent_frames: list[np.ndarray],
+        takens_points: np.ndarray,
         m: int,
         tau: int,
         max_anim_frames: int = 250,
@@ -730,37 +512,82 @@ class SyncedCycleAnimation:
         self.offset = (m - 1) * tau
         n_clip_frames = len(rodent_frames)
 
+        all_cycle_idx = np.concatenate(segments)
+        self.all_cycle_set = set(int(i) for i in all_cycle_idx)
+        self.cycle_ordered = order_cycle_vertices(takens_points, all_cycle_idx)
+
+        self.idx_to_seg: dict[int, int] = {}
+        for si, seg in enumerate(segments):
+            for idx in seg:
+                self.idx_to_seg[int(idx)] = si
+
         self.seg_frame_ranges = []
         for seg in segments:
-            f_start = int(seg[0]) + self.offset
-            f_end = int(seg[-1]) + self.offset
-            f_start = min(f_start, n_clip_frames - 1)
-            f_end = min(f_end, n_clip_frames - 1)
+            f_start = min(int(seg[0]) + self.offset, n_clip_frames - 1)
+            f_end = min(int(seg[-1]) + self.offset, n_clip_frames - 1)
             self.seg_frame_ranges.append((f_start, f_end))
 
+        self._precompute_cycle_edges()
+        self._precompute_non_cycle_mask()
+
+        cycle_clip_frames = set()
+        for idx in all_cycle_idx:
+            cf = int(idx) + self.offset
+            if 0 <= cf < n_clip_frames:
+                cycle_clip_frames.add(cf)
+
         stride = max(1, n_clip_frames // max_anim_frames)
-        self.clip_frame_sequence = list(range(0, n_clip_frames, stride))
+        base_frames = set(range(0, n_clip_frames, stride))
+        self.clip_frame_sequence = sorted(base_frames | cycle_clip_frames)
         self.n_anim_frames = len(self.clip_frame_sequence)
 
         self.n_cols = max(len(segments), 2)
         self._setup_figure()
 
-    def _setup_figure(self):
-        n_seg = len(self.segments)
-        fig_w = max(12, self.n_cols * 3)
-        fig_h = 10 if n_seg > 0 else 6
+    def _precompute_cycle_edges(self):
+        cycle = self.cycle_ordered
+        pts = self.pts_3d
+        n = len(cycle)
 
-        self.fig = plt.figure(figsize=(fig_w, fig_h), facecolor="white")
+        seg_edge_groups: dict[int, list] = {}
+        bridge_edges: list = []
+
+        for i in range(n):
+            j = (i + 1) % n
+            idx_i, idx_j = int(cycle[i]), int(cycle[j])
+            seg_i = self.idx_to_seg.get(idx_i, -1)
+            seg_j = self.idx_to_seg.get(idx_j, -1)
+            edge = [pts[idx_i].tolist(), pts[idx_j].tolist()]
+
+            if seg_i == seg_j and seg_i >= 0:
+                seg_edge_groups.setdefault(seg_i, []).append(edge)
+            else:
+                bridge_edges.append(edge)
+
+        self._seg_edge_groups = seg_edge_groups
+        self._bridge_edges = bridge_edges
+
+    def _precompute_non_cycle_mask(self):
+        mask = np.ones(len(self.pts_3d), dtype=bool)
+        for idx in self.all_cycle_set:
+            if idx < len(mask):
+                mask[idx] = False
+        self._non_cycle_mask = mask
+
+    def _setup_figure(self):
+        fig_w = max(14, self.n_cols * 3)
+        self.fig = plt.figure(figsize=(fig_w, 10), facecolor="white")
+
         half = self.n_cols // 2
 
         gs = GridSpec(
             3, self.n_cols, figure=self.fig,
             height_ratios=[4, 0.4, 2.5],
-            hspace=0.3, wspace=0.3,
+            hspace=0.35, wspace=0.3,
         )
 
         self.ax_pca = self.fig.add_subplot(
-            gs[0, :half], projection="3d", facecolor="white"
+            gs[0, :half], projection="3d", facecolor="white",
         )
         self.ax_main = self.fig.add_subplot(gs[0, half:])
         self.ax_main.set_axis_off()
@@ -777,36 +604,34 @@ class SyncedCycleAnimation:
         clip_frame = self.clip_frame_sequence[anim_idx]
         takens_idx = clip_frame - self.offset
 
+        # --- PCA panel ---
         self.ax_pca.clear()
+
+        nc = self._non_cycle_mask
         self.ax_pca.scatter(
-            self.pts_3d[:, 0], self.pts_3d[:, 1], self.pts_3d[:, 2],
+            self.pts_3d[nc, 0], self.pts_3d[nc, 1], self.pts_3d[nc, 2],
             c="lightgray", s=2, alpha=0.15, edgecolors="none",
         )
+
+        for si, edges in self._seg_edge_groups.items():
+            color = SEGMENT_COLORS[si % len(SEGMENT_COLORS)]
+            lc = Line3DCollection(edges, colors=color, linewidths=2.5, alpha=0.9)
+            self.ax_pca.add_collection3d(lc)
+
+        if self._bridge_edges:
+            lc = Line3DCollection(
+                self._bridge_edges, colors=self.BRIDGE_COLOR,
+                linewidths=1.0, alpha=0.35,
+            )
+            self.ax_pca.add_collection3d(lc)
 
         for si, seg in enumerate(self.segments):
             color = SEGMENT_COLORS[si % len(SEGMENT_COLORS)]
             seg_pts = self.pts_3d[seg]
-
-            visited_mask = seg <= takens_idx
-            if visited_mask.any() and len(seg_pts) > 1:
-                visited_pts = seg_pts[visited_mask]
-                if len(visited_pts) > 1:
-                    self.ax_pca.plot(
-                        visited_pts[:, 0], visited_pts[:, 1], visited_pts[:, 2],
-                        c=color, linewidth=2.5, alpha=0.9,
-                    )
-                future_pts = seg_pts[~visited_mask]
-                if len(future_pts) > 1:
-                    self.ax_pca.plot(
-                        future_pts[:, 0], future_pts[:, 1], future_pts[:, 2],
-                        c=color, linewidth=1.0, alpha=0.2,
-                    )
-            else:
-                if len(seg_pts) > 1:
-                    self.ax_pca.plot(
-                        seg_pts[:, 0], seg_pts[:, 1], seg_pts[:, 2],
-                        c=color, linewidth=1.0, alpha=0.2,
-                    )
+            self.ax_pca.scatter(
+                seg_pts[:, 0], seg_pts[:, 1], seg_pts[:, 2],
+                c=color, s=15, alpha=0.8, edgecolors="none",
+            )
 
         if 0 <= takens_idx < len(self.pts_3d):
             p = self.pts_3d[takens_idx]
@@ -818,14 +643,30 @@ class SyncedCycleAnimation:
         azimuth = (anim_idx / max(self.n_anim_frames - 1, 1)) * 360
         self.ax_pca.view_init(elev=25, azim=azimuth)
         self.ax_pca.set_axis_off()
-        self.ax_pca.set_title("PCA 3D", fontsize=9)
+        self.ax_pca.set_title("Cycle (PCA 3D)", fontsize=10)
 
+        # --- Main video panel ---
         self.ax_main.clear()
         self.ax_main.set_axis_off()
         if 0 <= clip_frame < len(self.rodent_frames):
             self.ax_main.imshow(self.rodent_frames[clip_frame])
-        self.ax_main.set_title(f"Frame {clip_frame}", fontsize=9)
 
+        active_seg = None
+        for si, (fs, fe) in enumerate(self.seg_frame_ranges):
+            if fs <= clip_frame <= fe:
+                active_seg = si
+                break
+
+        if active_seg is not None:
+            color = SEGMENT_COLORS[active_seg % len(SEGMENT_COLORS)]
+            self.ax_main.set_title(
+                f"Frame {clip_frame} | Seg {active_seg + 1} [ACTIVE]",
+                fontsize=10, color=color, fontweight="bold",
+            )
+        else:
+            self.ax_main.set_title(f"Frame {clip_frame}", fontsize=10)
+
+        # --- Timeline bar ---
         self.ax_timeline.clear()
         n_clip = len(self.rodent_frames)
         self.ax_timeline.set_xlim(0, n_clip)
@@ -841,24 +682,40 @@ class SyncedCycleAnimation:
         self.ax_timeline.set_xlabel("Clip frame", fontsize=7)
         self.ax_timeline.tick_params(labelsize=6)
 
+        # --- Segment panels (freeze when not active) ---
         for si, ax in enumerate(self.ax_segs):
             ax.clear()
             ax.set_axis_off()
             color = SEGMENT_COLORS[si % len(SEGMENT_COLORS)]
             fs, fe = self.seg_frame_ranges[si]
-            active = fs <= clip_frame <= fe
 
-            if active and 0 <= clip_frame < len(self.rodent_frames):
-                ax.imshow(self.rodent_frames[clip_frame])
-                ax.set_title(f"Seg {si+1} [ACTIVE]", fontsize=8, color=color, fontweight="bold")
-                for spine in ax.spines.values():
-                    spine.set_visible(True)
-                    spine.set_color(color)
-                    spine.set_linewidth(3)
+            if clip_frame < fs:
+                show_frame = fs
+                label = f"Seg {si + 1} (waiting)"
+                title_color = "gray"
+                border_alpha = 0.3
+            elif clip_frame > fe:
+                show_frame = fe
+                label = f"Seg {si + 1} (done)"
+                title_color = "gray"
+                border_alpha = 0.3
             else:
-                blank = np.full((64, 64, 3), 200, dtype=np.uint8)
-                ax.imshow(blank)
-                ax.set_title(f"Seg {si+1} (f{fs}-{fe})", fontsize=7, color="gray")
+                show_frame = clip_frame
+                label = f"Seg {si + 1} [ACTIVE]"
+                title_color = color
+                border_alpha = 1.0
+
+            if 0 <= show_frame < len(self.rodent_frames):
+                ax.imshow(self.rodent_frames[show_frame])
+            ax.set_title(
+                label, fontsize=8, color=title_color,
+                fontweight="bold" if border_alpha == 1.0 else "normal",
+            )
+            for spine in ax.spines.values():
+                spine.set_visible(True)
+                spine.set_color(color)
+                spine.set_linewidth(3 if border_alpha == 1.0 else 1)
+                spine.set_alpha(border_alpha)
 
         return []
 
@@ -876,13 +733,12 @@ class SyncedCycleAnimation:
 
 def create_gifs(
     dm_result: DMResult,
-    path_result: DMPathResult,
     fs_cfg: FeatureSpaceConfig,
     rodent_frames: list[np.ndarray],
     output_dir: str,
     vis_cfg: VisualizationConfig,
 ) -> None:
-    """Create rotating GIFs for cycle and DM-path traces.
+    """Create rotating GIFs for cycle traces.
 
     Remaps DM graph indices -> original Takens indices -> frame indices.
     """
@@ -891,11 +747,11 @@ def create_gifs(
     pca_3d = PCA(n_components=3)
     pts_3d = pca_3d.fit_transform(pts)
 
-    remap_to_orig = parse_swr_filtration(dm_result.dm_output_dir)
+    remap_to_orig = parse_swr_remap(dm_result.dm_output_dir)
 
     if dm_result.cycles:
         cycle = dm_result.cycles[0]
-        valid = remap_and_filter(cycle, remap_to_orig, n_takens)
+        valid = remap_cycle_to_original(cycle, remap_to_orig, n_takens)
         if len(valid) > 1:
             segments = split_cycle_into_segments(valid, gap_limit=vis_cfg.segment_gap_limit)
             if segments:
@@ -903,6 +759,7 @@ def create_gifs(
                     pts_3d=pts_3d,
                     segments=segments,
                     rodent_frames=rodent_frames,
+                    takens_points=pts,
                     m=fs_cfg.takens_m,
                     tau=fs_cfg.takens_tau,
                     max_anim_frames=vis_cfg.gif_n_frames,
@@ -910,25 +767,6 @@ def create_gifs(
                     dpi=vis_cfg.dpi,
                 )
                 anim.save_gif(os.path.join(output_dir, "cycle_synced.gif"))
-
-    if path_result.path_indices_remapped:
-        valid = remap_and_filter(
-            path_result.path_indices_remapped, remap_to_orig, n_takens
-        )
-        if len(valid) > 1:
-            anim = CycleAsymmetryAnimation(
-                pts_3d=pts_3d,
-                trace_takens_indices=list(valid),
-                trace_color="dodgerblue",
-                trace_label=f"DM-path ({fs_cfg.dm_key})",
-                rodent_frames=rodent_frames,
-                m=fs_cfg.takens_m,
-                tau=fs_cfg.takens_tau,
-                n_frames=vis_cfg.gif_n_frames,
-                fps=vis_cfg.gif_fps,
-                dpi=vis_cfg.dpi,
-            )
-            anim.save_gif(os.path.join(output_dir, "path_anim.gif"))
 
 
 # ---------------------------------------------------------------------------
@@ -940,7 +778,7 @@ def print_summary_table(results: list[dict]) -> str:
     """Print and return a formatted summary table."""
     header = (
         f"{'Set':<20} {'Clip':>5} {'Feature':>10} {'Expect':>7} "
-        f"{'Cycles':>7} {'LongestC':>9} {'PathLen':>8} {'Match':>6}"
+        f"{'Cycles':>7} {'LongestC':>9} {'Match':>6}"
     )
     sep = "-" * len(header)
 
@@ -953,7 +791,7 @@ def print_summary_table(results: list[dict]) -> str:
 
         line = (
             f"{r['clip_set']:<20} {r['clip_id']:>5} {r['dm_key']:>10} {expect_str:>7} "
-            f"{r['n_cycles']:>7} {r['longest_cycle']:>9} {r['path_length']:>8} {match_str:>6}"
+            f"{r['n_cycles']:>7} {r['longest_cycle']:>9} {match_str:>6}"
         )
         lines.append(line)
 
@@ -1097,11 +935,8 @@ def main():
                         clip_data, fs_cfg, cfg.dm, clip_output_dir
                     )
 
-                    path_result = run_dm_path_extraction(dm_result)
-
                     plot_static_3d(
                         dm_result,
-                        path_result,
                         fs_cfg,
                         clip_id,
                         cs_cfg.name,
@@ -1112,7 +947,6 @@ def main():
                     if not args.skip_gifs and rendered_clips.get(clip_id):
                         create_gifs(
                             dm_result,
-                            path_result,
                             fs_cfg,
                             rendered_clips[clip_id],
                             clip_output_dir,
@@ -1127,7 +961,6 @@ def main():
                             "expect_cycles": cs_cfg.expect_cycles,
                             "n_cycles": dm_result.n_cycles,
                             "longest_cycle": dm_result.longest_cycle_len,
-                            "path_length": path_result.path_length,
                             "n_dm_edges": dm_result.n_dm_edges,
                             "pca_dims": fs_cfg.pca_dims,
                             "pca_var_explained": var_explained,
@@ -1150,7 +983,6 @@ def main():
                             "expect_cycles": cs_cfg.expect_cycles,
                             "n_cycles": -1,
                             "longest_cycle": -1,
-                            "path_length": -1,
                             "n_dm_edges": -1,
                             "pca_dims": fs_cfg.pca_dims,
                             "pca_var_explained": None,

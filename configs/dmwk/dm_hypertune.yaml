@@ -1,7 +1,7 @@
 # DM Hyperparameter Tuning Configuration
 # Run this to find optimal k_neighbors and pers_delta
 
-output_dir: "out/dm_hypertune"
+output_dir: "outputs/dm_hypertune"
 
 data:
   dm_key: "intention"  # Options: "intention", "qpos", "ekp"

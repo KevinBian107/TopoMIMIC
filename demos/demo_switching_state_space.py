@@ -77,7 +77,7 @@ class VisualizationConfig:
 
 @dataclass
 class Config:
-    output_dir: str = "out/switching_state_space_demo"
+    output_dir: str = "outputs/switching_state_space_demo"
     nascar: NASCARConfig = field(default_factory=NASCARConfig)
     slds_fit: SLDSFitConfig = field(default_factory=SLDSFitConfig)
     dm: MorseConfig = field(default_factory=MorseConfig)
@@ -124,7 +124,7 @@ def load_config(config_path: str) -> Config:
     )
 
     return Config(
-        output_dir=cfg_dict.get("output_dir", "out/switching_state_space_demo"),
+        output_dir=cfg_dict.get("output_dir", "outputs/switching_state_space_demo"),
         nascar=nascar_cfg,
         slds_fit=slds_cfg,
         dm=dm_cfg,

@@ -19,7 +19,7 @@ from topo_mimic.dmwk.utils.rendering import render_from_saved_rollout
 @dataclass
 class RenderCycleConfig:
     rodent_rollout_dir: str = "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
-    output_dir: str = "out/out_render_cycle"
+    output_dir: str = "outputs/out_render_cycle"
     dm_results_dir: str = "/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM/dm_results_m3_tau6_p0.75_f500"
     num_clips_to_render: int = 10
     min_cycle_len: int = 30

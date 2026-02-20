@@ -37,7 +37,7 @@ NUM_EXAMPLE_CLIPS = 3
 @dataclass
 class Config:
     dm_hypertune_dir: str = "PCD-Graph-Recon-DM/out/dm_hypertune"
-    output_dir: str = "out/cycle_persistence_analysis"
+    output_dir: str = "outputs/cycle_persistence_analysis"
     dpi: int = 150
 
 

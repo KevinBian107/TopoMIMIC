@@ -93,7 +93,7 @@ class VisualizationConfig:
 
 @dataclass
 class Config:
-    output_dir: str = "out/saddle_dm_demo"
+    output_dir: str = "outputs/saddle_dm_demo"
     surface: SurfaceConfig = field(default_factory=SurfaceConfig)
     path: PathConfig = field(default_factory=PathConfig)
     dm: MorseConfig = field(default_factory=MorseConfig)
@@ -158,7 +158,7 @@ def load_config(config_path: str) -> Config:
     )
 
     return Config(
-        output_dir=cfg_dict.get("output_dir", "out/saddle_dm_demo"),
+        output_dir=cfg_dict.get("output_dir", "outputs/saddle_dm_demo"),
         surface=surface_cfg,
         path=path_cfg,
         dm=dm_cfg,

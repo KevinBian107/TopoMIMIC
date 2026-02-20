@@ -69,7 +69,7 @@ class ParamGridConfig:
 
 @dataclass
 class HypertuneConfig:
-    output_dir: str = "out/dm_hypertune"
+    output_dir: str = "outputs/dm_hypertune"
     data: DataConfig = None
     takens: TakensConfig = None
     dm: DMConfig = None
@@ -114,7 +114,7 @@ def load_config(config_path: str) -> HypertuneConfig:
     )
 
     return HypertuneConfig(
-        output_dir=cfg.get("output_dir", "out/dm_hypertune"),
+        output_dir=cfg.get("output_dir", "outputs/dm_hypertune"),
         data=data_cfg,
         takens=takens_cfg,
         dm=dm_cfg,

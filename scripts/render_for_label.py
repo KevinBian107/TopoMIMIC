@@ -26,7 +26,7 @@ from topo_mimic.dmwk.utils.rendering import render_from_saved_rollout
 @dataclass
 class RenderConfig:
     data_path: str = "data/latest_rodent.h5"
-    output_dir: str = "out/rendered_for_label"
+    output_dir: str = "outputs/rendered_for_label"
     start_clip: int = 642
     end_clip: int = 842
     camera_name: str = "close_profile"

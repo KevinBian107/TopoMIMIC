@@ -24,6 +24,11 @@ from tqdm import tqdm
 from topo_mimic.dmwk.utils.load_utils import get_aggregate_data, get_clip_indices
 from topo_mimic.dmwk.utils.feature_transforms import apply_dm_key_transform, get_hdf5_key_for_dm_key
 from topo_mimic.dmwk.skeletonization.skeletonization import extract_skeleton_pcd_dm
+from topo_mimic.dmwk.skeletonization.remap import (
+    parse_swr_remap,
+    remap_cycle_to_original,
+    split_cycle_into_segments,
+)
 from topo_mimic.dmwk.skeletonization.preprocess import estimate_delay_embedding_params
 from topo_mimic.dmwk.skeletonization.postprocess import (
     chunk_loops_by_clustered_vpath,
@@ -127,6 +132,8 @@ class DMConfig:
     epsilon: float = 0.99
     skip: bool = False
     results_dir: str | None = None
+    segment_gap_limit: int = 50
+    min_segment_len: int = 50
 
 
 @dataclass
@@ -140,7 +147,7 @@ class RenderingConfig:
 
 @dataclass
 class PipelineConfig:
-    output_dir: str = "out/dm_pipeline"
+    output_dir: str = "outputs/dm_pipeline"
     data: DataConfig = None
     takens: TakensConfig = None
     dm: DMConfig = None
@@ -182,7 +189,7 @@ def load_config(config_path: str) -> PipelineConfig:
     rendering_cfg = RenderingConfig(**rendering_dict)
 
     return PipelineConfig(
-        output_dir=cfg.get("output_dir", "out/dm_pipeline"),
+        output_dir=cfg.get("output_dir", "outputs/dm_pipeline"),
         data=data_cfg,
         takens=takens_cfg,
         dm=dm_cfg,
@@ -268,10 +275,30 @@ def run_dm_extraction(
         )
 
         cycle_inds = [np.array(inds, dtype=int) for inds in cycle_inds]
-        all_cycle_dm.append(cycle_inds)
         all_G_sm.append(G_sm)
 
-        print(f"Clip {clip_id}: {len(cycle_inds)} cycles, {G_sm.number_of_edges()} edges")
+        if not cycle_inds:
+            all_cycle_dm.append([])
+            print(f"Clip {clip_id}: 0 cycles, {G_sm.number_of_edges()} edges")
+            continue
+
+        remap = parse_swr_remap(clip_output_dir)
+        n_takens = len(pts)
+        remapped_cycles = []
+        for cycle in cycle_inds:
+            orig = remap_cycle_to_original(cycle, remap, n_takens)
+            if len(orig) > 0:
+                remapped_cycles.append(orig)
+
+        if remapped_cycles:
+            longest = max(remapped_cycles, key=len)
+            segs = split_cycle_into_segments(longest, gap_limit=config.dm.segment_gap_limit)
+            segments = [seg for seg in segs if len(seg) >= config.dm.min_segment_len]
+        else:
+            segments = []
+
+        all_cycle_dm.append(segments)
+        print(f"Clip {clip_id}: {len(cycle_inds)} cycles -> {len(segments)} segments, {G_sm.number_of_edges()} edges")
 
     with open(os.path.join(config.output_dir, "all_G_sm.pkl"), "wb") as f:
         pkl.dump(all_G_sm, f)

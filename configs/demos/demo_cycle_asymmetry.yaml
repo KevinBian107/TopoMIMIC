@@ -1,4 +1,4 @@
-output_dir: "out/cycle_asymmetry"
+output_dir: "outputs/cycle_asymmetry"
 data:
   rodent_rollout_dir: "data/rodent_ar.h5"
   xml_path: "topo_mimic/dmwk/xml/rodent.xml"

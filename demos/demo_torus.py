@@ -38,6 +38,10 @@ sys.path.insert(0, "/home/jovyan/vast/kaiwen/TopoVNL")
 sys.path.append("/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM")
 
 from topo_mimic.dmwk.skeletonization.skeletonization import extract_skeleton_pcd_dm
+from topo_mimic.dmwk.skeletonization.remap import (
+    parse_swr_remap,
+    remap_cycle_to_original,
+)
 
 
 @dataclass
@@ -121,34 +125,27 @@ def compute_vertex_weights(points: np.ndarray, k: int) -> np.ndarray:
     return np.sqrt(np.mean(knn_dists ** 2, axis=1))
 
 
-def parse_swr_filtration(
+def parse_swr_edges(
     output_dir: str,
-) -> Tuple[List[Tuple[int, int, float]], dict]:
-    """Parse SWR filtration file for edges with alpha values.
+    remap_to_orig: dict[int, int],
+) -> List[Tuple[int, int, float]]:
+    """Parse SWR filtration file for edges with alpha values (in original index space).
 
-    The filtration file interleaves vertex and simplex entries sorted by
-    filtration value.  Vertex lines (dim 0) use the original point index;
-    edge/triangle lines (dim 1/2) use weight-sorted remapped indices.
+    Args:
+        output_dir: Directory containing DM output files
+        remap_to_orig: Mapping from remapped to original indices (from parse_swr_remap)
 
     Returns:
         swr_edges: List of (orig_v0, orig_v1, alpha) sorted by alpha
-        remap_to_orig: dict mapping remapped index -> original point index
     """
     filt_path = os.path.join(output_dir, 'sparse_weighted_rips_filtration.txt')
-
-    remap_to_orig = {}
-    vertex_count = 0
     raw_edges = []
 
     with open(filt_path) as f:
         for line in f:
             parts = line.strip().split()
             dim = int(parts[0])
-            if dim == 0:
-                orig_idx = int(parts[1])
-                remap_to_orig[vertex_count] = orig_idx
-                vertex_count += 1
-            elif dim == 1:
+            if dim == 1:
                 rv0, rv1 = int(parts[1]), int(parts[2])
                 alpha = float(parts[3])
                 raw_edges.append((rv0, rv1, alpha))
@@ -159,7 +156,7 @@ def parse_swr_filtration(
             original_edges.append((remap_to_orig[rv0], remap_to_orig[rv1], alpha))
 
     original_edges.sort(key=lambda e: e[2])
-    return original_edges, remap_to_orig
+    return original_edges
 
 
 def order_cycle_vertices(points: np.ndarray, cycle_indices: np.ndarray) -> np.ndarray:
@@ -468,7 +465,7 @@ class TorusDMAnimation:
 
 
 def main():
-    out_dir = Path(__file__).parent.parent / "out" / "demo_torus"
+    out_dir = Path(__file__).parent.parent / "outputs" / "demo_torus"
     out_dir.mkdir(parents=True, exist_ok=True)
     output_path = out_dir / "torus_dm_demo.gif"
     dm_output_dir = out_dir / "torus_dm_output"
@@ -513,9 +510,11 @@ def main():
 
     # Step 5: Parse SWR edges and convert DM data to original indices
     print("\n[5/6] Parsing SWR filtration...")
-    swr_edges, remap_to_orig = parse_swr_filtration(str(dm_output_dir))
+    remap_to_orig = parse_swr_remap(str(dm_output_dir))
+    swr_edges = parse_swr_edges(str(dm_output_dir), remap_to_orig)
     print(f"      SWR edges: {len(swr_edges)}")
 
+    n_points = len(points)
     dm_edges_orig = []
     for u, v in G_dm.edges():
         if u in remap_to_orig and v in remap_to_orig:
@@ -524,8 +523,9 @@ def main():
 
     cycles_orig = []
     for cycle in cycles:
-        orig_cycle = np.array([remap_to_orig.get(int(i), int(i)) for i in cycle])
-        cycles_orig.append(orig_cycle)
+        orig_cycle = remap_cycle_to_original(cycle, remap_to_orig, n_points)
+        if len(orig_cycle) > 0:
+            cycles_orig.append(orig_cycle)
     if cycles_orig:
         cycles_orig = sorted(cycles_orig, key=len, reverse=True)
         print(f"      Longest cycle: {len(cycles_orig[0])} vertices")

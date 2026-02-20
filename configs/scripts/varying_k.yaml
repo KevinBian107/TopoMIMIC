@@ -1,7 +1,7 @@
 # Varying K Experiment Configuration
 # Tests DM-G behavior on moving vs stationary clips across different k values
 
-output_dir: "out/varying_k"
+output_dir: "outputs/varying_k"
 
 data:
   rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"

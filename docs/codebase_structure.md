@@ -66,7 +66,7 @@ TopoVNL/
 │   └── persistent_homology.ipynb
 │
 ├── data/                      # Input data (Mimic-MJX rollouts)
-├── out/                       # Output results
+├── outputs/                       # Output results
 └── docs/                      # Documentation
 
 Figure 2: Directory tree showing the organization of source code,

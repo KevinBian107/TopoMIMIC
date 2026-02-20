@@ -494,7 +494,7 @@ similar transition patterns.
 ```bash
 python -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline.yaml
 ```
-Output: `out/dm_pipeline_ar/{all_cycle_dm.pkl, all_G_sm.pkl}`
+Output: `outputs/dm_pipeline_ar/{all_cycle_dm.pkl, all_G_sm.pkl}`
 
 **Step 2: Run W2/GW + KMeans Clustering**
 ```bash
@@ -509,7 +509,7 @@ Enable methods in config:
 ```bash
 python -m topo_mimic.benchmark.analysis.main configs/benchmark/analysis.yaml
 ```
-Output: Transition comparisons, MDS plots in `out/analysis_output/`
+Output: Transition comparisons, MDS plots in `outputs/analysis_output/`
 
 ---
 

@@ -432,7 +432,7 @@ def main(config_path: str = "configs/benchmark/analysis.yaml"):
     if os.path.exists(config_path):
         cfg = load_config(config_path)
     else:
-        cfg = AnalysisConfig(experiment_dir="out/experiment")
+        cfg = AnalysisConfig(experiment_dir="outputs/experiment")
 
     run_analysis(cfg)
 

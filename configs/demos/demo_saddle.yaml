@@ -6,7 +6,7 @@
 # 2. Path staying within one basin (no loop detected)
 # 3. Combined paths from experiments 1 and 2 (same seeds for reproducibility)
 
-output_dir: "out/saddle_dm_demo"
+output_dir: "outputs/saddle_dm_demo"
 
 surface:
   x_range: [-2.5, 2.5]
