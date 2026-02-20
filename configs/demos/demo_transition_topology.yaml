@@ -10,7 +10,7 @@ feature_spaces:
     takens_tau: 6
     pers_delta: 0.75
 clip_ids: []
-min_segment_frames: 30
+min_segment_frames: 10
 clip_discovery:
   enabled: true
   top_k: 10
@@ -26,4 +26,4 @@ visualization:
   dpi: 150
   gif_n_frames: 120
   gif_fps: 15
-  segment_gap_limit: 50
+  segment_gap_limit: 10

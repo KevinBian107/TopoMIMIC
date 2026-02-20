@@ -43,14 +43,12 @@ sys.path.append("/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM")
 from demos.demo_cycle_asymmetry import (
     load_single_clip,
     run_dm_extraction,
-    run_dm_path_extraction,
     order_cycle_vertices,
     DataConfig,
     FeatureSpaceConfig,
     DMConfig,
     VisualizationConfig,
     DMResult,
-    DMPathResult,
 )
 from topo_mimic.dmwk.skeletonization.rendering import (
     _load_full_clip_frames,
@@ -65,6 +63,87 @@ from topo_mimic.dmwk.utils.feature_transforms import (
     get_hdf5_key_for_dm_key,
 )
 from topo_mimic.dmwk.utils.load_utils import get_aggregate_data
+
+
+# ---------------------------------------------------------------------------
+# DM-Path extraction (minima finding for edge-connectivity analysis)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class DMPathResult:
+    min1_remapped: int | None
+    min2_remapped: int | None
+
+
+def _parse_sorted_weights(output_dir: str) -> dict[int, float]:
+    weights_path = os.path.join(output_dir, "sorted-weights.txt")
+    weights = {}
+    with open(weights_path) as f:
+        for i, line in enumerate(f):
+            weights[i] = float(line.strip())
+    return weights
+
+
+def _parse_persistence_pairs(output_dir: str) -> list[tuple[int, int, int, float]]:
+    edge_path = os.path.join(output_dir, "edge_for_morse_only.txt")
+    pairs = []
+    with open(edge_path) as f:
+        for line in f:
+            parts = line.strip().split()
+            if len(parts) < 4:
+                continue
+            v0, v1, pair_type = int(parts[0]), int(parts[1]), int(parts[2])
+            pers = float("inf") if parts[3] == "inf" else float(parts[3])
+            pairs.append((v0, v1, pair_type, pers))
+    return pairs
+
+
+def _find_persistent_minima(
+    pairs: list[tuple[int, int, int, float]],
+    weights: dict[int, float],
+    top_k: int = 2,
+) -> list[int]:
+    type0_pairs = [(v0, v1, pers) for v0, v1, t, pers in pairs if t == 0]
+    type0_pairs.sort(key=lambda x: abs(x[2]), reverse=True)
+
+    seen = set()
+    minima = []
+    for v0, v1, pers in type0_pairs:
+        w0 = weights.get(v0, float("inf"))
+        w1 = weights.get(v1, float("inf"))
+        min_v = v0 if w0 < w1 else v1
+        if min_v not in seen:
+            minima.append(min_v)
+            seen.add(min_v)
+        if len(minima) >= top_k:
+            break
+    return minima
+
+
+def find_dm_minima(dm_result: DMResult) -> DMPathResult:
+    """Find the two most persistent density minima in the DM graph."""
+    output_dir = dm_result.dm_output_dir
+    pairs_path = os.path.join(output_dir, "edge_for_morse_only.txt")
+    weights_path = os.path.join(output_dir, "sorted-weights.txt")
+
+    if not os.path.exists(pairs_path) or not os.path.exists(weights_path):
+        print("    Minima: persistence files not found, skipping")
+        return DMPathResult(min1_remapped=None, min2_remapped=None)
+
+    pairs = _parse_persistence_pairs(output_dir)
+    weights = _parse_sorted_weights(output_dir)
+    minima = _find_persistent_minima(pairs, weights, top_k=2)
+
+    min1 = minima[0] if len(minima) >= 1 else None
+    min2 = minima[1] if len(minima) >= 2 else None
+
+    if min1 is not None and min2 is not None:
+        print(f"    Minima: {min1}, {min2} (top-2 persistent)")
+    else:
+        print(f"    Minima: found only {len(minima)}, need 2")
+
+    return DMPathResult(min1_remapped=min1, min2_remapped=min2)
 
 
 # ---------------------------------------------------------------------------
@@ -249,12 +328,12 @@ class ConnectivityResult:
 
 def analyze_edge_connectivity(
     G_dm: nx.Graph,
-    path_result: DMPathResult,
+    minima_result: DMPathResult,
     remap_to_orig: dict[int, int],
     n_takens: int,
 ) -> ConnectivityResult | None:
-    min1 = path_result.min1_remapped
-    min2 = path_result.min2_remapped
+    min1 = minima_result.min1_remapped
+    min2 = minima_result.min2_remapped
 
     if min1 is None or min2 is None:
         print("    Connectivity: insufficient minima, skipping")
@@ -439,6 +518,7 @@ class TransitionPathAnimation:
         takens_points: np.ndarray,
         m: int,
         tau: int,
+        endpoint_result: EndpointSimilarityResult | None = None,
         n_frames: int = 120,
         fps: int = 15,
         dpi: int = 150,
@@ -452,6 +532,7 @@ class TransitionPathAnimation:
         self.path_colors = path_colors
         self.topology_label = topology_label
         self.rodent_frames = rodent_frames
+        self.endpoint_result = endpoint_result
         self.n_frames = n_frames
         self.fps = fps
         self.dpi = dpi
@@ -475,6 +556,11 @@ class TransitionPathAnimation:
 
         self._clip_len = n_clip
 
+        self._idx_to_seg: dict[int, int] = {}
+        for si, seg in enumerate(segments):
+            for idx in seg:
+                self._idx_to_seg[int(idx)] = si
+
         self._precompute_cycle_edges(takens_points)
         self._setup_figure()
 
@@ -496,6 +582,7 @@ class TransitionPathAnimation:
             return
 
         cycle_ordered = order_cycle_vertices(takens_points, self.cycle_indices)
+        self._cycle_ordered = cycle_ordered
 
         idx_to_seg: dict[int, int] = {}
         all_cycle_set: set[int] = set()
@@ -521,37 +608,70 @@ class TransitionPathAnimation:
                 self._bridge_edges.append(edge)
 
     def _setup_figure(self):
-        n_top = 1 + max(self.n_paths, 1)
-        n_bot = 2 + max(self.n_segs, 1)
-        width = max(7 + 4 * max(self.n_paths, 1), 7 + 3.5 * max(self.n_segs + 1, 2))
+        n_mid = 1 + max(self.n_paths, 1)
+        n_bot = 1 + max(self.n_segs, 1)
+        width = max(7 + 4 * max(self.n_paths, 1), 7 + 3.5 * max(self.n_segs, 1))
 
-        self.fig = plt.figure(figsize=(width, 11), facecolor="white")
-        outer = GridSpec(2, 1, figure=self.fig, height_ratios=[1, 1], hspace=0.25)
+        self.fig = plt.figure(figsize=(width, 16), facecolor="white")
+        outer = GridSpec(
+            3, 1, figure=self.fig,
+            height_ratios=[0.8, 1, 1], hspace=0.3,
+        )
 
+        has_heatmap = self.endpoint_result is not None
         top_gs = GridSpecFromSubplotSpec(
-            1, n_top, subplot_spec=outer[0],
+            1, 2 if has_heatmap else 1, subplot_spec=outer[0],
+            width_ratios=[1, 1] if has_heatmap else [1], wspace=0.15,
+        )
+
+        self.ax_full_rodent = self.fig.add_subplot(top_gs[0, 0])
+        self.ax_full_rodent.set_axis_off()
+
+        self.ax_heatmap = None
+        if has_heatmap:
+            self.ax_heatmap = self.fig.add_subplot(top_gs[0, 1])
+            self._draw_static_heatmap()
+
+        mid_gs = GridSpecFromSubplotSpec(
+            1, n_mid, subplot_spec=outer[1],
             width_ratios=[2] + [1] * max(self.n_paths, 1), wspace=0.08,
         )
         bot_gs = GridSpecFromSubplotSpec(
-            1, n_bot, subplot_spec=outer[1],
-            width_ratios=[2, 1] + [1] * max(self.n_segs, 1), wspace=0.08,
+            1, n_bot, subplot_spec=outer[2],
+            width_ratios=[2] + [1] * max(self.n_segs, 1), wspace=0.08,
         )
 
-        self.ax_path_pca = self.fig.add_subplot(top_gs[0, 0], projection="3d", facecolor="white")
+        self.ax_path_pca = self.fig.add_subplot(mid_gs[0, 0], projection="3d", facecolor="white")
         self.ax_path_imgs = []
         for i in range(self.n_paths):
-            ax = self.fig.add_subplot(top_gs[0, 1 + i])
+            ax = self.fig.add_subplot(mid_gs[0, 1 + i])
             ax.set_axis_off()
             self.ax_path_imgs.append(ax)
 
         self.ax_cycle_pca = self.fig.add_subplot(bot_gs[0, 0], projection="3d", facecolor="white")
-        self.ax_full_rodent = self.fig.add_subplot(bot_gs[0, 1])
-        self.ax_full_rodent.set_axis_off()
         self.ax_seg_imgs = []
         for i in range(self.n_segs):
-            ax = self.fig.add_subplot(bot_gs[0, 2 + i])
+            ax = self.fig.add_subplot(bot_gs[0, 1 + i])
             ax.set_axis_off()
             self.ax_seg_imgs.append(ax)
+
+    def _draw_static_heatmap(self):
+        ax = self.ax_heatmap
+        r = self.endpoint_result
+        n = len(r.endpoint_labels)
+
+        im = ax.imshow(r.similarity_matrix_cosine, cmap="RdBu_r", vmin=-1, vmax=1)
+        ax.set_xticks(range(n))
+        ax.set_yticks(range(n))
+        ax.set_xticklabels(r.endpoint_labels, rotation=45, ha="right", fontsize=7)
+        ax.set_yticklabels(r.endpoint_labels, fontsize=7)
+        ax.set_title("Endpoint Cosine Similarity", fontsize=10)
+        for i in range(n):
+            for j in range(n):
+                val = r.similarity_matrix_cosine[i, j]
+                ax.text(j, i, f"{val:.2f}", ha="center", va="center", fontsize=6,
+                        color="white" if abs(val) > 0.5 else "black")
+        self.fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
     def _draw_path_pca(self, progress: float, azimuth: float):
         ax = self.ax_path_pca
@@ -585,7 +705,7 @@ class TransitionPathAnimation:
         ax.set_axis_off()
         ax.set_title(self.topology_label, fontsize=10)
 
-    def _draw_cycle_pca(self, clip_frame: int, active_seg: int | None, azimuth: float):
+    def _draw_cycle_pca(self, clip_frame: int, active_seg: int | None, azimuth: float, progress: float):
         ax = self.ax_cycle_pca
         ax.clear()
         ax.view_init(elev=25, azim=azimuth)
@@ -593,30 +713,45 @@ class TransitionPathAnimation:
         nc = self._non_cycle_mask
         ax.scatter(
             self.pts_3d[nc, 0], self.pts_3d[nc, 1], self.pts_3d[nc, 2],
-            c="lightgray", s=2, alpha=0.15, edgecolors="none",
+            c="gray", s=3, alpha=0.15, edgecolors="none",
         )
 
-        for si, edges in self._seg_edge_groups.items():
-            color = SEGMENT_COLORS[si % len(SEGMENT_COLORS)]
-            lc = Line3DCollection(edges, colors=color, linewidths=2.5, alpha=0.9)
-            ax.add_collection3d(lc)
+        if self.cycle_indices is not None and len(self._cycle_ordered) > 1:
+            n_cycle = len(self._cycle_ordered)
+            n_trace = max(1, int(n_cycle * progress))
+            traced = self._cycle_ordered[:n_trace]
 
-        if self._bridge_edges:
-            lc = Line3DCollection(self._bridge_edges, colors=BRIDGE_COLOR, linewidths=1.0, alpha=0.35)
-            ax.add_collection3d(lc)
+            for i in range(len(traced) - 1):
+                idx_i, idx_j = int(traced[i]), int(traced[i + 1])
+                if idx_i >= len(self.pts_3d) or idx_j >= len(self.pts_3d):
+                    continue
+                seg_i = self._idx_to_seg.get(idx_i, -1)
+                seg_j = self._idx_to_seg.get(idx_j, -1)
+                p0 = self.pts_3d[idx_i]
+                p1 = self.pts_3d[idx_j]
+                if seg_i == seg_j and seg_i >= 0:
+                    color = SEGMENT_COLORS[seg_i % len(SEGMENT_COLORS)]
+                    ax.plot([p0[0], p1[0]], [p0[1], p1[1]], [p0[2], p1[2]],
+                            c=color, linewidth=2.5, alpha=0.9)
+                else:
+                    ax.plot([p0[0], p1[0]], [p0[1], p1[1]], [p0[2], p1[2]],
+                            c=BRIDGE_COLOR, linewidth=1.0, alpha=0.35)
 
-        for si, seg in enumerate(self.segments):
-            color = SEGMENT_COLORS[si % len(SEGMENT_COLORS)]
-            valid = [int(i) for i in seg if int(i) < len(self.pts_3d)]
-            if valid:
-                sp = self.pts_3d[valid]
-                ax.scatter(sp[:, 0], sp[:, 1], sp[:, 2], c=color, s=15, alpha=0.8, edgecolors="none")
+            traced_valid = [int(i) for i in traced if int(i) < len(self.pts_3d)]
+            for si, seg in enumerate(self.segments):
+                color = SEGMENT_COLORS[si % len(SEGMENT_COLORS)]
+                seg_set = set(int(i) for i in seg)
+                visible = [i for i in traced_valid if i in seg_set]
+                if visible:
+                    sp = self.pts_3d[visible]
+                    ax.scatter(sp[:, 0], sp[:, 1], sp[:, 2], c=color, s=15, alpha=0.8, edgecolors="none")
 
-        takens_idx = clip_frame - self.offset
-        if 0 <= takens_idx < len(self.pts_3d):
-            p = self.pts_3d[takens_idx]
-            ec = SEGMENT_COLORS[active_seg % len(SEGMENT_COLORS)] if active_seg is not None else "black"
-            ax.scatter([p[0]], [p[1]], [p[2]], c="yellow", s=120, edgecolors=ec, linewidths=1.5, zorder=200)
+            head_idx = int(traced[-1])
+            if head_idx < len(self.pts_3d):
+                head = self.pts_3d[head_idx]
+                head_seg = self._idx_to_seg.get(head_idx, -1)
+                ec = SEGMENT_COLORS[head_seg % len(SEGMENT_COLORS)] if head_seg >= 0 else "black"
+                ax.scatter([head[0]], [head[1]], [head[2]], c="yellow", s=120, edgecolors=ec, linewidths=1.5, zorder=200)
 
         ax.set_axis_off()
         n_s = self.n_segs
@@ -627,10 +762,23 @@ class TransitionPathAnimation:
         azimuth = (frame / self.n_frames) * 360
 
         clip_frame = self._clip_frame_at(progress)
-        active_seg = self._active_seg(clip_frame)
+
+        cycle_head_seg: int | None = None
+        seg_last_frame: dict[int, int] = {}
+        if hasattr(self, '_cycle_ordered') and len(self._cycle_ordered) > 1:
+            n_cycle = len(self._cycle_ordered)
+            n_trace = max(1, int(n_cycle * progress))
+            traced = self._cycle_ordered[:n_trace]
+            for idx in traced:
+                si = self._idx_to_seg.get(int(idx))
+                if si is not None:
+                    cf = min(int(idx) + self.offset, self._clip_len - 1)
+                    seg_last_frame[si] = cf
+            head_idx = int(traced[-1])
+            cycle_head_seg = self._idx_to_seg.get(head_idx)
 
         self._draw_path_pca(progress, azimuth)
-        self._draw_cycle_pca(clip_frame, active_seg, azimuth)
+        self._draw_cycle_pca(clip_frame, cycle_head_seg, azimuth, progress)
 
         for pi, ax in enumerate(self.ax_path_imgs):
             ax.clear()
@@ -648,14 +796,7 @@ class TransitionPathAnimation:
         ax_fr = self.ax_full_rodent
         ax_fr.clear()
         ax_fr.set_axis_off()
-        if active_seg is not None:
-            seg_color = SEGMENT_COLORS[active_seg % len(SEGMENT_COLORS)]
-            ax_fr.set_title(
-                f"Seg {active_seg+1} [ACTIVE] — F{clip_frame}",
-                fontsize=9, color=seg_color, fontweight="bold",
-            )
-        else:
-            ax_fr.set_title(f"Frame {clip_frame}", fontsize=9)
+        ax_fr.set_title(f"Full Clip Playback — Frame {clip_frame}", fontsize=10)
         if 0 <= clip_frame < len(self.rodent_frames):
             ax_fr.imshow(self.rodent_frames[clip_frame])
 
@@ -663,20 +804,21 @@ class TransitionPathAnimation:
             ax.clear()
             ax.set_axis_off()
             color = SEGMENT_COLORS[si % len(SEGMENT_COLORS)]
-            fs, fe = self.seg_frame_ranges[si]
 
-            if clip_frame < fs:
+            if si in seg_last_frame:
+                show = seg_last_frame[si]
+                is_active = (cycle_head_seg == si)
+                if is_active:
+                    label = f"Seg {si+1} [ACTIVE] — F{show}"
+                    tc, bw = color, 3
+                else:
+                    label = f"Seg {si+1} (traced) — F{show}"
+                    tc, bw = color, 1
+            else:
+                fs, _ = self.seg_frame_ranges[si]
                 show = fs
                 label = f"Seg {si+1} (waiting)"
                 tc, bw = "gray", 1
-            elif clip_frame > fe:
-                show = fe
-                label = f"Seg {si+1} (done)"
-                tc, bw = "gray", 1
-            else:
-                show = clip_frame
-                label = f"Seg {si+1} [ACTIVE]"
-                tc, bw = color, 3
 
             if 0 <= show < len(self.rodent_frames):
                 ax.imshow(self.rodent_frames[show])
@@ -961,14 +1103,14 @@ def main():
                     clip_data, fs_cfg, cfg.dm, clip_output_dir
                 )
 
-                path_result = run_dm_path_extraction(dm_result)
+                minima_result = find_dm_minima(dm_result)
 
                 # Stage 2: Edge-connectivity analysis
                 remap_to_orig = parse_swr_remap(dm_result.dm_output_dir)
                 n_takens = len(dm_result.takens_points)
 
                 conn_result = analyze_edge_connectivity(
-                    dm_result.G_dm, path_result, remap_to_orig, n_takens
+                    dm_result.G_dm, minima_result, remap_to_orig, n_takens
                 )
 
                 # Prepare PCA projection
@@ -978,12 +1120,12 @@ def main():
                 # Remap minima for visualization
                 min1_idx = None
                 min2_idx = None
-                if path_result.min1_remapped is not None and path_result.min1_remapped in remap_to_orig:
-                    orig = remap_to_orig[path_result.min1_remapped]
+                if minima_result.min1_remapped is not None and minima_result.min1_remapped in remap_to_orig:
+                    orig = remap_to_orig[minima_result.min1_remapped]
                     if orig < n_takens:
                         min1_idx = orig
-                if path_result.min2_remapped is not None and path_result.min2_remapped in remap_to_orig:
-                    orig = remap_to_orig[path_result.min2_remapped]
+                if minima_result.min2_remapped is not None and minima_result.min2_remapped in remap_to_orig:
+                    orig = remap_to_orig[minima_result.min2_remapped]
                     if orig < n_takens:
                         min2_idx = orig
 
@@ -1053,6 +1195,7 @@ def main():
                             takens_points=dm_result.takens_points,
                             m=fs_cfg.takens_m,
                             tau=fs_cfg.takens_tau,
+                            endpoint_result=endpoint_result,
                             n_frames=cfg.visualization.gif_n_frames,
                             fps=cfg.visualization.gif_fps,
                             dpi=cfg.visualization.dpi,
