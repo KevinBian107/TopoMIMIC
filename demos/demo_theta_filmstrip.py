@@ -271,9 +271,14 @@ def render_fixed_camera_frames(
     render_width: int,
     xml_path: str,
 ) -> list[np.ndarray]:
-    """Render frames from a fixed free camera."""
+    """Render frames on a white background using segmentation masking."""
     mj_model, mj_data = _load_mujoco_model(xml_path)
-    renderer = mujoco.Renderer(mj_model, height=render_height, width=render_width)
+
+    floor_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_GEOM, "floor")
+
+    rgb_renderer = mujoco.Renderer(mj_model, height=render_height, width=render_width)
+    seg_renderer = mujoco.Renderer(mj_model, height=render_height, width=render_width)
+    seg_renderer.enable_segmentation_rendering()
 
     camera = mujoco.MjvCamera()
     camera.type = mujoco.mjtCamera.mjCAMERA_FREE
@@ -286,11 +291,22 @@ def render_fixed_camera_frames(
     for fi in frame_indices:
         mj_data.qpos[:] = qposes[fi]
         mujoco.mj_forward(mj_model, mj_data)
-        renderer.update_scene(mj_data, camera=camera)
-        pixels = renderer.render().copy()
-        frames.append(_ensure_rgb_uint8(pixels))
 
-    renderer.close()
+        rgb_renderer.update_scene(mj_data, camera=camera)
+        rgb = rgb_renderer.render().copy()
+
+        seg_renderer.update_scene(mj_data, camera=camera)
+        seg = seg_renderer.render()
+        geom_ids = seg[:, :, 0].astype(np.int32)
+
+        body_mask = (geom_ids >= 0) & (geom_ids != floor_id)
+
+        white = np.full_like(rgb, 255)
+        white[body_mask] = rgb[body_mask]
+        frames.append(_ensure_rgb_uint8(white))
+
+    rgb_renderer.close()
+    seg_renderer.close()
     return frames
 
 
@@ -319,7 +335,7 @@ def _select_longest_continuous_segment(
 def _composite_frames_opaque(frames: list[np.ndarray]) -> np.ndarray:
     """Painter-style compositing: later poses paint over earlier, bodies stay opaque."""
     if not frames:
-        return np.zeros((100, 100, 3), dtype=np.uint8)
+        return np.full((100, 100, 3), 255, dtype=np.uint8)
 
     ref = frames[0]
     border = np.concatenate([
@@ -365,7 +381,7 @@ def create_filmstrip_composite(
     frame_indices_all = [fi for fi in frame_indices_all if fi < n_qpos]
 
     if len(frame_indices_all) == 0:
-        blank = np.zeros((filmstrip_cfg.render_height, filmstrip_cfg.render_width, 3), dtype=np.uint8)
+        blank = np.full((filmstrip_cfg.render_height, filmstrip_cfg.render_width, 3), 255, dtype=np.uint8)
         return FilmstripResult(
             clip_id=clip_id, path_index=path_index,
             composite_image=blank, n_poses_rendered=0, frame_indices=[],
@@ -393,7 +409,7 @@ def create_filmstrip_composite(
     )
 
     if not frames:
-        blank = np.zeros((filmstrip_cfg.render_height, filmstrip_cfg.render_width, 3), dtype=np.uint8)
+        blank = np.full((filmstrip_cfg.render_height, filmstrip_cfg.render_width, 3), 255, dtype=np.uint8)
         return FilmstripResult(
             clip_id=clip_id, path_index=path_index,
             composite_image=blank, n_poses_rendered=0, frame_indices=frame_indices,

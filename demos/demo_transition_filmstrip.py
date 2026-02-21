@@ -30,15 +30,13 @@ from collections import defaultdict
 
 sys.path.insert(0, "/home/jovyan/vast/kaiwen/TopoVNL")
 
-import mujoco
 from demos.demo_theta_filmstrip import (
     FilmstripConfig,
     FilmstripResult,
     compute_filmstrip_camera,
+    render_fixed_camera_frames,
     _composite_frames_opaque,
-    _load_mujoco_model,
 )
-from topo_mimic.dmwk.skeletonization.rendering import _ensure_rgb_uint8
 from topo_mimic.benchmark.analysis.ground_truth import (
     find_all_transitions,
     TransitionSegment,
@@ -87,56 +85,6 @@ def load_config(config_path: str) -> Config:
     )
 
 
-def _render_white_bg_frames(
-    qposes: np.ndarray,
-    frame_indices: list[int],
-    camera_lookat: np.ndarray,
-    camera_distance: float,
-    camera_elevation: float,
-    camera_azimuth: float,
-    render_height: int,
-    render_width: int,
-    xml_path: str,
-) -> list[np.ndarray]:
-    """Render frames on a white background using segmentation masking."""
-    mj_model, mj_data = _load_mujoco_model(xml_path)
-
-    floor_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_GEOM, "floor")
-
-    rgb_renderer = mujoco.Renderer(mj_model, height=render_height, width=render_width)
-    seg_renderer = mujoco.Renderer(mj_model, height=render_height, width=render_width)
-    seg_renderer.enable_segmentation_rendering()
-
-    camera = mujoco.MjvCamera()
-    camera.type = mujoco.mjtCamera.mjCAMERA_FREE
-    camera.lookat[:] = camera_lookat
-    camera.distance = camera_distance
-    camera.elevation = camera_elevation
-    camera.azimuth = camera_azimuth
-
-    frames = []
-    for fi in frame_indices:
-        mj_data.qpos[:] = qposes[fi]
-        mujoco.mj_forward(mj_model, mj_data)
-
-        rgb_renderer.update_scene(mj_data, camera=camera)
-        rgb = rgb_renderer.render().copy()
-
-        seg_renderer.update_scene(mj_data, camera=camera)
-        seg = seg_renderer.render()
-        geom_ids = seg[:, :, 0].astype(np.int32)
-
-        body_mask = (geom_ids >= 0) & (geom_ids != floor_id)
-
-        white = np.full_like(rgb, 255)
-        white[body_mask] = rgb[body_mask]
-        frames.append(_ensure_rgb_uint8(white))
-
-    rgb_renderer.close()
-    seg_renderer.close()
-    return frames
-
-
 def render_transition_filmstrip(
     qposes: np.ndarray,
     from_start: int,
@@ -174,7 +122,7 @@ def render_transition_filmstrip(
         filmstrip_cfg.camera_distance_margin,
     )
 
-    frames = _render_white_bg_frames(
+    frames = render_fixed_camera_frames(
         qposes,
         frame_indices,
         lookat,
