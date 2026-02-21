@@ -95,6 +95,7 @@ class DMConfig:
     pers_delta: float = 1.0
     k_neighbors: int = 3
     epsilon: float = 0.99
+    use_dm_path: bool = False
 
 
 @dataclass
@@ -1568,10 +1569,19 @@ def run_experiment(config: IncompressibilityConfig) -> dict:
 
 
 def main(config_path: str = "configs/scripts/incompressibility.yaml"):
-    if os.path.exists(config_path):
-        cfg = load_config(config_path)
+    import argparse
+    parser = argparse.ArgumentParser(description="Incompressibility experiment")
+    parser.add_argument("--config", type=str, default=config_path)
+    parser.add_argument("--use-dm-path", action="store_true", help="Enable DM-path extraction")
+    args, _ = parser.parse_known_args()
+
+    if os.path.exists(args.config):
+        cfg = load_config(args.config)
     else:
         cfg = IncompressibilityConfig()
+
+    if args.use_dm_path:
+        cfg.dm.use_dm_path = True
 
     run_experiment(cfg)
 
