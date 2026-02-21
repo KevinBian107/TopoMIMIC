@@ -121,20 +121,6 @@ python -m scripts.varying_k configs/scripts/varying_k.yaml
 ```
 Use `--use-dm-path` to include DM path extraction alongside cycles.
 
-## Demo
-We have the code for illustrative demos:
-
-```bash
-python -m demos.demo_stationary
-python -m demos.demo_behavior_overlap
-python -m demos.demo_torus
-python -m demos.demo_saddle
-python -m demos.demo_cycle_asymmetry
-python -m demos.demo_transition_topology
-python -m demos.demo_theta_filmstrip
-python -m demos.demo_transition_filmstrip
-```
-
 ## Acknowledgements
 - This codebase is adapted from the [MIMIC-MJX](https://mimic-mjx.talmolab.org/) package.
 - The discrete Morse graph construction was done using [PCD-Graph-Recon-DM](https://github.com/lucasjmagee/PCD-Graph-Recon-DM/tree/main).
