@@ -256,8 +256,9 @@ def run_granularity_analysis(config: GranularityConfig) -> None:
         print("\n=== Stage 4: Skipping Stationary Analysis (disabled or no DM results) ===")
 
     redundancy_output = None
+    redundancy_output_path = None
     if config.redundancy.enabled and dm_results is not None:
-        print("\n=== Stage 5: Redundancy Analysis ===")
+        print("\n=== Stage 5: Redundancy Analysis (cycles) ===")
         redundancy_output = run_redundancy_analysis(
             dm_results, intention_data, qpos_data, config, clip_indices
         )
@@ -265,6 +266,24 @@ def run_granularity_analysis(config: GranularityConfig) -> None:
         print(f"  Generated {len(redundancy_plots)} redundancy plots")
     else:
         print("\n=== Stage 5: Skipping Redundancy Analysis (disabled or no DM results) ===")
+
+    redundancy_output_path_dm = None
+    use_dm_path = getattr(config.dm, "use_dm_path", False)
+    has_paths = dm_results is not None and any(
+        r.all_path_dm is not None for r in dm_results.values()
+    )
+    if config.redundancy.enabled and has_paths and use_dm_path:
+        print("\n=== Stage 5b: Redundancy Analysis (paths) ===")
+        original_output = config.output_dir
+        config.output_dir = os.path.join(original_output, "path")
+        os.makedirs(config.output_dir, exist_ok=True)
+        redundancy_output_path_dm = run_redundancy_analysis(
+            dm_results, intention_data, qpos_data, config, clip_indices,
+            source="path",
+        )
+        path_plots = generate_redundancy_plots(redundancy_output_path_dm, config)
+        print(f"  Generated {len(path_plots)} path redundancy plots")
+        config.output_dir = original_output
 
     rendered_videos = []
     if config.rendering.enabled and redundancy_output is not None:
@@ -317,7 +336,7 @@ def main(config_path: str | None = None) -> None:
         config_path: Path to config YAML file (uses default if None)
     """
     if config_path is None:
-        config_path = "configs/granularity/granularity.yaml"
+        config_path = "configs/dmwk/granularity.yaml"
 
     if os.path.exists(config_path):
         print(f"Loading config from {config_path}")
