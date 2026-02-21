@@ -135,6 +135,7 @@ python -m demos.demo_saddle
 python -m demos.demo_cycle_asymmetry
 python -m demos.demo_transition_topology
 python -m demos.demo_theta_filmstrip
+python -m demos.demo_transition_filmstrip
 ```
 
 ## Acknowledgements
