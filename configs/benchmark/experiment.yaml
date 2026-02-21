@@ -50,35 +50,56 @@ aggregate_seeds: true
 
 # Methods to run
 methods:
-  - name: "w2_dm_kmeans"
+  - name: "w2_dmc_int_kmeans"
     type: "clustering"
     dm_source: "intention"
     enabled: false
     params:
       mds_components: 3
 
-  - name: "w2_dm_qpos_kmeans"
+  - name: "w2_dmc_qpos_kmeans"
     type: "clustering"
     dm_source: "qpos"
     enabled: true
     params:
       mds_components: 3
 
-  - name: "w2_dm_ekp_kmeans"
+  - name: "w2_dmc_ekp_kmeans"
     type: "clustering"
     dm_source: "ekp"
     enabled: false
     params:
       mds_components: 3
 
-  - name: "w2_unif_kmeans"
+  - name: "w2_dmp_int_kmeans"
     type: "clustering"
     dm_source: "intention"
     enabled: false
     params:
       mds_components: 3
 
-  - name: "gw_dm_kmeans"
+  - name: "w2_dmp_qpos_kmeans"
+    type: "clustering"
+    dm_source: "qpos"
+    enabled: false
+    params:
+      mds_components: 3
+
+  - name: "w2_dmp_ekp_kmeans"
+    type: "clustering"
+    dm_source: "ekp"
+    enabled: false
+    params:
+      mds_components: 3
+
+  - name: "w2_full_kmeans"
+    type: "clustering"
+    dm_source: "intention"
+    enabled: false
+    params:
+      mds_components: 3
+
+  - name: "gw_dmc_int_kmeans"
     type: "clustering"
     dm_source: "intention"
     enabled: false

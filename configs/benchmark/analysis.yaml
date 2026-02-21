@@ -10,7 +10,7 @@ behavior_labels_csv: "/home/jovyan/vast/kaiwen/TopoVNL/behavior_labels.csv"
 # Filter to specific methods and seeds (null = all)
 # Example: methods: ["gw_kmeans", "w2_kmeans"]
 # Example: seeds: [0, 123]
-methods: ["w2_dm_qpos_kmeans"] #["w2_dm_kmeans", "w2_dm_ekp_kmeans", "w2_dm_qpos_kmeans", "w2_unif_kmeans", "kpms_intention", "kpms_keypoint", "custom_vae"]
+methods: ["w2_dmc_qpos_kmeans"] #["w2_dmc_int_kmeans", "w2_dmc_ekp_kmeans", "w2_dmc_qpos_kmeans", "w2_dmp_int_kmeans", "w2_dmp_qpos_kmeans", "w2_dmp_ekp_kmeans", "w2_full_kmeans", "kpms_intention", "kpms_keypoint", "custom_vae"]
 seeds: [0]
 
 # =============================================================================

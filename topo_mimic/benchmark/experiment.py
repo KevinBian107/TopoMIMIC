@@ -1118,7 +1118,7 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
         X = build_feature_matrix(windows, source_data)
         print(f"Feature matrix: {X.shape}")
 
-        baseline_needed = any(m.name == "w2_unif_kmeans" for m in source_methods)
+        baseline_needed = any(m.name == "w2_full_kmeans" for m in source_methods)
         windows_baseline = None
         X_baseline = None
         if baseline_needed:
@@ -1126,7 +1126,7 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
             X_baseline = build_feature_matrix(windows_baseline, source_data)
             print(f"Baseline feature matrix: {X_baseline.shape}")
 
-        w2_dm_methods = [m for m in source_methods if m.name not in ("w2_unif_kmeans", "gw_dm_kmeans")]
+        w2_dm_methods = [m for m in source_methods if m.name not in ("w2_full_kmeans", "gw_dmc_int_kmeans") and "dmp" not in m.name]
         Dn_w2 = None
         if w2_dm_methods:
             w2_cache_path = os.path.join(config.output_dir, f"w2_distance_matrix_{source_name}.pkl")
@@ -1157,8 +1157,39 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
                 with open(w2_baseline_cache, "wb") as f:
                     pkl.dump({"D": D_w2_baseline, "Dn": Dn_w2_baseline}, f)
 
+        dmp_methods = [m for m in source_methods if "dmp" in m.name]
+        windows_path = None
+        X_path = None
+        Dn_w2_path = None
+        if dmp_methods:
+            path_pkl_path = os.path.join(source_cfg.results_dir, "all_path_dm.pkl")
+            if os.path.exists(path_pkl_path):
+                with open(path_pkl_path, "rb") as f:
+                    all_path_dm = pkl.load(f)
+                print(f"Loaded {len(all_path_dm)} path sets from {source_cfg.results_dir}")
+                windows_path, _ = prepare_windows_for_clustering(
+                    all_path_dm, source_data, config.clustering, clip_indices
+                )
+                print(f"Prepared {len(windows_path)} path windows")
+                if windows_path:
+                    X_path = build_feature_matrix(windows_path, source_data)
+                    w2_path_cache = os.path.join(config.output_dir, f"w2_distance_matrix_path_{source_name}.pkl")
+                    if os.path.exists(w2_path_cache):
+                        with open(w2_path_cache, "rb") as f:
+                            w2_data = pkl.load(f)
+                        Dn_w2_path = w2_data["Dn"]
+                    else:
+                        D_w2_p, Dn_w2_path = compute_w2_distance_matrix(
+                            windows_path, source_data, config.clustering.target_len
+                        )
+                        with open(w2_path_cache, "wb") as f:
+                            pkl.dump({"D": D_w2_p, "Dn": Dn_w2_path}, f)
+                        print(f"Cached W2 path matrix to {w2_path_cache}")
+            else:
+                print(f"WARNING: all_path_dm.pkl not found at {source_cfg.results_dir}, dmp methods will be skipped")
+
         Dn_gw = None
-        gw_methods = [m for m in source_methods if m.name == "gw_dm_kmeans"]
+        gw_methods = [m for m in source_methods if m.name == "gw_dmc_int_kmeans"]
         if gw_methods:
             gw_params = gw_methods[0].params
             loss_fun = gw_params.get("loss_fun", "square_loss")
@@ -1185,14 +1216,21 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
             method = get_method(method_entry.name, method_entry.params)
             method_results = {}
 
-            if method_entry.name == "w2_unif_kmeans":
+            if method_entry.name == "w2_full_kmeans":
                 method.params["distance_matrix"] = Dn_w2_baseline
                 current_windows = windows_baseline
                 current_X = X_baseline
-            elif method_entry.name == "gw_dm_kmeans":
+            elif method_entry.name == "gw_dmc_int_kmeans":
                 method.params["distance_matrix"] = Dn_gw
                 current_windows = windows
                 current_X = X
+            elif "dmp" in method_entry.name:
+                if Dn_w2_path is None or windows_path is None:
+                    print(f"    Skipping {method_entry.name}: no path data available")
+                    continue
+                method.params["distance_matrix"] = Dn_w2_path
+                current_windows = windows_path
+                current_X = X_path
             else:
                 method.params["distance_matrix"] = Dn_w2
                 current_windows = windows

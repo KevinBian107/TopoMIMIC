@@ -309,13 +309,13 @@ class BaseMethod(ABC):
         pass
 
 
-class W2DMKMeans(BaseMethod):
+class W2DMCIntKMeans(BaseMethod):
     """
-    Wasserstein-2 based clustering on DM cycles using MDS embedding + KMeans.
+    Wasserstein-2 based clustering on DM cycles (intention space) using MDS + KMeans.
     Requires precomputed W2 distance matrix passed via params.
     """
     def __init__(self, params: dict = None):
-        super().__init__("w2_dm_kmeans", params)
+        super().__init__("w2_dmc_int_kmeans", params)
         self.mds_components = self.params.get("mds_components", 3)
 
     @property
@@ -343,17 +343,17 @@ class W2DMKMeans(BaseMethod):
         return km.fit_predict(X_mds)
 
 
-class W2UnifKMeans(BaseMethod):
+class W2FullKMeans(BaseMethod):
     """
     Baseline: W2 clustering on uniformly sampled frames (not DM cycles).
 
-    Same algorithm as W2DMKMeans but uses windows from all frames
+    Same algorithm as W2DMCIntKMeans but uses windows from all frames
     instead of topologically-discovered cycles. This serves as a
     baseline to evaluate whether topology-based cycle detection
     improves clustering quality.
     """
     def __init__(self, params: dict = None):
-        super().__init__("w2_unif_kmeans", params)
+        super().__init__("w2_full_kmeans", params)
         self.mds_components = self.params.get("mds_components", 3)
 
     @property
@@ -381,13 +381,13 @@ class W2UnifKMeans(BaseMethod):
         return km.fit_predict(X_mds)
 
 
-class GWDMKMeans(BaseMethod):
+class GWDMCIntKMeans(BaseMethod):
     """
-    Gromov-Wasserstein based clustering on DM cycles using MDS embedding + KMeans.
+    Gromov-Wasserstein based clustering on DM cycles (intention space) using MDS + KMeans.
     Requires precomputed GW distance matrix passed via params.
     """
     def __init__(self, params: dict = None):
-        super().__init__("gw_dm_kmeans", params)
+        super().__init__("gw_dmc_int_kmeans", params)
         self.mds_components = self.params.get("mds_components", 3)
 
     @property
@@ -961,24 +961,45 @@ class CustomVAEMethod(BaseMethod):
         )
 
 
-class W2DMQposKMeans(W2DMKMeans):
+class W2DMCQposKMeans(W2DMCIntKMeans):
     def __init__(self, params: dict = None):
-        BaseMethod.__init__(self, "w2_dm_qpos_kmeans", params)
+        BaseMethod.__init__(self, "w2_dmc_qpos_kmeans", params)
         self.mds_components = self.params.get("mds_components", 3)
 
 
-class W2DMEkpKMeans(W2DMKMeans):
+class W2DMCEkpKMeans(W2DMCIntKMeans):
     def __init__(self, params: dict = None):
-        BaseMethod.__init__(self, "w2_dm_ekp_kmeans", params)
+        BaseMethod.__init__(self, "w2_dmc_ekp_kmeans", params)
+        self.mds_components = self.params.get("mds_components", 3)
+
+
+class W2DMPIntKMeans(W2DMCIntKMeans):
+    def __init__(self, params: dict = None):
+        BaseMethod.__init__(self, "w2_dmp_int_kmeans", params)
+        self.mds_components = self.params.get("mds_components", 3)
+
+
+class W2DMPQposKMeans(W2DMCIntKMeans):
+    def __init__(self, params: dict = None):
+        BaseMethod.__init__(self, "w2_dmp_qpos_kmeans", params)
+        self.mds_components = self.params.get("mds_components", 3)
+
+
+class W2DMPEkpKMeans(W2DMCIntKMeans):
+    def __init__(self, params: dict = None):
+        BaseMethod.__init__(self, "w2_dmp_ekp_kmeans", params)
         self.mds_components = self.params.get("mds_components", 3)
 
 
 METHOD_REGISTRY: dict[str, type[BaseMethod]] = {
-    "w2_dm_kmeans": W2DMKMeans,
-    "w2_dm_qpos_kmeans": W2DMQposKMeans,
-    "w2_dm_ekp_kmeans": W2DMEkpKMeans,
-    "w2_unif_kmeans": W2UnifKMeans,
-    "gw_dm_kmeans": GWDMKMeans,
+    "w2_dmc_int_kmeans": W2DMCIntKMeans,
+    "w2_dmc_qpos_kmeans": W2DMCQposKMeans,
+    "w2_dmc_ekp_kmeans": W2DMCEkpKMeans,
+    "w2_dmp_int_kmeans": W2DMPIntKMeans,
+    "w2_dmp_qpos_kmeans": W2DMPQposKMeans,
+    "w2_dmp_ekp_kmeans": W2DMPEkpKMeans,
+    "w2_full_kmeans": W2FullKMeans,
+    "gw_dmc_int_kmeans": GWDMCIntKMeans,
     "kpms_intention": KPMSIntentionMethod,
     "kpms_keypoint": KPMSKeypointMethod,
     "custom_vae": CustomVAEMethod,
