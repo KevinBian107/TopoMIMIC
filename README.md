@@ -59,26 +59,28 @@ Refer to the [documentation folder](/docs/) for more detailed information on the
 - [demos](/docs/demos.md)
 
 ### Quick Start (Bash Scripts)
-Automation scripts run the main pipelines end-to-end:
+Automation scripts run the main pipelines end-to-end across all feature spaces (intention, qpos, ekp):
 ```bash
-bash bash_scripts/run_dm_pipeline.sh      # Step 1: DM extraction (all feature spaces)
-bash bash_scripts/run_granularity.sh      # Step 2: Granularity analysis
-bash bash_scripts/run_benchmark.sh        # Step 3: Benchmark experiment
+bash bash_scripts/run_dm_pipeline.sh      # DM extraction + benchmark (all feature spaces)
+bash bash_scripts/run_granularity.sh      # Granularity analysis (all feature spaces)
 ```
 
-### Step 1: Extract DM Graphs + Paths
-Run discrete Morse extraction on all clips. Each feature space has its own config with tuned Takens and persistence parameters:
+### Step 1: Extract DM Graphs + Paths + Benchmark
+Run discrete Morse extraction on all clips, then benchmark. Each feature space has its own config with tuned Takens and persistence parameters:
 ```bash
 python -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline_intention.yaml
 python -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline_qpos.yaml
 python -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline_ekp.yaml
+python -m topo_mimic.benchmark.experiment configs/benchmark/experiment.yaml
 ```
-With `use_dm_path: true` (default in all configs), this extracts both DM cycles (H1) and DM paths (H0: edge-disjoint paths between density minima).
+With `use_dm_path: true` (default in all configs), this extracts both DM cycles (H1) and DM paths (H0: edge-disjoint paths between density minima). The benchmark runs all enabled methods (w2_dmc_*_kmeans, w2_dmp_*_kmeans, gw_dmc_int_kmeans, w2_full_kmeans, kpms_*).
 
 ### Step 2: Granularity Analysis
-Analyze how persistence threshold affects behavior discrimination and cluster redundancy:
+Analyze how persistence threshold affects behavior discrimination and cluster redundancy across all feature spaces:
 ```bash
-python -m topo_mimic.granularity.main configs/dmwk/granularity.yaml
+python -m topo_mimic.granularity.main configs/dmwk/granularity_intention.yaml
+python -m topo_mimic.granularity.main configs/dmwk/granularity_qpos.yaml
+python -m topo_mimic.granularity.main configs/dmwk/granularity_ekp.yaml
 ```
 
 This runs:
@@ -86,15 +88,7 @@ This runs:
 2. **Stationary clip analysis**: Analyze head/arm joint variance in stationary clips
 3. **Redundancy analysis**: Compute DTW-based cluster redundancy across k values (for both cycles and paths)
 
-### Step 3: Benchmark Experiment
-Run all clustering methods with integrated seeds and auto-generated labels.yaml:
-```bash
-python -m topo_mimic.benchmark.experiment configs/benchmark/experiment.yaml
-```
-
-This runs all enabled methods (w2_dmc_*_kmeans, w2_dmp_*_kmeans, gw_dmc_int_kmeans, w2_full_kmeans, kpms_*).
-
-### Step 4: Auto-assignments
+### Step 3: Auto-assignments
 After running the benchmark experiment, label the clusters using the automatic label assignment pipeline:
 ```bash
 python -m topo_mimic.benchmark.labeling.main configs/benchmark/labeling.yaml
@@ -106,7 +100,7 @@ This computes W2 distances between cluster cycles and ground truth transition wi
 launch_gui: true
 ```
 
-### Step 5: Analysis
+### Step 4: Analysis
 Generate variance heatmaps, cross-method comparison, and seed stability analysis:
 ```bash
 python -m topo_mimic.benchmark.analysis.main configs/benchmark/analysis.yaml

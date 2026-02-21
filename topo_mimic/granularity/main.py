@@ -336,7 +336,7 @@ def main(config_path: str | None = None) -> None:
         config_path: Path to config YAML file (uses default if None)
     """
     if config_path is None:
-        config_path = "configs/dmwk/granularity.yaml"
+        config_path = "configs/dmwk/granularity_qpos.yaml"
 
     if os.path.exists(config_path):
         print(f"Loading config from {config_path}")
