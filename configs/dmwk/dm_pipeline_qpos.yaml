@@ -34,6 +34,7 @@ dm:
   results_dir: null  # Set path when skip is true
   segment_gap_limit: 50
   min_segment_len: 50
+  use_dm_path: true
 
 # Video rendering (optional)
 rendering:
