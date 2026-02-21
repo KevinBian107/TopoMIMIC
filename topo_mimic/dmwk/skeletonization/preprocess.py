@@ -319,33 +319,3 @@ def takens_points(
     idxs = np.arange(start, n_frames)
     pts = np.stack([X[[j - a * tau for a in range(m)]].reshape(-1) for j in idxs], axis=0)
     return pts
-
-
-def create_time_windows(
-    intentions: np.ndarray,
-    windows_size: int = 31,
-    stride: int = 1,
-) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Create Takens' delay embedding windows by stacking vectors.
-
-    Args:
-        intentions: Time series array of shape (n_timesteps, n_features)
-        windows_size: Size of sliding window
-        stride: Step size between windows
-
-    Returns:
-        Tuple of (windows, center_frames) arrays
-    """
-    n_timesteps, n_features = intentions.shape
-    n_windows = (n_timesteps - windows_size) // stride + 1
-    windows = np.zeros((n_windows, windows_size * n_features))
-    center_frames = np.zeros(n_windows, dtype=int)
-
-    for i in range(n_windows):
-        start_idx = i * stride
-        window = intentions[start_idx : start_idx + windows_size]
-        windows[i] = window.reshape(-1)
-        center_frames[i] = start_idx + windows_size // 2
-
-    return windows, center_frames

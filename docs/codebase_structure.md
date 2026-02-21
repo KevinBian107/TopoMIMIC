@@ -61,10 +61,6 @@ TopoVNL/
 │   ├── benchmark/             # Experiment configs
 │   └── scripts/               # Script configs
 │
-├── notebooks/                 # Jupyter notebooks
-│   ├── discrete_morse.ipynb   # Main DM workflow
-│   └── persistent_homology.ipynb
-│
 ├── data/                      # Input data (Mimic-MJX rollouts)
 ├── outputs/                       # Output results
 └── docs/                      # Documentation
@@ -159,18 +155,16 @@ extraction to cluster visualization.
 │   └── takens_points()              # Build delay embedding     │
 │                                                                │
 │   skeletonization/postprocess.py                               │
-│   ├── cluster_vpath_with_wasserstein2d_fixedlen_kmeans()       │
+│   ├── chunk_loops_by_clustered_vpath()                         │
 │   ├── compute_w2_distance_matrix() (via experiment.py)         │
-│   └── chunk_loops_by_clustered_vpath()                         │
+│   └── _normalize_dist_matrix()                                 │
 │                                                                │
 │   skeletonization/plotting.py                                  │
-│   ├── plot_dimo()                  # Visualize DM graph        │
-│   ├── plot_cluster_subspace_mds()  # MDS analysis              │
-│   └── compare_clusters_axis_motion_with_union()                │
+│   ├── plot_cluster_subspace_mds_separate()  # MDS analysis     │
+│   └── load_behavior_segments()                                 │
 │                                                                │
 │   skeletonization/rendering.py                                 │
-│   ├── render_grid_clusters_side_by_side()                      │
-│   └── render_clip_grid()                                       │
+│   └── render_grid_clusters_side_by_side()                      │
 │                                                                │
 └────────────────────────────────────────────────────────────────┘
 
@@ -486,16 +480,6 @@ readable (pkl) and human-annotatable (yaml) formats.
 
 - **PHAT library**: Persistent homology algorithms
 - **C++11 compiler**: For building executables
-
----
-
-## Notebooks
-
-### Purpose of Each Notebook
-
-**discrete_morse.ipynb** - The main analysis notebook demonstrating data loading, Takens parameter estimation, DM extraction, cycle visualization, W2 clustering, eigenbase compression analysis, and baseline comparisons.
-
-**persistent_homology.ipynb** - Alternative TDA approach using Ripser for persistence diagrams and cocycle extraction.
 
 ---
 
