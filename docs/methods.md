@@ -371,9 +371,15 @@ Euclidean space where distances are approximately preserved. KMeans
 then clusters in this embedded space.
 ```
 
-### Baseline: Uniform Sampling (W2 Unif)
+### Option B: DM Path Windows (New)
 
-As a baseline, we also provide `w2_unif_kmeans` which uses the same W2 + MDS + KMeans pipeline but on **uniformly sampled windows** from all frames instead of topologically-discovered cycles. This helps evaluate whether the DM-based cycle extraction improves clustering quality.
+When `use_dm_path: true`, the pipeline also extracts **DM paths** — edge-disjoint shortest paths between the two most persistent density minima (H0 features). These paths capture behavioral transitions directly, without requiring closed cycles.
+
+The same W2 + MDS + KMeans pipeline applies, but uses path-derived windows instead of cycle-derived windows. Path methods are named `w2_dmp_*_kmeans` (vs `w2_dmc_*_kmeans` for cycles).
+
+### Baseline: Uniform Sampling (W2 Full)
+
+As a baseline, we also provide `w2_full_kmeans` which uses the same W2 + MDS + KMeans pipeline but on **uniformly sampled windows** from all frames instead of topologically-discovered cycles or paths. This helps evaluate whether the DM-based extraction improves clustering quality.
 
 ---
 
@@ -398,11 +404,12 @@ As a baseline, we also provide `w2_unif_kmeans` which uses the same W2 + MDS + K
     Output: Skeleton graph G per clip
                                │
                                ▼
-    STEP 3: CYCLE EXTRACTION
-    Find minimum cycle basis
+    STEP 3: CYCLE + PATH EXTRACTION
+    Cycles: minimum cycle basis (H1)
+    Paths: edge-disjoint paths between density minima (H0, optional)
     Map vertex IDs → frame indices
     Optionally keep only longest cycle (only_max=True)
-    Output: all_cycle_dm[clip] = [cycle_frames_1, ...]
+    Output: all_cycle_dm[clip], all_path_dm[clip] (optional)
                                │
                                ▼
     STEP 4: W2/GW DISTANCE CLUSTERING
@@ -490,20 +497,23 @@ similar transition patterns.
 
 ## Running the Methods
 
-**Step 1: Extract DM Cycles**
+**Step 1: Extract DM Cycles + Paths**
 ```bash
-python -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline.yaml
+python -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline_intention.yaml
+python -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline_qpos.yaml
+python -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline_ekp.yaml
 ```
-Output: `outputs/dm_pipeline_ar/{all_cycle_dm.pkl, all_G_sm.pkl}`
+Output: `outputs/dm_pipeline_{space}/{all_cycle_dm.pkl, all_path_dm.pkl, all_G_sm.pkl}`
 
 **Step 2: Run W2/GW + KMeans Clustering**
 ```bash
 python -m topo_mimic.benchmark.experiment configs/benchmark/experiment.yaml
 ```
 Enable methods in config:
-- `w2_dm_kmeans`: W2 distance on DM cycles
-- `gw_dm_kmeans`: Gromov-Wasserstein on DM cycles
-- `w2_unif_kmeans`: W2 on uniform samples (baseline)
+- `w2_dmc_int_kmeans`: W2 on DM cycles (intention)
+- `w2_dmp_int_kmeans`: W2 on DM paths (intention)
+- `gw_dmc_int_kmeans`: Gromov-Wasserstein on DM cycles
+- `w2_full_kmeans`: W2 on uniform samples (baseline)
 
 **Step 3: Analyze Results**
 ```bash
@@ -583,7 +593,7 @@ For each (pers_delta, n_clusters) configuration:
 ### Running Granularity Analysis
 
 ```bash
-python -m topo_mimic.granularity.main configs/granularity/granularity.yaml
+python -m topo_mimic.granularity.main configs/dmwk/granularity.yaml
 ```
 
 Output directory structure:

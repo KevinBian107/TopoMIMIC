@@ -53,11 +53,21 @@ TopoVNL/
 ├── scripts/                   # Standalone utility scripts
 │   ├── render_cycle.py        # Cycle rendering
 │   ├── render_for_label.py    # Label rendering
-│   ├── demo_torus.py          # Torus DM demo
 │   └── ...                    # Other utilities
 │
+├── demos/                     # Illustrative demos
+│   ├── demo_torus.py          # Torus DM demo
+│   ├── demo_transition_topology.py  # Transition topology demo
+│   ├── incompressibility/     # Incompressibility verification
+│   └── ...                    # Other demos
+│
+├── bash_scripts/              # Automation scripts
+│   ├── run_dm_pipeline.sh     # Run DM pipeline (all feature spaces)
+│   ├── run_benchmark.sh       # Run benchmark experiment
+│   └── run_granularity.sh     # Run granularity analysis
+│
 ├── configs/                   # YAML configurations
-│   ├── dmwk/                  # DM pipeline configs
+│   ├── dmwk/                  # DM pipeline + granularity configs
 │   ├── benchmark/             # Experiment configs
 │   └── scripts/               # Script configs
 │
@@ -85,7 +95,6 @@ topo_mimic/
 ├── dmwk/                              # Discrete Morse + W2 + KMeans
 │   ├── __init__.py
 │   ├── dm_pipeline.py                 # Main DM extraction pipeline
-│   ├── dm_hypertune.py                # Hyperparameter tuning
 │   │
 │   ├── utils/
 │   │   ├── load_utils.py              # Data loading (HDF5)
@@ -93,6 +102,8 @@ topo_mimic/
 │   │
 │   ├── skeletonization/
 │   │   ├── skeletonization.py         # DM graph extraction
+│   │   ├── dm_path.py                 # DM path extraction (H0 paths)
+│   │   ├── remap.py                   # Cycle/path remapping utilities
 │   │   ├── preprocess.py              # Takens embedding params
 │   │   ├── postprocess.py             # W2 clustering & chunking
 │   │   ├── plotting.py                # Visualization functions
@@ -149,6 +160,15 @@ extraction to cluster visualization.
 │   ├── extract_skeleton_pcd_dm()    # Main DM extraction        │
 │   ├── extract_cycles_from_dm_graph()                           │
 │   └── _weighted_rips_cocycle_ripser()  # PH-based cycles       │
+│                                                                │
+│   skeletonization/dm_path.py                                   │
+│   ├── find_dm_minima()             # Persistent density minima │
+│   └── extract_dm_paths()           # Edge-disjoint H0 paths   │
+│                                                                │
+│   skeletonization/remap.py                                     │
+│   ├── parse_swr_remap()            # DM vertex → original idx │
+│   ├── remap_cycle_to_original()    # Remap cycle vertices      │
+│   └── split_cycle_into_segments()  # Temporal segmentation     │
 │                                                                │
 │   skeletonization/preprocess.py                                │
 │   ├── estimate_delay_embedding_params()  # Find m, τ           │
@@ -239,13 +259,27 @@ scripts/
 ├── extract_filled_space.py          # Space extraction
 ├── render_cycle.py                  # Cycle rendering
 ├── render_for_label.py              # Label rendering
-├── demo_torus.py                    # Torus DM demo
 ├── analyze_transitions.py           # Transition analysis
-├── demo_behavior_overlap.py         # Behavior overlap demo
 └── analyze_cycle_persistence.py     # Cycle persistence
 
-Figure 6: Script organization. Standalone utilities for
-rendering, demos, and analysis.
+demos/
+│
+├── demo_torus.py                    # Torus DM demo
+├── demo_stationary.py               # Stationary behavior demo
+├── demo_behavior_overlap.py         # Behavior overlap demo
+├── demo_saddle.py                   # Saddle point demo
+├── demo_cycle_asymmetry.py          # Cycle asymmetry demo
+├── demo_transition_topology.py      # Transition topology (paths vs cycles)
+├── demo_theta_filmstrip.py          # Theta-graph filmstrip
+├── demo_transition_filmstrip.py     # Transition filmstrip
+│
+└── incompressibility/
+    ├── __init__.py
+    ├── incompressibility.py         # Incompressibility verification
+    └── batch_incompressibility.py   # Batch incompressibility
+
+Figure 6: Script and demo organization. Scripts provide standalone
+utilities; demos provide illustrative examples.
 ```
 
 ---
@@ -258,16 +292,15 @@ rendering, demos, and analysis.
 configs/
 │
 ├── dmwk/
-│   ├── dm_pipeline.yaml            # DM extraction settings
-│   └── dm_hypertune.yaml           # Hyperparameter search
+│   ├── dm_pipeline_intention.yaml  # DM pipeline — intention space
+│   ├── dm_pipeline_qpos.yaml       # DM pipeline — qpos space
+│   ├── dm_pipeline_ekp.yaml        # DM pipeline — egocentric keypoint space
+│   └── granularity.yaml            # Granularity analysis settings
 │
 ├── benchmark/
 │   ├── experiment.yaml             # Method comparison
 │   ├── analysis.yaml               # Analysis settings
 │   └── labeling.yaml               # Labeling settings
-│
-├── granularity/
-│   └── granularity.yaml            # Granularity analysis settings
 │
 └── scripts/
     ├── render_cycle.yaml
@@ -280,13 +313,14 @@ Each YAML file defines parameters for its corresponding module.
 
 ### Configuration Hierarchy
 
-**dm_pipeline.yaml** defines:
-- `data.dm_key`: HDF5 key for intention data (typically "intention")
+**dm_pipeline_{space}.yaml** defines:
+- `data.dm_key`: Feature space key ("intention", "qpos", or "ekp")
 - `data.rodent_rollout_dir`: Path to rollout data
 - `takens.m`: Embedding dimension (typically 3)
-- `takens.tau`: Time delay (typically 6)
-- `dm.pers_delta`: Persistence threshold
+- `takens.tau`: Time delay (varies by feature space: 6 for intention, 8 for ekp)
+- `dm.pers_delta`: Persistence threshold (varies by feature space)
 - `dm.k_neighbors`: kNN for density weights
+- `dm.use_dm_path`: Enable DM path extraction (H0 paths between density minima)
 
 **experiment.yaml** defines:
 - `dm.results_dir`: Path to DM pipeline output
@@ -332,16 +366,19 @@ Each YAML file defines parameters for its corresponding module.
     │  1. Sparse Weighted Rips Filtration   │
     │  2. Persistence Computation           │
     │  3. Graph Reconstruction              │
-    │  4. Cycle Extraction                  │
+    │  4. Cycle Extraction (H1)             │
+    │  5. Path Extraction (H0, optional)    │
     │                                       │
     └───────────────────────────────────────┘
                          │
                          │ extract_skeleton_pcd_dm()
+                         │ extract_dm_paths()
                          ▼
     ┌───────────────────────────────────────┐
-    │         DM Cycles per Clip            │
+    │     DM Cycles + Paths per Clip        │
     │                                       │
     │   Output: all_cycle_dm.pkl            │
+    │           all_path_dm.pkl (optional)  │
     │           all_G_sm.pkl                │
     │                                       │
     └───────────────────────────────────────┘
@@ -359,8 +396,10 @@ Each YAML file defines parameters for its corresponding module.
     ┌───────────────────────────────────────┐
     │           MDS + KMeans                │
     │                                       │
-    │  w2_dm_kmeans, gw_dm_kmeans,          │
-    │  w2_unif_kmeans (baseline)            │
+    │  w2_dmc_*_kmeans (cycles),             │
+    │  w2_dmp_*_kmeans (paths),             │
+    │  gw_dmc_int_kmeans,                   │
+    │  w2_full_kmeans (baseline)            │
     │                                       │
     └───────────────────────────────────────┘
                          │
@@ -385,10 +424,21 @@ assignments. DM cycles are compared via W2 or GW distance.
 
 | Method | Description | Distance Type |
 |--------|-------------|---------------|
-| `w2_dm_kmeans` | W2 on DM cycles → MDS → KMeans | Wasserstein-2 |
-| `w2_unif_kmeans` | W2 on uniform frames (baseline) | Wasserstein-2 |
-| `gw_dm_kmeans` | GW on DM cycles → MDS → KMeans | Gromov-Wasserstein |
+| `w2_dmc_int_kmeans` | W2 on DM cycles (intention) → MDS → KMeans | Wasserstein-2 |
+| `w2_dmc_qpos_kmeans` | W2 on DM cycles (qpos) → MDS → KMeans | Wasserstein-2 |
+| `w2_dmc_ekp_kmeans` | W2 on DM cycles (ekp) → MDS → KMeans | Wasserstein-2 |
+| `w2_dmp_int_kmeans` | W2 on DM paths (intention) → MDS → KMeans | Wasserstein-2 |
+| `w2_dmp_qpos_kmeans` | W2 on DM paths (qpos) → MDS → KMeans | Wasserstein-2 |
+| `w2_dmp_ekp_kmeans` | W2 on DM paths (ekp) → MDS → KMeans | Wasserstein-2 |
+| `w2_full_kmeans` | W2 on uniform frames (baseline) → MDS → KMeans | Wasserstein-2 |
+| `gw_dmc_int_kmeans` | GW on DM cycles (intention) → MDS → KMeans | Gromov-Wasserstein |
 | `kpms_intention` | KPMS state-space (AR-HMM or SLDS) | State-space |
+
+Method naming convention: `{distance}_{source}_{feature_space}_{algorithm}` where:
+- distance: `w2` (Wasserstein-2), `gw` (Gromov-Wasserstein)
+- source: `dmc` (DM cycles, H1), `dmp` (DM paths, H0), `full` (uniform baseline)
+- feature_space: `int` (intention), `qpos`, `ekp` (egocentric keypoints)
+- algorithm: `kmeans`
 
 ---
 
@@ -411,20 +461,22 @@ out/
 │   │   └── clip_1/ ...
 │   │
 │   ├── all_cycle_dm.pkl            # All cycles (list of lists)
+│   ├── all_path_dm.pkl             # All paths (optional, list of lists)
 │   ├── all_G_sm.pkl                # All graphs (networkx)
 │   └── cycle_stats.yaml            # Summary statistics
 │
 ├── benchmark_experiment/           # Experiment output
-│   ├── w2_kmeans/
+│   ├── w2_dmc_int_kmeans/
 │   │   ├── results.pkl             # Cluster assignments
 │   │   ├── labels_seed_0.yaml      # For manual labeling
 │   │   └── clusters_k10_seed0.mp4  # Rendered video
 │   │
-│   ├── w2_distance_matrix.pkl      # Cached W2 matrix
+│   ├── w2_distance_matrix_cycle_intention.pkl  # Cached W2 matrix (cycles)
+│   ├── w2_distance_matrix_path_intention.pkl   # Cached W2 matrix (paths)
 │   └── all_results.pkl             # All method results
 │
 └── analysis_output/                # Analysis results
-    └── w2_kmeans/
+    └── w2_dmc_int_kmeans/
         ├── variance_heatmap.pdf
         └── mds_separate.pdf
 
@@ -513,8 +565,8 @@ readable (pkl) and human-annotatable (yaml) formats.
 │          │                                                              │
 │          ▼                                                              │
 │  ┌───────────────┐   topo_mimic/dmwk/skeletonization/                   │
-│  │    Cycle      │   skeletonization.py                                 │
-│  │  Extraction   │   extract_skeleton_pcd_dm()                          │
+│  │  Cycle/Path   │   skeletonization.py, dm_path.py                     │
+│  │  Extraction   │   extract_skeleton_pcd_dm(), extract_dm_paths()      │
 │  └───────┬───────┘                                                      │
 │          │                                                              │
 │          ▼                                                              │
@@ -540,14 +592,18 @@ the relevant source files.
 
 ## Quick Reference: Running the Pipeline
 
-**Step 1: Run DM Extraction**
+**Step 1: Run DM Extraction** (per feature space, or use automation script)
 ```bash
-python -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline.yaml
+python -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline_intention.yaml
+python -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline_qpos.yaml
+python -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline_ekp.yaml
+# Or: bash bash_scripts/run_dm_pipeline.sh
 ```
 
 **Step 2: Run Benchmark Experiments**
 ```bash
 python -m topo_mimic.benchmark.experiment configs/benchmark/experiment.yaml
+# Or: bash bash_scripts/run_benchmark.sh
 ```
 
 **Step 3: Run Analysis**
@@ -557,7 +613,8 @@ python -m topo_mimic.benchmark.analysis.main configs/benchmark/analysis.yaml
 
 **Step 4: Run Granularity Analysis** (Optional)
 ```bash
-python -m topo_mimic.granularity.main configs/granularity/granularity.yaml
+python -m topo_mimic.granularity.main configs/dmwk/granularity.yaml
+# Or: bash bash_scripts/run_granularity.sh
 ```
 
 ---

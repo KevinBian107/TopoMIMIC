@@ -58,6 +58,7 @@ python -m scripts.analyze_transitions
 Refer to the [documentation folder](/docs/) for more detailed information on the method and codebase structure:
 - [our methods](/docs/methods.md)
 - [codebase structure](/docs/codebase_structure.md)
+- [demos](/docs/demos.md)
 
 ### Hyperparameter Tuning
 Find optimal Takens embedding (m, tau) and DM parameters (k_neighbors, pers_delta) first prior to clustering, this is a crtical parameter search for the unsupervised learning method to work:
@@ -66,10 +67,16 @@ python -m topo_mimic.benchmark.hyperparam_sweep.kpms.kpms_sweep --sweep
 python -m topo_mimic.benchmark.hyperparam_sweep.custom_vae.vae_sweep --sweep
 ```
 
-### Extract DM Graphs
-Run discrete Morse extraction on all clips:
+### Extract DM Graphs + Paths
+Run discrete Morse extraction on all clips (per feature space):
 ```bash
-python -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline.yaml
+python -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline_intention.yaml
+python -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline_qpos.yaml
+python -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline_ekp.yaml
+```
+Or use the automation script:
+```bash
+bash bash_scripts/run_dm_pipeline.sh
 ```
 
 ### Run Benchmark Experiment
@@ -83,7 +90,7 @@ Run all clustering methods with integrated seeds and auto-generated labels.yaml:
 python -m topo_mimic.benchmark.experiment configs/benchmark/experiment.yaml
 ```
 
-This runs all enabled methods (vanilla_kmeans, pca_kmeans, umap_kmeans, w2_kmeans, spectral, arhmm, slds).
+This runs all enabled methods (w2_dmc_*_kmeans, w2_dmp_*_kmeans, gw_dmc_int_kmeans, w2_full_kmeans, kpms_*).
 
 ### Auto-assignments
 After running the benchmark experiment, label the clusters using the automatic label assignment pipeline:
@@ -109,7 +116,11 @@ python -m topo_mimic.benchmark.generate_results_table
 ### Granularity Analysis
 Analyze how persistence threshold affects behavior discrimination and cluster redundancy:
 ```bash
-python -m topo_mimic.granularity.main configs/granularity/granularity.yaml
+python -m topo_mimic.granularity.main configs/dmwk/granularity.yaml
+```
+Or use the automation script:
+```bash
+bash bash_scripts/run_granularity.sh
 ```
 
 This runs:
@@ -117,12 +128,13 @@ This runs:
 2. **Stationary clip analysis**: Analyze head/arm joint variance in stationary clips
 3. **Redundancy analysis**: Compute DTW-based cluster redundancy across k values
 
-## Incompressability
+## Incompressibility
 To verify the incompressibility statement:
 ```bash
- python -m scripts.incompressibility configs/scripts/incompressibility.yaml
- python -m scripts.varying_k configs/scripts/varying_k.yaml    
- ```
+python -m demos.incompressibility.incompressibility configs/scripts/incompressibility.yaml
+python -m scripts.varying_k configs/scripts/varying_k.yaml
+```
+Use `--use-dm-path` to include DM path extraction alongside cycles.
 
 ## Demo
 We have the code for illustrative demos:
