@@ -19,6 +19,7 @@ takens:
 dm:
   k_neighbors: 3
   epsilon: 0.99
+  use_dm_path: true
 
 multi_persistence:
   enabled: true
