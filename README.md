@@ -132,9 +132,9 @@ python -m demos.demo_stationary
 python -m demos.demo_behavior_overlap
 python -m demos.demo_torus
 python -m demos.demo_saddle
-python -m demos.demo_switching_state_space
 python -m demos.demo_cycle_asymmetry
 python -m demos.demo_transition_topology
+python -m demos.demo_theta_filmstrip
 ```
 
 ## Acknowledgements
