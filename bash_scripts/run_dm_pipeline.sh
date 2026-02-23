@@ -2,7 +2,7 @@
 # Run DM pipeline for all feature spaces + benchmark experiment
 set -e
 
-PYTHON="/home/jovyan/vast/kaiwen/track-mjx/.venv/bin/python3"
+PYTHON="/root/miniforge3/envs/track_mjx/bin/python3"
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
