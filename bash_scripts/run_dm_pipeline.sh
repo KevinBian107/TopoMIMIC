@@ -10,17 +10,16 @@ echo "=============================="
 echo "DM Pipeline — All Feature Spaces"
 echo "=============================="
 
-echo ""
-echo "--- Intention ---"
-$PYTHON -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline_intention.yaml
-
-echo ""
-echo "--- Qpos ---"
-$PYTHON -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline_qpos.yaml
-
-echo ""
-echo "--- EKP ---"
-$PYTHON -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline_ekp.yaml
+for space in intention qpos ekp; do
+  pkl="outputs/dm_pipeline_${space}/all_cycle_dm.pkl"
+  echo ""
+  echo "--- ${space} ---"
+  if [ -f "$pkl" ]; then
+    echo "Results exist ($pkl), skipping."
+  else
+    $PYTHON -m topo_mimic.dmwk.dm_pipeline "configs/dmwk/dm_pipeline_${space}.yaml"
+  fi
+done
 
 echo ""
 echo "=============================="
