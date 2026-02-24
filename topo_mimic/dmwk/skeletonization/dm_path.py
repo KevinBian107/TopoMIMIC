@@ -138,7 +138,7 @@ def extract_dm_paths(
 
     try:
         raw_paths = list(nx.edge_disjoint_paths(G_dm, min1, min2))
-    except nx.NetworkXError:
+    except (nx.NetworkXError, nx.NetworkXNoPath, nx.NetworkXUnfeasible):
         raw_paths = []
 
     paths_remapped = []

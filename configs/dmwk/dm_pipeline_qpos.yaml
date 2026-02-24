@@ -27,7 +27,7 @@ takens:
 
 # Discrete Morse parameters
 dm:
-  pers_delta: 0.2 # intention (0.75), qpos (0.2), ekp (0.15)
+  pers_delta: 0.2 # intention (0.75), qpos (0.2), ekp (0.1)
   k_neighbors: 3
   epsilon: 0.99
   skip: false  # Set to true to load existing results

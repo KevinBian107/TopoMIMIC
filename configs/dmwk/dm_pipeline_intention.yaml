@@ -24,7 +24,7 @@ takens:
   max_points: 20000
 
 dm:
-  pers_delta: 0.75
+  pers_delta: 1.0
   k_neighbors: 3
   epsilon: 0.99
   skip: false
