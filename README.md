@@ -1,10 +1,30 @@
 # Shaped by What’s Missing: Topological Discovery of Behavioral Transitions
-![Demo](figures/torus_dm_demo.gif)
-> Demonstration of discrete Morse traversal (cycle) on a torus.
 
-This code base is designed to develope an unsupervised algorithm by looking at the latent space of [Mimic-mjx](https://github.com/talmolab/Mimic-mjx).
+## Manifold Learning through Discrete Morse Theory
+
+Classical manifold learning methods (PCA, UMAP, t-SNE) learn a low-dimensional **embedding** of high-dimensional data. We take a different approach: instead of projecting to a coordinate space, we learn the **topological skeleton** of the data manifold itself.
+
+Each behavioral clip from a deep RL policy ([Mimic-mjx](https://github.com/talmolab/Mimic-mjx)) is a trajectory in a high-dimensional temporal space (e.g. 500 frames × 16D = a point in R<sup>8000</sup>). We reconstruct the discrete Morse graph of this point cloud to extract two types of structural primitives:
+
+- **DM Cycles (H₁)**: loops in the graph skeleton, capturing periodic or recurrent behavioral motifs
+- **DM Paths (H₀)**: edge-disjoint paths between persistent density minima, capturing transition corridors
+
+These sub-trajectories are the learned manifold coordinates — they represent the intrinsic structure (loops, branches, connectivity) rather than just pairwise proximity. The natural metric on this representation is the **Wasserstein-2 distance**, which compares sub-trajectories as distributions over the feature space rather than fixed-length vectors.
+
+```
+    R^(T × D)                    Topological skeleton                Metric space
+ ┌──────────────┐             ┌─────────────────────┐           ┌──────────────────┐
+ │ 500 × 16  (int)│   DM graph  │  Cycles (H₁ loops)  │  W₂ dist  │                  │
+ │ 500 × 62 (qpos)│──────────►│  Paths  (H₀ bridges)│─────────►│  MDS + Clustering │
+ │ 500 × 69  (ekp)│ reconstruction│  between density    │  between  │                  │
+ └──────────────┘             │  minima             │  sub-traj └──────────────────┘
+   high-dim input               manifold primitives             behavioral taxonomy
+```
 
 For intuition of this work, read [this page](/docs/intuition.md).
+
+![Demo](figures/torus_dm_demo.gif)
+> Demonstration of discrete Morse traversal (cycle) on a torus.
 
 ## Environment Instantiation
 We setup this repository similar to the [Mimic-mjx package](https://github.com/talmolab/track-mjx). All the `jax` dependency should be following the ones that is specified in `Mimic-mjx`. Besides the `Mimic-mjx` environment, we also need the [Stac-mjx package](https://github.com/talmolab/stac-mjx) for benchmarking (`Stac-mjx` should be installed prior to installing from `requirements.txt`, `KPMS` requires an newer version of jax dependency, which mismatch with `Stac-mjx` but workable).
