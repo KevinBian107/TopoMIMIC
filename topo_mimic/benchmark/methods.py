@@ -343,14 +343,46 @@ class W2DMCIntKMeans(BaseMethod):
         return km.fit_predict(X_mds)
 
 
-class W2FullKMeans(BaseMethod):
+class W2UnifKMeans(BaseMethod):
     """
     Baseline: W2 clustering on uniformly sampled frames (not DM cycles).
 
-    Same algorithm as W2DMCIntKMeans but uses windows from all frames
-    instead of topologically-discovered cycles. This serves as a
-    baseline to evaluate whether topology-based cycle detection
-    improves clustering quality.
+    Uses one window per clip with frames uniformly downsampled to target_len.
+    """
+    def __init__(self, params: dict = None):
+        super().__init__("w2_unif_kmeans", params)
+        self.mds_components = self.params.get("mds_components", 3)
+
+    @property
+    def method_type(self) -> MethodType:
+        return MethodType.CLUSTERING
+
+    def fit_predict(
+        self,
+        X: np.ndarray,
+        n_clusters: int,
+        seed: int = 0,
+    ) -> np.ndarray:
+        distance_matrix = self.params.get("distance_matrix")
+        if distance_matrix is None:
+            raise ValueError("W2UnifKMeans requires 'distance_matrix' in params")
+
+        mds = MDS(
+            n_components=self.mds_components,
+            dissimilarity='precomputed',
+            random_state=seed,
+            normalized_stress='auto',
+        )
+        X_mds = mds.fit_transform(distance_matrix)
+        km = KMeans(n_clusters=n_clusters, random_state=seed, n_init='auto')
+        return km.fit_predict(X_mds)
+
+
+class W2FullKMeans(BaseMethod):
+    """
+    Baseline: W2 clustering on all frames per clip (no downsampling).
+
+    Uses one window per clip with every frame included.
     """
     def __init__(self, params: dict = None):
         super().__init__("w2_full_kmeans", params)
@@ -368,7 +400,7 @@ class W2FullKMeans(BaseMethod):
     ) -> np.ndarray:
         distance_matrix = self.params.get("distance_matrix")
         if distance_matrix is None:
-            raise ValueError("W2UnifKMeans requires 'distance_matrix' in params")
+            raise ValueError("W2FullKMeans requires 'distance_matrix' in params")
 
         mds = MDS(
             n_components=self.mds_components,
@@ -998,6 +1030,7 @@ METHOD_REGISTRY: dict[str, type[BaseMethod]] = {
     "w2_dmp_int_kmeans": W2DMPIntKMeans,
     "w2_dmp_qpos_kmeans": W2DMPQposKMeans,
     "w2_dmp_ekp_kmeans": W2DMPEkpKMeans,
+    "w2_unif_kmeans": W2UnifKMeans,
     "w2_full_kmeans": W2FullKMeans,
     "gw_dmc_int_kmeans": GWDMCIntKMeans,
     "kpms_intention": KPMSIntentionMethod,

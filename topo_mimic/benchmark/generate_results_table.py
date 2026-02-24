@@ -27,6 +27,7 @@ METHOD_DISPLAY_NAMES = {
     "w2_dmp_int_kmeans": "W₂+DMP+Int (ours)",
     "w2_dmp_qpos_kmeans": "W₂+DMP+qpos (ours)",
     "w2_dmp_ekp_kmeans": "W₂+DMP+EKP (ours)",
+    "w2_unif_kmeans": "W₂+Unif+Int",
     "w2_full_kmeans": "W₂+Full+Int",
     "gw_dmc_int_kmeans": "GW+DMC",
     "kpms_intention": "KPMS-Int",
@@ -147,7 +148,7 @@ def create_pivot_table(
     )
 
     method_order = []
-    for m in ["w2_dmc_int_kmeans", "w2_dmc_qpos_kmeans", "w2_dmc_ekp_kmeans", "w2_dmp_int_kmeans", "w2_dmp_qpos_kmeans", "w2_dmp_ekp_kmeans", "w2_full_kmeans", "kpms_intention", "kpms_keypoint", "custom_vae", "gw_dmc_int_kmeans"]:
+    for m in ["w2_dmc_int_kmeans", "w2_dmc_qpos_kmeans", "w2_dmc_ekp_kmeans", "w2_dmp_int_kmeans", "w2_dmp_qpos_kmeans", "w2_dmp_ekp_kmeans", "w2_unif_kmeans", "w2_full_kmeans", "kpms_intention", "kpms_keypoint", "custom_vae", "gw_dmc_int_kmeans"]:
         if m in pivot.columns:
             method_order.append(m)
     for m in pivot.columns:
@@ -176,7 +177,7 @@ def create_simple_pivot_table(agg_df: pd.DataFrame) -> pd.DataFrame:
     )
 
     method_order = []
-    for m in ["w2_dmc_int_kmeans", "w2_dmc_qpos_kmeans", "w2_dmc_ekp_kmeans", "w2_dmp_int_kmeans", "w2_dmp_qpos_kmeans", "w2_dmp_ekp_kmeans", "w2_full_kmeans", "kpms_intention", "kpms_keypoint", "custom_vae", "gw_dmc_int_kmeans"]:
+    for m in ["w2_dmc_int_kmeans", "w2_dmc_qpos_kmeans", "w2_dmc_ekp_kmeans", "w2_dmp_int_kmeans", "w2_dmp_qpos_kmeans", "w2_dmp_ekp_kmeans", "w2_unif_kmeans", "w2_full_kmeans", "kpms_intention", "kpms_keypoint", "custom_vae", "gw_dmc_int_kmeans"]:
         if m in pivot.columns:
             method_order.append(m)
     for m in pivot.columns:
@@ -482,7 +483,7 @@ def create_consistency_pivot_table(agg_df: pd.DataFrame) -> pd.DataFrame:
     )
 
     method_order = []
-    for m in ["w2_dmc_int_kmeans", "w2_dmc_qpos_kmeans", "w2_dmc_ekp_kmeans", "w2_dmp_int_kmeans", "w2_dmp_qpos_kmeans", "w2_dmp_ekp_kmeans", "w2_full_kmeans", "kpms_intention", "kpms_keypoint", "custom_vae", "gw_dmc_int_kmeans"]:
+    for m in ["w2_dmc_int_kmeans", "w2_dmc_qpos_kmeans", "w2_dmc_ekp_kmeans", "w2_dmp_int_kmeans", "w2_dmp_qpos_kmeans", "w2_dmp_ekp_kmeans", "w2_unif_kmeans", "w2_full_kmeans", "kpms_intention", "kpms_keypoint", "custom_vae", "gw_dmc_int_kmeans"]:
         if m in pivot.columns:
             method_order.append(m)
     for m in pivot.columns:
