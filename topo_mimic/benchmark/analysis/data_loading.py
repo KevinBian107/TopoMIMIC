@@ -70,7 +70,8 @@ def load_labels_yaml(
     labels = data.get("labels", {})
     turn_directions = data.get("turn_directions", {})
 
-    labels_out = {int(k): v for k, v in labels.items() if v}
+    na_values = {"n/a", "na", "N/A", "NA", ""}
+    labels_out = {int(k): v for k, v in labels.items() if v and v.strip().lower() not in na_values}
     turns_out = {int(k): v for k, v in turn_directions.items() if v}
 
     return labels_out, turns_out

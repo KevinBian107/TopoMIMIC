@@ -65,6 +65,7 @@ BEHAVIOR_NAME_MAP = {
     "unsupportedrear": "Unsupported Rear",
     "urear": "Unsupported Rear",
     "rear": "Rear",
+    "step": "Step",
     "left_turn": "Left Turn",
     "leftturn": "Left Turn",
     "lturn": "Left Turn",
@@ -75,7 +76,7 @@ BEHAVIOR_NAME_MAP = {
 
 PRIMITIVE_BEHAVIORS = {
     "Walking", "Immobility", "Orienting", "Grooming",
-    "Supported Rear", "Unsupported Rear", "Rear",
+    "Supported Rear", "Unsupported Rear", "Rear", "Step",
 }
 
 COMPOSITIONAL_BEHAVIORS = {
