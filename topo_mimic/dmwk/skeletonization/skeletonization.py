@@ -64,9 +64,9 @@ def extract_skeleton_pcd_dm(
         arrays containing vertex indices for each cycle
     """
 
+    orig_cwd = os.getcwd()
     repo_path = "/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM"
     os.chdir(repo_path)
-    print("Changed working directory to:", os.getcwd())
     import dmpcd.pcd as pcd
 
     if output_dir is None:
@@ -126,6 +126,7 @@ def extract_skeleton_pcd_dm(
         return cycles, G
 
     finally:
+        os.chdir(orig_cwd)
         if should_cleanup and output_dir == temp_dir:
             import shutil
             shutil.rmtree(temp_dir, ignore_errors=True)

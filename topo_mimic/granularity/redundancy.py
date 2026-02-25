@@ -255,15 +255,17 @@ def prepare_windows_from_dm(
     intention_data: np.ndarray,
     config: GranularityConfig,
     clip_indices: list[int],
+    source: str = "cycle",
 ) -> list[tuple[int, np.ndarray]]:
     """
-    Prepare windows from DM cycles for clustering.
+    Prepare windows from DM cycles or paths for clustering.
 
     Args:
         dm_result: DM extraction result
         intention_data: (n_clips, n_frames, D) intention array
         config: Configuration object
         clip_indices: List of clip indices
+        source: "cycle" to use all_cycle_dm, "path" to use all_path_dm
 
     Returns:
         List of (clip_id, frame_indices) tuples
@@ -273,28 +275,33 @@ def prepare_windows_from_dm(
         _uniform_downsample,
     )
 
+    if source == "path" and dm_result.all_path_dm is not None:
+        all_dm = dm_result.all_path_dm
+    else:
+        all_dm = dm_result.all_cycle_dm
+
     windows = []
     takens_offset = (config.takens.m - 1) * config.takens.tau
     n_clips = len(intention_data)
 
     for local_idx in range(n_clips):
-        if local_idx >= len(dm_result.all_cycle_dm):
+        if local_idx >= len(all_dm):
             continue
 
-        cycles = dm_result.all_cycle_dm[local_idx]
-        if not cycles:
+        segments = all_dm[local_idx]
+        if not segments:
             continue
 
-        if config.clustering.only_max:
-            cycles = [max(cycles, key=len)]
+        if source == "cycle" and config.clustering.only_max:
+            segments = [max(segments, key=len)]
 
         clip_len = intention_data.shape[1]
-        for cycle in cycles:
-            if len(cycle) < 3:
+        for seg in segments:
+            if len(seg) < 3:
                 continue
 
-            cycle_frames = np.asarray(cycle, dtype=int) + takens_offset
-            expanded = _expand_frames_nonconsec(cycle_frames, pad=0, clip_len=clip_len)
+            seg_frames = np.asarray(seg, dtype=int) + takens_offset
+            expanded = _expand_frames_nonconsec(seg_frames, pad=0, clip_len=clip_len)
             sampled = _uniform_downsample(expanded, config.clustering.target_len)
 
             if sampled is not None:
@@ -470,6 +477,7 @@ def run_redundancy_analysis(
     qpos_data: np.ndarray,
     config: GranularityConfig,
     clip_indices: list[int],
+    source: str = "cycle",
 ) -> RedundancyAnalysisOutput:
     """
     Run full redundancy analysis across persistence values and cluster counts.
@@ -480,11 +488,12 @@ def run_redundancy_analysis(
         qpos_data: (n_clips, n_frames, D) qpos array
         config: Configuration object
         clip_indices: List of clip indices
+        source: "cycle" or "path" — which DM features to use for windowing
 
     Returns:
         RedundancyAnalysisOutput with all results
     """
-    print("\n=== Redundancy Analysis ===")
+    print(f"\n=== Redundancy Analysis (source={source}) ===")
 
     output_dir = Path(config.output_dir) / "redundancy"
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -496,8 +505,8 @@ def run_redundancy_analysis(
         dm_result = dm_results[pers_delta]
 
         print(f"\n  Persistence delta = {pers_delta}")
-        windows = prepare_windows_from_dm(dm_result, intention_data, config, clip_indices)
-        print(f"    Prepared {len(windows)} windows")
+        windows = prepare_windows_from_dm(dm_result, intention_data, config, clip_indices, source=source)
+        print(f"    Prepared {len(windows)} windows ({source})")
 
         if len(windows) < max(config.redundancy.n_clusters_range):
             print(f"    Warning: Only {len(windows)} windows, some k values may be skipped")

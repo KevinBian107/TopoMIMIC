@@ -13,12 +13,12 @@ data:
 
 # DM results directory (legacy field, used as fallback when dm_sources not set)
 dm:
-  results_dir: "outputs/dm_pipeline_ar_0.75"
+  results_dir: "outputs/dm_pipeline_intention"
 
 # Multi-feature-space DM sources
 dm_sources:
   intention:
-    results_dir: "outputs/dm_pipeline_ar_0.75"
+    results_dir: "outputs/dm_pipeline_intention"
     dm_key: "intention"
   qpos:
     results_dir: "outputs/dm_pipeline_qpos"
@@ -50,35 +50,63 @@ aggregate_seeds: true
 
 # Methods to run
 methods:
-  - name: "w2_dm_kmeans"
+  - name: "w2_dmc_int_kmeans"
     type: "clustering"
     dm_source: "intention"
-    enabled: false
+    enabled: true
     params:
       mds_components: 3
 
-  - name: "w2_dm_qpos_kmeans"
+  - name: "w2_dmc_qpos_kmeans"
     type: "clustering"
     dm_source: "qpos"
     enabled: true
     params:
       mds_components: 3
 
-  - name: "w2_dm_ekp_kmeans"
+  - name: "w2_dmc_ekp_kmeans"
     type: "clustering"
     dm_source: "ekp"
-    enabled: false
+    enabled: true
+    params:
+      mds_components: 3
+
+  - name: "w2_dmp_int_kmeans"
+    type: "clustering"
+    dm_source: "intention"
+    enabled: true
+    params:
+      mds_components: 3
+
+  - name: "w2_dmp_qpos_kmeans"
+    type: "clustering"
+    dm_source: "qpos"
+    enabled: true
+    params:
+      mds_components: 3
+
+  - name: "w2_dmp_ekp_kmeans"
+    type: "clustering"
+    dm_source: "ekp"
+    enabled: true
     params:
       mds_components: 3
 
   - name: "w2_unif_kmeans"
     type: "clustering"
     dm_source: "intention"
-    enabled: false
+    enabled: true
     params:
       mds_components: 3
 
-  - name: "gw_dm_kmeans"
+  - name: "w2_full_kmeans"
+    type: "clustering"
+    dm_source: "intention"
+    enabled: true
+    params:
+      mds_components: 3
+
+  - name: "gw_dmc_int_kmeans"
     type: "clustering"
     dm_source: "intention"
     enabled: false
@@ -92,7 +120,7 @@ methods:
   # Achieves intention reconstruction MSE ~0.57
   - name: "kpms_intention"
     type: "state_space"
-    enabled: false
+    enabled: true
     params:
       model_type: "slds"
       latent_dim: 10
@@ -108,7 +136,7 @@ methods:
   # Achieves keypoint reconstruction MSE ~0.002
   - name: "kpms_keypoint"
     type: "state_space"
-    enabled: false
+    enabled: true
     params:
       model_type: "arhmm"
       latent_dim: 15
@@ -124,7 +152,7 @@ methods:
   # Achieves intention reconstruction MSE ~2.71e-05
   - name: "custom_vae"
     type: "state_space"
-    enabled: false
+    enabled: true
     params:
       latent_dim: 30
       time_window: 30

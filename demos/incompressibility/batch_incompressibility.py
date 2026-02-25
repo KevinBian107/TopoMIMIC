@@ -12,7 +12,7 @@ Theory (from topomimic.pdf):
 - Weak Morse Inequalities (m_p >= beta_p) guarantee critical cell retention
 
 Usage:
-    python scripts/batch_incompressibility.py [config_path]
+    python demos/incompressibility/batch_incompressibility.py [config_path]
     Default config: configs/scripts/batch_incompressibility.yaml
 
 Outputs:

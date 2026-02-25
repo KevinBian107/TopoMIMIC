@@ -1,28 +1,28 @@
-output_dir: "outputs/granularity_qpos"
+# Granularity Analysis Configuration — Egocentric Keypoint Space
+
+output_dir: "outputs/granularity_ekp"
 
 data:
-  # dm_key: feature space for DM extraction ("intention" (m3t6), "qpos" (m3t9), or "ekp" (m3t8))
-  dm_key: "qpos"
+  dm_key: "ekp"
   qpos_key: "qpos"
   rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
   split: "train"
-  # pca_dims: optional PCA reduction (only applies to qpos/ekp, ignored for intention)
   pca_dims: 10
-  # xml_path/stac_data_path: required for ekp feature space
   xml_path: "topo_mimic/dmwk/xml/rodent.xml"
   stac_data_path: "data/rodent_reference_clips.h5"
 
 takens:
   m: 3
-  tau: 9
+  tau: 8
 
 dm:
   k_neighbors: 3
   epsilon: 0.99
+  use_dm_path: true
 
 multi_persistence:
   enabled: true
-  pers_delta_values: [0.01, 0.1, 0.15, 0.2, 1.25] #[0.1, 0.25, 0.5, 0.75, 1.0]
+  pers_delta_values: [0.01, 0.05, 0.1, 0.15, 0.2]
 
 joints:
   head_joints: ["atlas", "vertebra_axis_twist"]
@@ -42,7 +42,7 @@ clustering:
 redundancy:
   enabled: true
   n_clusters_range: [5, 10, 15, 20, 25]
-  dtw_threshold: 0.2 # empirically about this
+  dtw_threshold: 0.2
   dtw_percentile: 10.0
   threshold_method: "fixed"
   top_k_similar_pairs: 5

@@ -134,6 +134,7 @@ class DMConfig:
     results_dir: str | None = None
     segment_gap_limit: int = 50
     min_segment_len: int = 50
+    use_dm_path: bool = False
 
 
 @dataclass
@@ -252,10 +253,15 @@ def takens_embedding(X: np.ndarray, m: int, tau: int) -> np.ndarray:
 def run_dm_extraction(
     data: np.ndarray,
     config: PipelineConfig,
-) -> tuple[list, list]:
+) -> tuple[list, list, list | None]:
     os.makedirs(config.output_dir, exist_ok=True)
 
+    use_dm_path = config.dm.use_dm_path
+    if use_dm_path:
+        from topo_mimic.dmwk.skeletonization.dm_path import extract_dm_paths
+
     all_cycle_dm = []
+    all_path_dm = [] if use_dm_path else None
     all_G_sm = []
 
     for clip_id in tqdm(range(len(data)), desc="DM extraction"):
@@ -277,13 +283,23 @@ def run_dm_extraction(
         cycle_inds = [np.array(inds, dtype=int) for inds in cycle_inds]
         all_G_sm.append(G_sm)
 
-        if not cycle_inds:
-            all_cycle_dm.append([])
-            print(f"Clip {clip_id}: 0 cycles, {G_sm.number_of_edges()} edges")
-            continue
-
         remap = parse_swr_remap(clip_output_dir)
         n_takens = len(pts)
+
+        if not cycle_inds:
+            all_cycle_dm.append([])
+            if use_dm_path:
+                path_result = extract_dm_paths(
+                    G_sm, clip_output_dir, remap, n_takens,
+                    gap_limit=config.dm.segment_gap_limit,
+                    min_segment_len=config.dm.min_segment_len,
+                )
+                all_path_dm.append(path_result.paths_remapped)
+                print(f"Clip {clip_id}: 0 cycles, {len(path_result.paths_remapped)} paths, {G_sm.number_of_edges()} edges")
+            else:
+                print(f"Clip {clip_id}: 0 cycles, {G_sm.number_of_edges()} edges")
+            continue
+
         remapped_cycles = []
         for cycle in cycle_inds:
             orig = remap_cycle_to_original(cycle, remap, n_takens)
@@ -298,16 +314,30 @@ def run_dm_extraction(
             segments = []
 
         all_cycle_dm.append(segments)
-        print(f"Clip {clip_id}: {len(cycle_inds)} cycles -> {len(segments)} segments, {G_sm.number_of_edges()} edges")
+
+        if use_dm_path:
+            path_result = extract_dm_paths(
+                G_sm, clip_output_dir, remap, n_takens,
+                gap_limit=config.dm.segment_gap_limit,
+                min_segment_len=config.dm.min_segment_len,
+            )
+            all_path_dm.append(path_result.paths_remapped)
+            print(f"Clip {clip_id}: {len(cycle_inds)} cycles -> {len(segments)} segments, {len(path_result.paths_remapped)} paths, {G_sm.number_of_edges()} edges")
+        else:
+            print(f"Clip {clip_id}: {len(cycle_inds)} cycles -> {len(segments)} segments, {G_sm.number_of_edges()} edges")
 
     with open(os.path.join(config.output_dir, "all_G_sm.pkl"), "wb") as f:
         pkl.dump(all_G_sm, f)
     with open(os.path.join(config.output_dir, "all_cycle_dm.pkl"), "wb") as f:
         pkl.dump(all_cycle_dm, f)
 
+    if use_dm_path:
+        with open(os.path.join(config.output_dir, "all_path_dm.pkl"), "wb") as f:
+            pkl.dump(all_path_dm, f)
+
     print(f"\nSaved DM results to {config.output_dir}")
 
-    return all_cycle_dm, all_G_sm
+    return all_cycle_dm, all_G_sm, all_path_dm
 
 
 def get_cycle_statistics(all_cycle_dm: list) -> dict:
@@ -336,13 +366,41 @@ def get_cycle_statistics(all_cycle_dm: list) -> dict:
     return stats
 
 
-def run_pipeline(config: PipelineConfig) -> tuple[list, list]:
+def get_path_statistics(all_path_dm: list) -> dict:
+    n_clips = len(all_path_dm)
+    total_paths = sum(len(paths) for paths in all_path_dm)
+    clips_with_paths = sum(1 for paths in all_path_dm if len(paths) > 0)
+
+    all_lengths = []
+    for paths in all_path_dm:
+        for path in paths:
+            all_lengths.append(len(path))
+
+    stats = {
+        "n_clips": n_clips,
+        "total_paths": total_paths,
+        "clips_with_paths": clips_with_paths,
+        "paths_per_clip": total_paths / n_clips if n_clips > 0 else 0,
+    }
+
+    if all_lengths:
+        stats["path_length_mean"] = np.mean(all_lengths)
+        stats["path_length_std"] = np.std(all_lengths)
+        stats["path_length_min"] = np.min(all_lengths)
+        stats["path_length_max"] = np.max(all_lengths)
+
+    return stats
+
+
+def run_pipeline(config: PipelineConfig) -> tuple[list, list, list | None]:
     sys.path.append("/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM")
     os.makedirs(config.output_dir, exist_ok=True)
 
     print("=" * 60)
     print("Discrete Morse Pipeline")
     print("=" * 60)
+
+    all_path_dm = None
 
     if config.dm.skip:
         if config.dm.results_dir is None:
@@ -357,6 +415,12 @@ def run_pipeline(config: PipelineConfig) -> tuple[list, list]:
         if os.path.exists(graph_path):
             with open(graph_path, "rb") as f:
                 all_G_sm = pkl.load(f)
+
+        path_path = os.path.join(config.dm.results_dir, "all_path_dm.pkl")
+        if os.path.exists(path_path):
+            with open(path_path, "rb") as f:
+                all_path_dm = pkl.load(f)
+            print(f"Loaded {len(all_path_dm)} path sets")
 
         print(f"Loaded {len(all_cycle_dm)} cycle sets")
     else:
@@ -412,7 +476,7 @@ def run_pipeline(config: PipelineConfig) -> tuple[list, list]:
             print(f"\n=== Stage 2: Using fixed Takens parameters (m={config.takens.m}, tau={config.takens.tau}) ===")
 
         print("\n=== Stage 3: Running DM extraction ===")
-        all_cycle_dm, all_G_sm = run_dm_extraction(data, config)
+        all_cycle_dm, all_G_sm, all_path_dm = run_dm_extraction(data, config)
 
     stats = get_cycle_statistics(all_cycle_dm)
     print("\n=== Cycle Statistics ===")
@@ -427,11 +491,25 @@ def run_pipeline(config: PipelineConfig) -> tuple[list, list]:
         yaml.dump(stats, f)
     print(f"\nSaved stats to {stats_path}")
 
+    if all_path_dm is not None:
+        path_stats = get_path_statistics(all_path_dm)
+        print("\n=== Path Statistics ===")
+        for key, val in path_stats.items():
+            if isinstance(val, float):
+                print(f"  {key}: {val:.2f}")
+            else:
+                print(f"  {key}: {val}")
+
+        path_stats_path = os.path.join(config.output_dir, "path_stats.yaml")
+        with open(path_stats_path, "w") as f:
+            yaml.dump(path_stats, f)
+        print(f"Saved path stats to {path_stats_path}")
+
     print("\n" + "=" * 60)
     print("Pipeline Complete!")
     print("=" * 60)
 
-    return all_cycle_dm, all_G_sm
+    return all_cycle_dm, all_G_sm, all_path_dm
 
 
 def plot_diagnostics_from_pickle(

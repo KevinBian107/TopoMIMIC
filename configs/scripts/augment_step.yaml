@@ -1,0 +1,12 @@
+behavior_labels_csv: "behavior_labels.csv"
+n_immobility_frames: 20
+n_walk_frames: 30
+backup: true
+
+rendering:
+  enabled: true
+  rodent_rollout_dir: "data/rodent_ar.h5"
+  max_samples: 10
+  output_path: "outputs/step_augmentation/step_grid.mp4"
+  framerate: 50
+  target_size: [320, 240]

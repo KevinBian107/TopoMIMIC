@@ -27,13 +27,14 @@ takens:
 
 # Discrete Morse parameters
 dm:
-  pers_delta: 0.2 # intention (0.75), qpos (0.2), ekp (0.15)
+  pers_delta: 0.2 # intention (0.75), qpos (0.2), ekp (0.1)
   k_neighbors: 3
   epsilon: 0.99
   skip: false  # Set to true to load existing results
   results_dir: null  # Set path when skip is true
   segment_gap_limit: 50
   min_segment_len: 50
+  use_dm_path: true
 
 # Video rendering (optional)
 rendering:

@@ -13,7 +13,7 @@ stac-mjx/
 
 # output figures
 outputs/
-archive_out/
+outputs_archive/
 
 # labeling framework
 .gradio

@@ -28,6 +28,9 @@ class TakensConfig:
 class DMConfig:
     k_neighbors: int = 3
     epsilon: float = 0.99
+    use_dm_path: bool = False
+    segment_gap_limit: int = 50
+    min_segment_len: int = 50
 
 
 @dataclass
