@@ -1,0 +1,31 @@
+dataset: walker
+data_path: data/walker.h5
+labels_csv: walker_behavior_labels.csv
+output_dir: outputs/walker_demo
+
+dm_pipeline:
+  dm_key: intention
+  split: all
+  takens:
+    auto_estimate: true
+  dm:
+    pers_delta: 1.0
+    k_neighbors: 3
+
+clustering:
+  n_clusters: 10
+  target_len: 70
+  skip_clips: []
+  min_len: 0
+  max_len: 500
+
+rendering:
+  enabled: true
+  walker_xml: topo_mimic/dmwk/xml/walker.xml
+  max_samples: 5
+  max_gt_types: 10
+  max_gt_samples: 500
+  framerate: 30
+  target_size: [320, 240]
+
+only_analysis: true

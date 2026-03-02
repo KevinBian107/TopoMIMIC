@@ -27,6 +27,7 @@ from tqdm import tqdm
 
 from topo_mimic.dmwk.utils.load_utils import get_aggregate_data, get_clip_indices
 from topo_mimic.dmwk.utils.feature_transforms import apply_dm_key_transform, get_hdf5_key_for_dm_key
+from topo_mimic.dmwk.utils.dataset_config import get_dataset_preset
 from topo_mimic.dmwk.skeletonization.postprocess import (
     _expand_frames_nonconsec,
     _uniform_downsample,
@@ -147,6 +148,7 @@ class ClusterMergingConfig:
 
 @dataclass
 class ExperimentConfig:
+    dataset: str = "rodent"
     output_dir: str = "outputs/experiment"
     rodent_rollout_dir: str = "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
     split: str = "train"
@@ -253,6 +255,7 @@ def load_config(config_path: str) -> ExperimentConfig:
     cluster_merging_cfg = ClusterMergingConfig(**cluster_merging_dict)
 
     return ExperimentConfig(
+        dataset=cfg.get("dataset", "rodent"),
         output_dir=cfg.get("output_dir", ExperimentConfig.output_dir),
         rodent_rollout_dir=cfg.get("rodent_rollout_dir", ExperimentConfig.rodent_rollout_dir),
         split=cfg.get("split", ExperimentConfig.split),
@@ -276,8 +279,10 @@ def load_data(
     rodent_rollout_dir: str,
     split: str,
     n_clips: int | None = None,
+    total_clips: int = 842,
+    test_size: int = 200,
 ) -> tuple[np.ndarray, list[int]]:
-    clip_indices = get_clip_indices(split, n_clips=n_clips)
+    clip_indices = get_clip_indices(split, n_clips=n_clips, total_clips=total_clips, test_size=test_size)
     work_fn = functools.partial(
         get_aggregate_data, f"/{data_key}", [], path=rodent_rollout_dir
     )
@@ -309,12 +314,18 @@ def load_source_data(
     rodent_rollout_dir: str,
     split: str,
     n_clips: int | None,
+    dataset: str = "rodent",
 ) -> tuple[np.ndarray, list[int]]:
+    preset = get_dataset_preset(dataset)
     hdf5_key = get_hdf5_key_for_dm_key(source_cfg.dm_key)
-    data, clip_indices = load_data(hdf5_key, rodent_rollout_dir, split, n_clips)
+    data, clip_indices = load_data(
+        hdf5_key, rodent_rollout_dir, split, n_clips,
+        total_clips=preset.total_clips, test_size=preset.test_size,
+    )
 
     data = apply_dm_key_transform(
-        data, source_cfg.dm_key, source_cfg.xml_path, source_cfg.stac_data_path
+        data, source_cfg.dm_key, source_cfg.xml_path, source_cfg.stac_data_path,
+        dataset=dataset,
     )
     print(f"After transform ({source_cfg.dm_key}): {data.shape}")
 
@@ -1088,8 +1099,13 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
     print(f"Seeds: {config.seeds}")
     print(f"DM sources: {list(config.dm_sources.keys())}")
 
+    preset = get_dataset_preset(config.dataset)
+
     print(f"\n=== Stage 1: Loading {config.data.evaluation_key} data ===")
-    eval_data, clip_indices = load_data(config.data.evaluation_key, config.rodent_rollout_dir, config.split, config.n_clips)
+    eval_data, clip_indices = load_data(
+        config.data.evaluation_key, config.rodent_rollout_dir, config.split, config.n_clips,
+        total_clips=preset.total_clips, test_size=preset.test_size,
+    )
     print(f"Loaded {len(clip_indices)} clips: {clip_indices[0]}-{clip_indices[-1]}")
 
     print("\n=== Stage 2: Running methods by DM source ===")
@@ -1126,7 +1142,8 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
         print(f"{'='*60}")
 
         source_data, source_clip_indices = load_source_data(
-            source_cfg, config.rodent_rollout_dir, config.split, config.n_clips
+            source_cfg, config.rodent_rollout_dir, config.split, config.n_clips,
+            dataset=config.dataset,
         )
 
         min_frames = min(source_data.shape[1], eval_data.shape[1])

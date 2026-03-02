@@ -23,6 +23,7 @@ from tqdm import tqdm
 
 from topo_mimic.dmwk.utils.load_utils import get_aggregate_data, get_clip_indices
 from topo_mimic.dmwk.utils.feature_transforms import apply_dm_key_transform, get_hdf5_key_for_dm_key
+from topo_mimic.dmwk.utils.dataset_config import get_dataset_preset
 from topo_mimic.dmwk.skeletonization.skeletonization import extract_skeleton_pcd_dm
 from topo_mimic.dmwk.skeletonization.remap import (
     parse_swr_remap,
@@ -102,6 +103,7 @@ def plot_ami_fnn_diagnostics(
 
 @dataclass
 class DataConfig:
+    dataset: str = "rodent"
     dm_key: str = "intention"
     rodent_rollout_dir: str = "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
     split: str = "train"
@@ -199,7 +201,12 @@ def load_config(config_path: str) -> PipelineConfig:
 
 
 def load_data(config: DataConfig, output_dir: str | None = None) -> tuple[np.ndarray, list[int]]:
-    clip_indices = get_clip_indices(config.split)
+    preset = get_dataset_preset(config.dataset)
+    clip_indices = get_clip_indices(
+        config.split,
+        total_clips=preset.total_clips,
+        test_size=preset.test_size,
+    )
     hdf5_key = get_hdf5_key_for_dm_key(config.dm_key)
     work_fn = functools.partial(
         get_aggregate_data, f"/{hdf5_key}", [], path=config.rodent_rollout_dir
@@ -226,7 +233,8 @@ def load_data(config: DataConfig, output_dir: str | None = None) -> tuple[np.nda
 
     render_output_dir = os.path.join(output_dir, "keypoint_renders") if output_dir and config.dm_key == "ekp" else None
     data = apply_dm_key_transform(
-        data, config.dm_key, config.xml_path, config.stac_data_path, render_output_dir
+        data, config.dm_key, config.xml_path, config.stac_data_path, render_output_dir,
+        dataset=config.dataset,
     )
     print(f"After transform ({config.dm_key}): {data.shape}")
 
@@ -437,6 +445,7 @@ def run_pipeline(config: PipelineConfig) -> tuple[list, list, list | None]:
                     dm_key=config.data.dm_key,
                     xml_path=config.data.xml_path,
                     stac_data_path=config.data.stac_data_path,
+                    dataset=config.data.dataset,
                 )
             tau_star, m_star, diagnostics = estimate_delay_embedding_params(
                 rodent_rollout_dir=config.data.rodent_rollout_dir,

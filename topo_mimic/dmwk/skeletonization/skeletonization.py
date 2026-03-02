@@ -64,6 +64,9 @@ def extract_skeleton_pcd_dm(
         arrays containing vertex indices for each cycle
     """
 
+    if output_dir is not None:
+        output_dir = os.path.abspath(output_dir)
+
     orig_cwd = os.getcwd()
     repo_path = "/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM"
     os.chdir(repo_path)
