@@ -43,6 +43,11 @@ TopoVNL/
 │       ├── analysis/          # Result analysis & viz
 │       └── labeling/          # Automatic labeling
 │
+├── walker_generation/          # Config-driven walker clip generation
+│   ├── config.py              # Dataclasses + YAML loader
+│   ├── generate.py            # Core pipeline (schedule → rollout → extract)
+│   └── output.py              # Direct H5/CSV writer (TopoVNL format)
+│
 ├── PCD-Graph-Recon-DM/        # Discrete Morse C++ backend
 │   ├── dmpcd/                 # Python bindings
 │   │   ├── pcd/               # Point cloud DM methods
@@ -69,6 +74,7 @@ TopoVNL/
 ├── configs/                   # YAML configurations
 │   ├── dmwk/                  # DM pipeline + granularity configs
 │   ├── benchmark/             # Experiment configs
+│   ├── walker_generation/     # Walker clip generation configs
 │   └── scripts/               # Script configs
 │
 ├── data/                      # Input data (Mimic-MJX rollouts)
@@ -284,6 +290,25 @@ utilities; demos provide illustrative examples.
 
 ---
 
+## Walker Generation: walker_generation/
+
+Config-driven module for generating walker transition clips directly in TopoVNL format. Replaces the 3-step manual process (generate → extract → convert) with a single `python3 -m walker_generation <config.yaml>` invocation.
+
+```
+walker_generation/
+├── __init__.py          # Package init, exposes run_generation()
+├── __main__.py          # CLI entry point
+├── config.py            # TransitionSpec, GenerationConfig + YAML loader
+├── generate.py          # Core pipeline (schedule → rollout → crop → extract)
+└── output.py            # Direct H5/CSV writer (TopoVNL format)
+```
+
+Key design: each `TransitionSpec(src, dst, n_clips)` restricts `allowed_modes` to `[src, dst]` for targeted 2-mode scheduling, then filters for the exact direction. All clips are batched through Step 2 extraction in a single pass.
+
+See `docs/walker_generation.md` for full documentation.
+
+---
+
 ## Configurations
 
 ### Config Directory Structure
@@ -301,6 +326,9 @@ configs/
 │   ├── experiment.yaml             # Method comparison
 │   ├── analysis.yaml               # Analysis settings
 │   └── labeling.yaml               # Labeling settings
+│
+├── walker_generation/
+│   └── default.yaml             # Walker transition clip generation
 │
 └── scripts/
     ├── render_cycle.yaml
