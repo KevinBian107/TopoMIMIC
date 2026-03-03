@@ -128,7 +128,7 @@ python -m topo_mimic.benchmark.generate_results_table
 ```
 
 ## Walker Generation Pipeline
-To generate walker transition clips, you need the [track-mjx](https://github.com/talmolab/track-mjx) environment. Clone it, create the environment, then run from the TopoVNL root:
+To generate walker transition clips, you need the [track-mjx](https://github.com/talmolab/track-mjx) environment with the walker branch of [vnl-playground](https://github.com/talmolab/vnl-playground). Clone track-mjx, create the environment, install the walker-enabled vnl-playground, then run from the TopoVNL root:
 
 ```bash
 # Clone and set up track-mjx environment
@@ -137,6 +137,9 @@ cd track-mjx
 uv venv
 source .venv/bin/activate
 uv pip install -e ".[cuda12]"
+
+# Install vnl-playground with walker task support (topo_walker branch)
+uv pip install --reinstall "vnl-playground @ git+https://github.com/talmolab/vnl-playground.git@scott_claude/topo_walker"
 
 # Return to TopoVNL and run the generation pipeline
 cd ..

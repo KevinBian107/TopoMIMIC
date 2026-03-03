@@ -9,7 +9,7 @@ dm_pipeline:
   takens:
     auto_estimate: true
   dm:
-    pers_delta: 1.0
+    pers_delta: 0.75
     k_neighbors: 3
 
 clustering:
@@ -24,8 +24,8 @@ rendering:
   walker_xml: topo_mimic/dmwk/xml/walker.xml
   max_samples: 5
   max_gt_types: 10
-  max_gt_samples: 500
+  max_gt_samples: 200
   framerate: 30
   target_size: [320, 240]
 
-only_analysis: true
+only_analysis: false

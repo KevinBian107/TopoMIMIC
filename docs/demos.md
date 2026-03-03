@@ -64,6 +64,13 @@ python -m demos.demo_transition_filmstrip
 ```
 Renders filmstrip visualizations of behavioral transitions captured by DM paths and cycles.
 
+### Walker Transition Demo
+```bash
+python demos/demo_walker_transitions.py
+python demos/demo_walker_transitions.py --config configs/demos/demo_walker_transitions.yaml
+```
+End-to-end demo for the walker dataset: DM extraction → W2 clustering → GT comparison → PCA/UMAP/t-SNE plots. Generates rendered videos of discovered clusters vs ground truth transition groups, plus embedding visualizations colored by GT and DM labels. Set `only_analysis: false` in the config for the first run (computes DM + clustering from scratch), then `only_analysis: true` to re-run only the visualization stages on cached results.
+
 ---
 
 ## Incompressibility Verification

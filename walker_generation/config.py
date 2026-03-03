@@ -19,6 +19,10 @@ class CheckpointConfig:
     step2_path: str = "data/checkpoints/walker_imitation/260224_030923"
     step1_step: int | None = None
 
+    def __post_init__(self):
+        self.step1_path = str(Path(self.step1_path).resolve())
+        self.step2_path = str(Path(self.step2_path).resolve())
+
 
 @dataclass
 class ScheduleConfig:
@@ -43,6 +47,10 @@ class RolloutConfig:
 class OutputConfig:
     h5_path: str = "data/walker.h5"
     csv_path: str = "walker_behavior_labels.csv"
+
+    def __post_init__(self):
+        self.h5_path = str(Path(self.h5_path).resolve())
+        self.csv_path = str(Path(self.csv_path).resolve())
 
 
 @dataclass

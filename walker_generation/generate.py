@@ -1,8 +1,9 @@
 """Core generation pipeline: schedule -> rollout -> crop -> extract -> save.
 
-Wraps walker/scripts/generate_topo_dataset.py (Step 1) and
-walker/scripts/extract_imitation_activations.py (Step 2) into a single
-config-driven pipeline that outputs directly to TopoVNL format.
+Generates targeted walker behavior transition clips and extracts Step 2
+policy activations, outputting directly to TopoVNL format (H5 + CSV).
+
+Requires the track-mjx environment (vnl_playground, track_mjx, brax, jax).
 """
 
 import os
@@ -11,37 +12,28 @@ os.environ["MUJOCO_GL"] = "egl"
 os.environ["PYOPENGL_PLATFORM"] = "egl"
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
-import sys
 import time
 from collections import defaultdict
+from dataclasses import dataclass
 from pathlib import Path
 
+import h5py
 import jax
 import jax.numpy as jp
 import numpy as np
-
-from walker_generation.config import GenerationConfig, TransitionSpec
-from walker_generation.output import write_labels_csv, write_unified_h5
-
-# Imports from walker/scripts/ (must be on sys.path or installed)
-from walker.scripts.generate_topo_dataset import (
-    ClipMeta,
-    TransitionMeta,
-    build_inference_fn,
-    crop_clips_from_rollout,
-    load_step1_checkpoint,
-    make_transition_schedule,
-)
-from walker.scripts.extract_imitation_activations import (
-    SingleClipGenerator,
-    build_imitation_env,
-    make_batched_rollout_fn,
-)
+import orbax.checkpoint as ocp
+from brax.training import distribution
+from brax.training.acme import running_statistics
+from brax.training.agents.ppo import networks as brax_ppo_networks
 
 from vnl_playground.tasks.walker import consts
 from vnl_playground.tasks.walker.multi_behavior import (
     MultiBehaviorWalker,
     default_config as multi_behavior_config,
+)
+from vnl_playground.tasks.walker.imitation import (
+    WalkerImitation,
+    default_config as imitation_default_config,
 )
 from vnl_playground.tasks.walker.online_reference import (
     OnlineReferenceGenerator,
@@ -49,9 +41,333 @@ from vnl_playground.tasks.walker.online_reference import (
 )
 from track_mjx.agent.checkpointing import load_checkpoint_for_eval, load_inference_fn
 
+from walker_generation.config import GenerationConfig, TransitionSpec
+from walker_generation.output import WALKER_MODES, write_labels_csv, write_unified_h5
+
+N_MODES = consts.N_BEHAVIOR_MODES
+
+
+# ── Data structures ──────────────────────────────────────────────────────────
+
+
+@dataclass
+class TransitionMeta:
+    src_mode: int
+    dst_mode: int
+    transition_start: int
+    transition_end: int
+
+
+@dataclass
+class ClipMeta:
+    src_mode: int
+    dst_mode: int
+    transition_start_in_clip: int
+    transition_end_in_clip: int
+
+
+class SingleClipGenerator:
+    """Drop-in replacement for OnlineReferenceGenerator that returns a fixed clip."""
+
+    def __init__(self, trajectory: WalkerTrajectory):
+        self.trajectory = trajectory
+        self.n_frames = trajectory.qpos.shape[0]
+
+    def generate(self, rng, behavior_schedule):
+        return self.trajectory
+
+    def sample_behavior_schedule(self, rng, n_frames):
+        return self.trajectory.behavior_labels
+
+
+# ── Checkpoint loading ───────────────────────────────────────────────────────
+
+
+def _load_step1_checkpoint(checkpoint_path: str, step: int | None = None):
+    ckpt_dir = Path(checkpoint_path).resolve()
+    if step is None:
+        steps = sorted(
+            int(d.name) for d in ckpt_dir.iterdir() if d.is_dir() and d.name.isdigit()
+        )
+        if not steps:
+            raise FileNotFoundError(f"No checkpoint steps found in {ckpt_dir}")
+        step = steps[-1]
+
+    step_path = str(ckpt_dir / str(step))
+    print(f"Loading Step 1 checkpoint from {step_path}")
+    checkpointer = ocp.PyTreeCheckpointer()
+    return checkpointer.restore(step_path)
+
+
+def _build_step1_inference_fn(
+    step1_params,
+    obs_size: int,
+    action_size: int,
+    hidden_sizes: tuple[int, ...] = (256, 256, 256),
+):
+    ppo_networks = brax_ppo_networks.make_ppo_networks(
+        observation_size=obs_size,
+        action_size=action_size,
+        preprocess_observations_fn=running_statistics.normalize,
+        policy_hidden_layer_sizes=hidden_sizes,
+        value_hidden_layer_sizes=hidden_sizes,
+    )
+    parametric_action_dist = distribution.NormalTanhDistribution(event_size=action_size)
+
+    raw_normalizer = step1_params[0]
+    policy_params = step1_params[1]
+
+    if isinstance(raw_normalizer, dict):
+        normalizer_params = running_statistics.RunningStatisticsState(
+            count=raw_normalizer["count"],
+            mean=raw_normalizer["mean"],
+            summed_variance=raw_normalizer["summed_variance"],
+            std=raw_normalizer["std"],
+        )
+    else:
+        normalizer_params = raw_normalizer
+
+    def inference_fn(obs, rng):
+        logits = ppo_networks.policy_network.apply(
+            normalizer_params, policy_params, obs
+        )
+        return parametric_action_dist.sample(logits, rng)
+
+    return inference_fn
+
+
+# ── Schedule generation ──────────────────────────────────────────────────────
+
+
+def _make_transition_schedule(
+    rng: np.random.RandomState,
+    n_frames: int,
+    allowed_modes: list[int],
+    mode_duration_min: int = 250,
+    mode_duration_extra_max: int = 100,
+    transition_mean: int = 100,
+    transition_std: int = 20,
+) -> tuple[np.ndarray, list[TransitionMeta]]:
+    schedule = np.zeros((n_frames, N_MODES), dtype=np.float32)
+    transitions = []
+
+    current_mode = rng.choice(allowed_modes)
+    frame = 0
+
+    while frame < n_frames:
+        duration = mode_duration_min + rng.randint(0, mode_duration_extra_max + 1)
+        seg_end = min(frame + duration, n_frames)
+        schedule[frame:seg_end, current_mode] = 1.0
+        frame = seg_end
+
+        if frame >= n_frames:
+            break
+
+        next_mode = rng.choice(allowed_modes)
+        while next_mode == current_mode:
+            next_mode = rng.choice(allowed_modes)
+
+        trans_dur_raw = rng.normal(transition_mean, transition_std)
+        trans_dur_lo = transition_mean - 2 * transition_std
+        trans_dur_hi = transition_mean + 2 * transition_std
+        trans_dur = int(np.clip(trans_dur_raw, trans_dur_lo, trans_dur_hi))
+        trans_dur = max(trans_dur, 1)
+
+        trans_start = frame
+        trans_end = min(frame + trans_dur, n_frames)
+        actual_dur = trans_end - trans_start
+
+        alphas = np.linspace(0.0, 1.0, actual_dur)
+        for i, alpha in enumerate(alphas):
+            schedule[trans_start + i, current_mode] = 1.0 - alpha
+            schedule[trans_start + i, next_mode] = alpha
+
+        transitions.append(
+            TransitionMeta(
+                src_mode=current_mode,
+                dst_mode=next_mode,
+                transition_start=trans_start,
+                transition_end=trans_end,
+            )
+        )
+
+        frame = trans_end
+        current_mode = next_mode
+
+    return schedule, transitions
+
+
+# ── Clip cropping ────────────────────────────────────────────────────────────
+
+
+def _crop_clips_from_rollout(
+    trajectory: WalkerTrajectory,
+    transitions: list[TransitionMeta],
+    clip_length: int,
+) -> tuple[list[dict], list[ClipMeta]]:
+    n_rollout_frames = trajectory.qpos.shape[0]
+    clips = []
+    clip_metas = []
+
+    for trans in transitions:
+        trans_dur = trans.transition_end - trans.transition_start
+        pre_frames = (clip_length - trans_dur) // 2
+        clip_start = trans.transition_start - pre_frames
+        clip_end = clip_start + clip_length
+
+        if clip_start < 0 or clip_end > n_rollout_frames:
+            continue
+
+        clip_data = {
+            "qpos": trajectory.qpos[clip_start:clip_end],
+            "qvel": trajectory.qvel[clip_start:clip_end],
+            "xpos": trajectory.xpos[clip_start:clip_end],
+            "xquat": trajectory.xquat[clip_start:clip_end],
+            "behavior_labels": trajectory.behavior_labels[clip_start:clip_end],
+        }
+        clips.append(clip_data)
+
+        clip_metas.append(
+            ClipMeta(
+                src_mode=trans.src_mode,
+                dst_mode=trans.dst_mode,
+                transition_start_in_clip=trans.transition_start - clip_start,
+                transition_end_in_clip=trans.transition_end - clip_start,
+            )
+        )
+
+    return clips, clip_metas
+
+
+# ── Imitation environment ────────────────────────────────────────────────────
+
+
+def _build_imitation_env(
+    step1_checkpoint: str,
+    clip_length: int,
+    reference_length: int,
+) -> WalkerImitation:
+    mb_cfg = multi_behavior_config()
+    mb_cfg.mujoco_impl = "warp"
+    mb_env = MultiBehaviorWalker(config=mb_cfg)
+
+    step1_params = _load_step1_checkpoint(step1_checkpoint)
+    step1_fn = _build_step1_inference_fn(
+        step1_params,
+        obs_size=mb_env.observation_size,
+        action_size=mb_env.action_size,
+    )
+
+    dummy_generator = OnlineReferenceGenerator(
+        policy_fn=step1_fn,
+        walker_env=mb_env,
+        n_frames=clip_length,
+        deterministic=True,
+        warmup_frames=0,
+        warmup_transition_frames=0,
+    )
+
+    imit_cfg = imitation_default_config()
+    imit_cfg.trajectory_length = clip_length
+    imit_cfg.reference_length = reference_length
+    imit_cfg.warmup_frames = 0
+    imit_cfg.warmup_transition_frames = 0
+    imit_cfg.mujoco_impl = "warp"
+
+    return WalkerImitation(config=imit_cfg, generator=dummy_generator)
+
+
+def _flatten_nested_obs(nested):
+    """Flatten a potentially nested observation to a single flat array.
+
+    Handles both flat arrays and nested dicts/OrderedDicts of arrays.
+    Preserves batch dimensions (leading dims shared across all leaves).
+    """
+    if isinstance(nested, jp.ndarray):
+        return nested
+
+    leaves = jax.tree_util.tree_leaves(nested)
+    if not leaves:
+        return jp.array([])
+
+    ref = min(leaves, key=lambda x: x.ndim)
+    n_batch = 0
+    for i in range(ref.ndim - 1):
+        if len({leaf.shape[i] for leaf in leaves}) == 1:
+            n_batch += 1
+        else:
+            break
+
+    if n_batch == 0:
+        flat, _ = jax.flatten_util.ravel_pytree(nested)
+        return flat
+
+    batch_shape = ref.shape[:n_batch]
+    return jp.concatenate(
+        [leaf.reshape(*batch_shape, -1) for leaf in leaves], axis=-1
+    )
+
+
+def _flatten_obs(obs):
+    """Flatten nested env observations to match the checkpoint normalizer structure.
+
+    The WalkerImitation env produces deeply nested OrderedDicts:
+        OrderedDict(state=OrderedDict(task_obs=OrderedDict(...), proprioception=OrderedDict(...)), ...)
+    But the checkpoint normalizer expects flat arrays at each key:
+        {state: {task_obs: flat_array, proprioception: flat_array}, ...}
+    """
+    result = {}
+    for top_key in obs:
+        inner = obs[top_key]
+        result[top_key] = {
+            "task_obs": _flatten_nested_obs(inner["task_obs"]),
+            "proprioception": _flatten_nested_obs(inner["proprioception"]),
+        }
+    return result
+
+
+def _make_batched_rollout_fn(env, policy_fn, episode_length):
+    def rollout_one(clip_qpos, clip_qvel, clip_xpos, clip_xquat, clip_labels, rng):
+        clip_traj = WalkerTrajectory(
+            qpos=clip_qpos,
+            qvel=clip_qvel,
+            xpos=clip_xpos,
+            xquat=clip_xquat,
+            behavior_labels=clip_labels,
+        )
+        env.generator = SingleClipGenerator(clip_traj)
+
+        rng, reset_rng = jax.random.split(rng)
+        state = env.reset(reset_rng, behavior_schedule=clip_labels)
+
+        def scan_step(carry, _):
+            state, rng = carry
+            rng, step_rng, policy_rng = jax.random.split(rng, 3)
+            obs = _flatten_obs(state.obs)
+            action, extras = policy_fn(obs, policy_rng)
+            next_state = env.step(state, action)
+            step_data = {
+                "latent_mean": extras["latent_mean"],
+                "latent_logvar": extras["latent_logvar"],
+                "actions": action,
+                "rewards": next_state.reward,
+                "agent_qpos": next_state.data.qpos,
+                "done": next_state.done,
+            }
+            return (next_state, rng), step_data
+
+        _, traj_data = jax.lax.scan(
+            scan_step, (state, rng), None, length=episode_length
+        )
+        return traj_data
+
+    return jax.jit(jax.vmap(rollout_one, in_axes=(0, 0, 0, 0, 0, 0)))
+
+
+# ── Per-pair clip generation ─────────────────────────────────────────────────
+
 
 def _resolve_mode_index(name: str) -> int:
-    """Map a behavior mode name to its integer index."""
     if name not in consts.BEHAVIOR_MODES:
         raise ValueError(
             f"Unknown behavior mode {name!r}. "
@@ -67,23 +383,7 @@ def _generate_clips_for_pair(
     jax_rng,
     config: GenerationConfig,
 ) -> tuple[list[dict], list[ClipMeta], int]:
-    """Generate clips for a single transition pair via targeted 2-mode scheduling.
-
-    Restricts allowed_modes to [src, dst] so every rollout MUST alternate
-    between those two modes. Filters cropped clips to keep only the
-    requested src->dst direction.
-
-    Args:
-        spec: TransitionSpec with src, dst, n_clips.
-        batched_generate: JIT+vmap'd Step 1 generation function.
-        np_rng: NumPy random state for schedule generation.
-        jax_rng: JAX PRNGKey for rollout RNG splitting.
-        config: Full generation config.
-
-    Returns:
-        Tuple of (clips, clip_metas, jax_rng) where clips/metas are the
-        filtered src->dst clips and jax_rng is the updated key.
-    """
+    """Generate clips for a single transition pair via targeted 2-mode scheduling."""
     src_idx = _resolve_mode_index(spec.src)
     dst_idx = _resolve_mode_index(spec.dst)
     allowed_modes = [src_idx, dst_idx]
@@ -101,7 +401,7 @@ def _generate_clips_for_pair(
         batch_schedules = []
         batch_transitions = []
         for _ in range(batch_n):
-            schedule, transitions = make_transition_schedule(
+            schedule, transitions = _make_transition_schedule(
                 np_rng,
                 sched.rollout_frames,
                 allowed_modes,
@@ -129,7 +429,7 @@ def _generate_clips_for_pair(
                 xquat=np.asarray(batch_trajs.xquat[i]),
                 behavior_labels=np.asarray(batch_trajs.behavior_labels[i]),
             )
-            clips, clip_metas = crop_clips_from_rollout(
+            clips, clip_metas = _crop_clips_from_rollout(
                 np_traj, batch_transitions[i], sched.clip_length
             )
             for clip, meta in zip(clips, clip_metas):
@@ -149,15 +449,14 @@ def _generate_clips_for_pair(
     return collected_clips, collected_metas, jax_rng
 
 
+# ── Activation extraction ────────────────────────────────────────────────────
+
+
 def _extract_activations(
     clips: list[dict],
     config: GenerationConfig,
 ) -> dict[str, np.ndarray]:
     """Run all clips through Step 2 policy and extract activations.
-
-    Args:
-        clips: List of clip dicts (qpos, qvel, xpos, xquat, behavior_labels).
-        config: Full generation config.
 
     Returns:
         Dict with "latent_mean" (N, T, 16) and "agent_qpos" (N, T, 9).
@@ -184,25 +483,25 @@ def _extract_activations(
     )
 
     print(f"Building imitation environment (Step 1: {config.checkpoints.step1_path})")
-    env = build_imitation_env(
+    env = _build_imitation_env(
         step1_checkpoint=config.checkpoints.step1_path,
         clip_length=clip_length,
         reference_length=reference_length,
     )
 
     print(f"Building batched rollout function (batch_size={batch_size})...")
-    batched_rollout = make_batched_rollout_fn(env, policy_fn, episode_length)
+    batched_rollout = _make_batched_rollout_fn(env, policy_fn, episode_length)
 
-    # Convert clips to JAX arrays
-    jax_clips = []
-    for c in clips:
-        jax_clips.append(WalkerTrajectory(
+    jax_clips = [
+        WalkerTrajectory(
             qpos=jp.array(c["qpos"]),
             qvel=jp.array(c["qvel"]),
             xpos=jp.array(c["xpos"]),
             xquat=jp.array(c["xquat"]),
             behavior_labels=jp.array(c["behavior_labels"]),
-        ))
+        )
+        for c in clips
+    ]
 
     # JIT warmup
     print("JIT compiling batched rollout...")
@@ -221,7 +520,6 @@ def _extract_activations(
     jax.tree_util.tree_map(lambda x: x.block_until_ready(), warmup_data)
     print("JIT compilation done.")
 
-    # Process all clips in batches
     print(f"Extracting activations for {n_clips} clips...")
     t_start = time.time()
 
@@ -288,6 +586,9 @@ def _extract_activations(
     }
 
 
+# ── Main pipeline ────────────────────────────────────────────────────────────
+
+
 def run_generation(config: GenerationConfig) -> None:
     """Run the full generation pipeline.
 
@@ -295,9 +596,6 @@ def run_generation(config: GenerationConfig) -> None:
     2. For each TransitionSpec, generate targeted clips
     3. Extract activations via Step 2 policy
     4. Write unified output (H5 + CSV)
-
-    Args:
-        config: Full generation configuration.
     """
     total_clips = sum(t.n_clips for t in config.transitions)
     print(f"Walker generation pipeline")
@@ -305,7 +603,7 @@ def run_generation(config: GenerationConfig) -> None:
 
     # ── Step 1: Load checkpoint and build generator ─────────────────────
     print(f"\nLoading Step 1 checkpoint from {config.checkpoints.step1_path}")
-    step1_params = load_step1_checkpoint(
+    step1_params = _load_step1_checkpoint(
         config.checkpoints.step1_path,
         config.checkpoints.step1_step,
     )
@@ -314,7 +612,7 @@ def run_generation(config: GenerationConfig) -> None:
     cfg.mujoco_impl = "warp"
     gen_env = MultiBehaviorWalker(config=cfg)
 
-    inference_fn = build_inference_fn(
+    inference_fn = _build_step1_inference_fn(
         step1_params,
         obs_size=gen_env.observation_size,
         action_size=gen_env.action_size,
@@ -336,10 +634,10 @@ def run_generation(config: GenerationConfig) -> None:
     # JIT warmup
     print(f"JIT compiling Step 1 batched generate (batch_size={batch_n})...")
     np_rng = np.random.RandomState(config.rollout.seed)
-    warmup_schedule, _ = make_transition_schedule(
+    warmup_schedule, _ = _make_transition_schedule(
         np_rng,
         sched.rollout_frames,
-        list(range(consts.N_BEHAVIOR_MODES)),
+        list(range(N_MODES)),
         mode_duration_min=sched.mode_duration_min,
         mode_duration_extra_max=sched.mode_duration_extra_max,
         transition_mean=sched.transition_mean,
@@ -399,9 +697,6 @@ def run_generation(config: GenerationConfig) -> None:
 
 
 def _print_pair_summary(clip_metas: list[ClipMeta]) -> None:
-    """Print a summary of collected transition pairs."""
-    from walker_generation.output import WALKER_MODES
-
     pair_counts: dict[tuple[int, int], int] = defaultdict(int)
     for m in clip_metas:
         pair_counts[(m.src_mode, m.dst_mode)] += 1
