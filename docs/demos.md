@@ -64,12 +64,19 @@ python -m demos.demo_transition_filmstrip
 ```
 Renders filmstrip visualizations of behavioral transitions captured by DM paths and cycles.
 
+### Rodent Transition Demo
+```bash
+python demos/demo_rodent_transitions.py
+python demos/demo_rodent_transitions.py --config configs/demos/demo_rodent_transitions.yaml
+```
+Visualizes rodent behavioral transitions using PCA/UMAP/t-SNE with up to 3 rows per embedding plot: GT transitions, DM cycles, and DM paths — all colored by behavior transition labels looked up from the GT CSV. Finds all labeled transitions in the test clips via `find_all_transitions()`, groups by directed type, picks the top K by count, and runs DM extraction on the test-set data to extract cycle and path segments. Each DM segment is assigned a transition label by majority-vote of its per-frame GT behaviors. Outputs: `pca_comparison.png`, `umap_comparison.png`, `tsne_comparison.png` (multi-row), `transition_summary.txt`, DM extraction artifacts in `dm/`, and optionally `gt_transitions.mp4`.
+
 ### Walker Transition Demo
 ```bash
 python demos/demo_walker_transitions.py
 python demos/demo_walker_transitions.py --config configs/demos/demo_walker_transitions.yaml
 ```
-End-to-end demo for the walker dataset: DM extraction → W2 clustering → GT comparison → PCA/UMAP/t-SNE plots. Generates rendered videos of discovered clusters vs ground truth transition groups, plus embedding visualizations colored by GT and DM labels. Set `only_analysis: false` in the config for the first run (computes DM + clustering from scratch), then `only_analysis: true` to re-run only the visualization stages on cached results.
+End-to-end demo for the walker dataset: DM extraction → W2 clustering → GT comparison → PCA/UMAP/t-SNE plots. Generates rendered videos of discovered clusters vs ground truth transition groups, plus embedding visualizations colored by GT and DM labels. Additionally produces Nature-style multi-row embedding plots (`nature_pca.png`, `nature_umap.png`, `nature_tsne.png`) showing GT transitions, DM cycles, and DM paths side by side with shared color maps and labeled legends. Set `only_analysis: false` in the config for the first run (computes DM + clustering from scratch), then `only_analysis: true` to re-run only the visualization stages on cached results.
 
 ---
 

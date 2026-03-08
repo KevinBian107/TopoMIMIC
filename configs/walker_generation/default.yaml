@@ -1,48 +1,33 @@
 transitions:
-  - src: stand
+  - src: walk_backward
+    dst: hop
+    n_clips: 150
+  - src: walk_fast
+    dst: tiptoe
+    n_clips: 150
+  - src: hop
+    dst: knee_down
+    n_clips: 150
+  - src: walk_backward
     dst: walk_fast
-    n_clips: 200
-  - src: stand
-    dst: hop
-    n_clips: 200
-  - src: stand
-    dst: knee_down
-    n_clips: 200
-  - src: walk_fast
-    dst: hop
-    n_clips: 200
-  - src: walk_fast
-    dst: tiptoe
-    n_clips: 200
-  - src: hop
-    dst: knee_down
-    n_clips: 200
-  - src: hop
-    dst: tiptoe
-    n_clips: 200
+    n_clips: 150
   - src: knee_down
-    dst: tiptoe
-    n_clips: 200
-  - src: walk_backward
     dst: walk_fast
-    n_clips: 200
-  - src: walk_backward
-    dst: hop
-    n_clips: 200
+    n_clips: 150
 
 checkpoints:
   step1_path: data/checkpoints/walker_multi_behavior/260215_202424
   step2_path: data/checkpoints/walker_imitation/260224_030923
 
 schedule:
-  clip_length: 500
+  clip_length: 250
   rollout_frames: 2000
   warmup_frames: 200
   warmup_transition_frames: 50
-  mode_duration_min: 250
-  mode_duration_extra_max: 100
-  transition_mean: 100
-  transition_std: 20
+  mode_duration_min: 100
+  mode_duration_extra_max: 0
+  transition_mean: 50
+  transition_std: 0
 
 rollout:
   batch_size: 200

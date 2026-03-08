@@ -41,6 +41,7 @@ from topo_mimic.dmwk.dm_pipeline import (
     run_pipeline,
     run_dm_extraction,
     get_cycle_statistics,
+    get_path_statistics,
     takens_embedding,
     plot_ami_fnn_diagnostics,
 )
@@ -50,7 +51,6 @@ from topo_mimic.benchmark.experiment import (
     build_feature_matrix,
     compute_w2_distance_matrix,
     labels_to_cluster_dict,
-    generate_labels_yaml,
 )
 from topo_mimic.benchmark.methods import get_method
 from topo_mimic.dmwk.skeletonization.postprocess import _uniform_downsample
@@ -236,7 +236,7 @@ def build_dm_pipeline_config(
             split=demo_cfg.dm_pipeline.split,
         ),
         takens=TakensConfig(**takens_dict),
-        dm=DMExtractConfig(**dm_dict),
+        dm=DMExtractConfig(use_dm_path=True, **dm_dict),
         rendering=DMRenderingConfig(enabled=False),
     )
 
@@ -304,6 +304,16 @@ def run_pipeline_on_data(
     stats_path = os.path.join(output_dir, "cycle_stats.yaml")
     with open(stats_path, "w") as f:
         _yaml.dump(stats, f)
+
+    if all_path_dm is not None:
+        path_stats = get_path_statistics(all_path_dm)
+        print("\nPath Statistics:")
+        for key, val in path_stats.items():
+            print(f"  {key}: {val:.2f}" if isinstance(val, float) else f"  {key}: {val}")
+
+        path_stats_path = os.path.join(output_dir, "path_stats.yaml")
+        with open(path_stats_path, "w") as f:
+            _yaml.dump(path_stats, f)
 
     return all_cycle_dm, all_G_sm, all_path_dm
 
@@ -477,14 +487,13 @@ def _prepare_pca_data(
     return result
 
 
-def _scatter_categorical(ax, coords, cat_labels, cmap_name, title, axis_labels, legend_kw=None):
+def _scatter_categorical(ax, coords, cat_labels, cmap_name, title, axis_labels, legend_kw=None, color_map=None):
     unique = sorted(set(cat_labels))
-    color_map = {label: i for i, label in enumerate(unique)}
-    colors = [color_map[l] for l in cat_labels]
-    cmap = plt.cm.get_cmap(cmap_name)
-    n = max(len(unique) - 1, 1)
+    if color_map is None:
+        color_map = _build_unified_color_map(cat_labels, cmap_name=cmap_name)
+    colors = [color_map.get(l, (0.5, 0.5, 0.5, 1.0)) for l in cat_labels]
 
-    ax.scatter(coords[:, 0], coords[:, 1], c=colors, cmap=cmap_name, s=40, alpha=0.7, edgecolors="k", linewidths=0.2)
+    ax.scatter(coords[:, 0], coords[:, 1], c=colors, s=10, alpha=0.7, edgecolors="white", linewidths=0.15, rasterized=True)
     ax.set_title(title)
     ax.set_xlabel(axis_labels[0])
     ax.set_ylabel(axis_labels[1])
@@ -492,7 +501,7 @@ def _scatter_categorical(ax, coords, cat_labels, cmap_name, title, axis_labels, 
     if len(unique) <= 20:
         handles = [
             plt.Line2D([0], [0], marker="o", color="w",
-                       markerfacecolor=cmap(color_map[l] / n),
+                       markerfacecolor=color_map.get(l, (0.5, 0.5, 0.5, 1.0)),
                        markersize=6, label=l)
             for l in unique
         ]
@@ -502,8 +511,8 @@ def _scatter_categorical(ax, coords, cat_labels, cmap_name, title, axis_labels, 
         ax.legend(handles=handles, **kw)
 
 
-def _scatter_with_filtered(ax, coords, cat_labels, cmap_name, title, axis_labels, filtered_tag="Filtered", legend_kw=None):
-    scatter_kw = dict(s=40, alpha=0.7, edgecolors="k", linewidths=0.2)
+def _scatter_with_filtered(ax, coords, cat_labels, cmap_name, title, axis_labels, filtered_tag="Filtered", legend_kw=None, color_map=None):
+    scatter_kw = dict(s=10, alpha=0.7, edgecolors="white", linewidths=0.15, rasterized=True)
 
     filtered_mask = np.array([l == filtered_tag for l in cat_labels])
     active_mask = ~filtered_mask
@@ -515,16 +524,14 @@ def _scatter_with_filtered(ax, coords, cat_labels, cmap_name, title, axis_labels
     active_labels = [l for l, m in zip(cat_labels, active_mask) if m]
     if active_labels:
         unique = sorted(set(active_labels))
-        color_map = {label: i for i, label in enumerate(unique)}
-        colors = [color_map[l] for l in active_labels]
-        cmap = plt.cm.get_cmap(cmap_name)
-        n = max(len(unique) - 1, 1)
+        if color_map is None:
+            color_map = _build_unified_color_map(active_labels, cmap_name=cmap_name)
+        colors = [color_map.get(l, (0.5, 0.5, 0.5, 1.0)) for l in active_labels]
         ac = coords[active_mask]
-        ax.scatter(ac[:, 0], ac[:, 1], c=colors, cmap=cmap_name, **scatter_kw)
+        ax.scatter(ac[:, 0], ac[:, 1], c=colors, **scatter_kw)
     else:
         unique = []
-        cmap = plt.cm.get_cmap(cmap_name)
-        n = 1
+        color_map = color_map or {}
 
     n_filt = int(filtered_mask.sum())
     ax.set_title(title)
@@ -533,7 +540,7 @@ def _scatter_with_filtered(ax, coords, cat_labels, cmap_name, title, axis_labels
 
     handles = [
         plt.Line2D([0], [0], marker="o", color="w",
-                   markerfacecolor=cmap(color_map[l] / n),
+                   markerfacecolor=color_map.get(l, (0.5, 0.5, 0.5, 1.0)),
                    markersize=6, label=l)
         for l in unique
     ] if active_labels else []
@@ -555,7 +562,7 @@ def _scatter_cluster_labels(ax, coords, dm_assignments, label_names, axis_labels
     filtered_mask = dm_arr == -1
     clustered_mask = ~filtered_mask
 
-    scatter_kw = dict(s=40, alpha=0.7, edgecolors="k", linewidths=0.2)
+    scatter_kw = dict(s=10, alpha=0.7, edgecolors="white", linewidths=0.15, rasterized=True)
 
     if filtered_mask.any():
         fc = coords[filtered_mask]
@@ -598,6 +605,46 @@ def _scatter_cluster_labels(ax, coords, dm_assignments, label_names, axis_labels
     ax.legend(handles=handles, **kw)
 
 
+_TAB10_NO_GRAY = [plt.cm.tab10(i) for i in range(10) if i != 7]
+_TAB20_NO_GRAY = [plt.cm.tab20(i) for i in range(20) if i not in (14, 15)]
+
+
+def _build_unified_color_map(
+    *label_lists: list[str],
+    cmap_name: str = "tab10",
+    filtered_tag: str = "Filtered",
+) -> dict[str, tuple]:
+    palette = _TAB20_NO_GRAY if "20" in cmap_name else _TAB10_NO_GRAY
+    all_labels = set()
+    for labels in label_lists:
+        all_labels.update(l for l in labels if l != filtered_tag)
+    return {label: palette[i % len(palette)] for i, label in enumerate(sorted(all_labels))}
+
+
+_NATURE_RC = {
+    "font.family": "sans-serif",
+    "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
+    "font.size": 7,
+    "axes.titlesize": 8,
+    "axes.labelsize": 7,
+    "xtick.labelsize": 6,
+    "ytick.labelsize": 6,
+    "legend.fontsize": 6,
+    "axes.linewidth": 0.5,
+    "xtick.major.width": 0.5,
+    "ytick.major.width": 0.5,
+    "xtick.major.size": 2,
+    "ytick.major.size": 2,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "figure.dpi": 300,
+    "savefig.dpi": 300,
+    "savefig.bbox": "tight",
+    "savefig.pad_inches": 0.05,
+}
+
+
+
 def _plot_embedding_grid(
     coords: np.ndarray,
     info: dict,
@@ -606,26 +653,32 @@ def _plot_embedding_grid(
     suptitle: str,
     output_path: str,
 ) -> None:
-    if "disc_labels" in info:
-        fig, axes = plt.subplots(2, 3, figsize=(21, 14))
-        _scatter_categorical(axes[0, 0], coords, info["gt_labels"], "tab20", f"GT Transition Type (n={n_win})", axis_labels)
-        _scatter_categorical(axes[0, 1], coords, info["src_labels"], "tab10", "GT Source Behavior", axis_labels)
-        _scatter_categorical(axes[0, 2], coords, info["dst_labels"], "tab10", "GT Destination Behavior", axis_labels)
-        _scatter_with_filtered(axes[1, 0], coords, info["disc_labels"], "tab20", "Discovered Transition Type", axis_labels)
-        _scatter_with_filtered(axes[1, 1], coords, info["disc_src_labels"], "tab10", "Discovered Source Behavior", axis_labels)
-        _scatter_with_filtered(axes[1, 2], coords, info["disc_dst_labels"], "tab10", "Discovered Destination Behavior", axis_labels)
-    else:
-        fig, axes = plt.subplots(1, 4, figsize=(28, 7))
-        _scatter_categorical(axes[0], coords, info["gt_labels"], "tab20", f"Transition Type (n={n_win})", axis_labels)
-        _scatter_categorical(axes[1], coords, info["src_labels"], "tab10", "Source Behavior", axis_labels)
-        _scatter_categorical(axes[2], coords, info["dst_labels"], "tab10", "Destination Behavior", axis_labels)
-        _scatter_cluster_labels(axes[3], coords, info["dm_assignments"], info["label_names"], axis_labels)
+    with plt.rc_context(_NATURE_RC):
+        if "disc_labels" in info:
+            trans_cmap = _build_unified_color_map(info["gt_labels"], info["disc_labels"], cmap_name="tab20")
+            src_cmap = _build_unified_color_map(info["src_labels"], info["disc_src_labels"], cmap_name="tab10")
+            dst_cmap = _build_unified_color_map(info["dst_labels"], info["disc_dst_labels"], cmap_name="tab10")
 
-    fig.suptitle(suptitle, fontsize=14)
-    fig.tight_layout()
-    os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else ".", exist_ok=True)
-    fig.savefig(output_path, dpi=150, bbox_inches="tight", facecolor="white")
-    plt.close(fig)
+            fig, axes = plt.subplots(2, 3, figsize=(7.2, 5.0))
+            fig.subplots_adjust(left=0.08, right=0.97, top=0.92, bottom=0.08, wspace=0.3, hspace=0.4)
+            _scatter_categorical(axes[0, 0], coords, info["gt_labels"], "tab20", f"GT Transition Type (n={n_win})", axis_labels, color_map=trans_cmap)
+            _scatter_categorical(axes[0, 1], coords, info["src_labels"], "tab10", "GT Source Behavior", axis_labels, color_map=src_cmap)
+            _scatter_categorical(axes[0, 2], coords, info["dst_labels"], "tab10", "GT Destination Behavior", axis_labels, color_map=dst_cmap)
+            _scatter_with_filtered(axes[1, 0], coords, info["disc_labels"], "tab20", "Discovered Transition Type", axis_labels, color_map=trans_cmap)
+            _scatter_with_filtered(axes[1, 1], coords, info["disc_src_labels"], "tab10", "Discovered Source Behavior", axis_labels, color_map=src_cmap)
+            _scatter_with_filtered(axes[1, 2], coords, info["disc_dst_labels"], "tab10", "Discovered Destination Behavior", axis_labels, color_map=dst_cmap)
+        else:
+            fig, axes = plt.subplots(1, 4, figsize=(7.2, 2.4))
+            fig.subplots_adjust(left=0.06, right=0.97, top=0.88, bottom=0.15, wspace=0.35)
+            _scatter_categorical(axes[0], coords, info["gt_labels"], "tab20", f"Transition Type (n={n_win})", axis_labels)
+            _scatter_categorical(axes[1], coords, info["src_labels"], "tab10", "Source Behavior", axis_labels)
+            _scatter_categorical(axes[2], coords, info["dst_labels"], "tab10", "Destination Behavior", axis_labels)
+            _scatter_cluster_labels(axes[3], coords, info["dm_assignments"], info["label_names"], axis_labels)
+
+        fig.suptitle(suptitle, fontsize=9, fontweight="bold")
+        os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else ".", exist_ok=True)
+        fig.savefig(output_path, facecolor="white")
+        plt.close(fig)
     print(f"Saved {suptitle} to {output_path}")
 
 
@@ -802,21 +855,26 @@ def run_demo(config: DemoConfig) -> None:
 
     dm_output = os.path.join(config.output_dir, "dm")
     cycles_path = os.path.join(dm_output, "all_cycle_dm.pkl")
+    paths_path = os.path.join(dm_output, "all_path_dm.pkl")
 
     if not config.only_analysis:
-        # --- Stage 2: DM extraction ---
+        # --- Stage 2: DM extraction (cycles + paths) ---
         print("\n=== Stage 2: DM extraction ===")
         if os.path.exists(cycles_path):
             print(f"Found cached DM results at {cycles_path}, skipping extraction")
             with open(cycles_path, "rb") as f:
                 all_cycle_dm = pkl.load(f)
+            all_path_dm = None
+            if os.path.exists(paths_path):
+                with open(paths_path, "rb") as f:
+                    all_path_dm = pkl.load(f)
         else:
             pipeline_cfg = build_dm_pipeline_config(config)
             pipeline_cfg.data.rodent_rollout_dir = config.data_path
-            all_cycle_dm, _, _ = run_pipeline_on_data(data, clip_indices, pipeline_cfg, dm_output)
+            all_cycle_dm, _, all_path_dm = run_pipeline_on_data(data, clip_indices, pipeline_cfg, dm_output)
 
-        # --- Stage 3: W2 clustering ---
-        print("\n=== Stage 3: W2 clustering ===")
+        # --- Stage 3: W2 clustering (cycles) ---
+        print("\n=== Stage 3a: W2 clustering (cycles) ===")
         cluster_dict, labels, windows = run_clustering(
             all_cycle_dm, data, clip_indices, config.clustering, config.output_dir,
         )
@@ -827,7 +885,25 @@ def run_demo(config: DemoConfig) -> None:
                 "labels": labels,
                 "windows": windows,
             }, f)
-        print(f"Saved clustering results")
+        print(f"Saved cycle clustering results")
+
+        # --- Stage 3b: W2 clustering (paths) ---
+        path_cluster_dict, path_labels, path_windows = {}, np.array([]), []
+        if all_path_dm is not None:
+            print("\n=== Stage 3b: W2 clustering (paths) ===")
+            path_output = os.path.join(config.output_dir, "paths")
+            os.makedirs(path_output, exist_ok=True)
+            path_cluster_dict, path_labels, path_windows = run_clustering(
+                all_path_dm, data, clip_indices, config.clustering, path_output,
+            )
+
+            with open(os.path.join(config.output_dir, "path_cluster_results.pkl"), "wb") as f:
+                pkl.dump({
+                    "cluster_dict": path_cluster_dict,
+                    "labels": path_labels,
+                    "windows": path_windows,
+                }, f)
+            print(f"Saved path clustering results")
 
     else:
         # --- Only-analysis: load cached ---
@@ -836,6 +912,11 @@ def run_demo(config: DemoConfig) -> None:
         with open(cycles_path, "rb") as f:
             all_cycle_dm = pkl.load(f)
 
+        all_path_dm = None
+        if os.path.exists(paths_path):
+            with open(paths_path, "rb") as f:
+                all_path_dm = pkl.load(f)
+
         results_path = os.path.join(config.output_dir, "cluster_results.pkl")
         assert os.path.exists(results_path), f"Cached cluster results not found: {results_path}"
         with open(results_path, "rb") as f:
@@ -843,146 +924,192 @@ def run_demo(config: DemoConfig) -> None:
         cluster_dict = cached["cluster_dict"]
         labels = cached["labels"]
         windows = cached["windows"]
-        print(f"Loaded cached results: {len(cluster_dict)} clusters, {len(windows)} windows")
+        print(f"Loaded cached cycle results: {len(cluster_dict)} clusters, {len(windows)} windows")
+
+        path_cluster_dict, path_labels, path_windows = {}, np.array([]), []
+        path_results_path = os.path.join(config.output_dir, "path_cluster_results.pkl")
+        if os.path.exists(path_results_path):
+            with open(path_results_path, "rb") as f:
+                path_cached = pkl.load(f)
+            path_cluster_dict = path_cached["cluster_dict"]
+            path_labels = path_cached["labels"]
+            path_windows = path_cached["windows"]
+            print(f"Loaded cached path results: {len(path_cluster_dict)} clusters, {len(path_windows)} windows")
 
     # --- Load cluster labels if available ---
     cluster_labels = None
-    labels_yaml_path = os.path.join(config.output_dir, "labels_seed_0.yaml")
-    if config.only_analysis and os.path.exists(labels_yaml_path):
-        cluster_labels = load_labels_yaml(labels_yaml_path)
-        if cluster_labels:
-            print(f"Loaded cluster labels from {labels_yaml_path}")
+    cycle_labels_yaml_path = os.path.join(config.output_dir, "cycle_labels_seed_0.yaml")
+    old_labels_yaml_path = os.path.join(config.output_dir, "labels_seed_0.yaml")
+    if config.only_analysis:
+        for lp in [cycle_labels_yaml_path, old_labels_yaml_path]:
+            if os.path.exists(lp):
+                cluster_labels = load_labels_yaml(lp)
+                if cluster_labels:
+                    print(f"Loaded cycle cluster labels from {lp}")
+                    break
+
+    path_cluster_labels = None
+    path_labels_yaml_path = os.path.join(config.output_dir, "path_labels_seed_0.yaml")
+    if config.only_analysis and os.path.exists(path_labels_yaml_path):
+        path_cluster_labels = load_labels_yaml(path_labels_yaml_path)
+        if path_cluster_labels:
+            print(f"Loaded path cluster labels from {path_labels_yaml_path}")
 
     # --- Stage 4: GT transition groups ---
     print("\n=== Stage 4: GT transition groups ===")
     print(f"GT groups: {len(gt_cluster_dict)} transition types")
 
-    # --- Build DM cluster map for PCA + filtered rendering ---
-    dm_cluster_map = _build_dm_cluster_map(cluster_dict) if cluster_dict else {}
     all_gt_clip_ids = set()
     for items in gt_cluster_dict.values():
         for clip_id, _ in items:
             all_gt_clip_ids.add(clip_id)
-    dm_clustered_ids = set(dm_cluster_map.keys())
-    filtered_ids = all_gt_clip_ids - dm_clustered_ids
-    print(f"\nDM coverage: {len(dm_clustered_ids)}/{len(all_gt_clip_ids)} GT clips clustered, {len(filtered_ids)} filtered out")
 
-    # --- Stage 5: Rendering ---
-    if config.rendering.enabled and cluster_dict:
-        print("\n=== Stage 5: Grid rendering ===")
-        try:
-            from topo_mimic.dmwk.skeletonization.rendering import render_grid_clusters_side_by_side
+    # --- Helper: run stages 5-7 for a given DM variant (cycles or paths) ---
+    def _run_analysis_stages(
+        variant_name: str,
+        variant_cluster_dict: dict,
+        variant_labels: np.ndarray,
+        variant_windows: list,
+        variant_cluster_labels: dict[int, str] | None,
+        variant_prefix: str,
+    ) -> None:
+        dm_cluster_map = _build_dm_cluster_map(variant_cluster_dict) if variant_cluster_dict else {}
+        dm_clustered_ids = set(dm_cluster_map.keys())
+        filtered_ids = all_gt_clip_ids - dm_clustered_ids
+        print(f"\n{variant_name} DM coverage: {len(dm_clustered_ids)}/{len(all_gt_clip_ids)} GT clips clustered, {len(filtered_ids)} filtered out")
 
-            # DM+W2 cluster rendering
-            print("Rendering DM+W2 clusters...")
-            dm_chunks = chunk_loops_walker(
-                cluster_dict, config.data_path, config.rendering.walker_xml,
-                max_samples=config.rendering.max_samples,
-            )
-            dm_video_path = os.path.join(config.output_dir, "dm_w2_clusters.mp4")
-            render_grid_clusters_side_by_side(
-                dm_chunks, out_path=dm_video_path,
-                framerate=config.rendering.framerate,
-                max_samples_per_cluster=config.rendering.max_samples,
-                target_size=config.rendering.target_size,
-                title="DM+W2 Clusters",
-                cluster_labels=cluster_labels,
-            )
-
-            # GT group rendering
-            print("Rendering GT transition groups...")
-            gt_dict_int = {i: items for i, (_, items) in enumerate(sorted(gt_cluster_dict.items()))}
-            gt_label_map = {i: k for i, k in enumerate(sorted(gt_cluster_dict.keys()))}
-            gt_chunks = chunk_loops_walker(
-                gt_dict_int, config.data_path, config.rendering.walker_xml,
-                max_samples=config.rendering.max_samples,
-            )
-            gt_video_path = os.path.join(config.output_dir, "gt_transitions.mp4")
-            render_grid_clusters_side_by_side(
-                gt_chunks, out_path=gt_video_path,
-                framerate=config.rendering.framerate,
-                max_samples_per_cluster=config.rendering.max_samples,
-                target_size=config.rendering.target_size,
-                title="GT Transition Groups",
-                cluster_labels=gt_label_map,
-            )
-
-            # Filtered-out clips rendering
-            if filtered_ids:
-                print(f"Rendering {len(filtered_ids)} DM-filtered-out clips...")
-                clip_to_gt_frames: dict[int, np.ndarray] = {}
-                for items in gt_cluster_dict.values():
-                    for clip_id, frames in items:
-                        clip_to_gt_frames[clip_id] = frames
-                filtered_items = [(cid, clip_to_gt_frames[cid]) for cid in sorted(filtered_ids) if cid in clip_to_gt_frames]
-                filtered_render_dict: dict[int, list[tuple[int, np.ndarray]]] = {0: filtered_items}
-                filt_chunks = chunk_loops_walker(
-                    filtered_render_dict, config.data_path, config.rendering.walker_xml,
-                    max_samples=15,
-                )
-                filt_video_path = os.path.join(config.output_dir, "dm_filtered_clips.mp4")
-                render_grid_clusters_side_by_side(
-                    filt_chunks, out_path=filt_video_path,
-                    framerate=config.rendering.framerate,
-                    max_samples_per_cluster=15,
-                    target_size=config.rendering.target_size,
-                    title=f"DM Filtered-Out Clips ({len(filtered_ids)})",
-                    cluster_labels={0: "Filtered"},
-                    n_cols=5,
-                )
-        except Exception as e:
-            print(f"WARNING: Rendering failed: {e}")
-            import traceback
-            traceback.print_exc()
-
-    # --- Stage 6: PCA comparison (all GT clips) ---
-    print("\n=== Stage 6: PCA comparison (all GT clips) ===")
-    gt_pca_windows, gt_pca_labels = build_gt_pca_windows(
-        gt_cluster_dict, clip_indices, config.clustering.target_len,
-    )
-    print(f"Built {len(gt_pca_windows)} GT windows for PCA ({len(dm_clustered_ids)} with DM clusters, {len(filtered_ids)} filtered)")
-
-    if gt_pca_windows:
-        embed_common = dict(
-            gt_windows=gt_pca_windows, gt_labels=gt_pca_labels,
-            data=data, clip_indices=clip_indices,
-            dm_cluster_map=dm_cluster_map,
-            cluster_labels=cluster_labels,
-        )
-        for name, fn in [
-            ("PCA", plot_pca_comparison),
-            ("UMAP", plot_umap_comparison),
-            ("t-SNE", plot_tsne_comparison),
-        ]:
+        # --- Rendering ---
+        if config.rendering.enabled and variant_cluster_dict:
+            print(f"\n=== Rendering ({variant_name}) ===")
             try:
-                fn(
-                    output_path=os.path.join(config.output_dir, f"{name.lower().replace('-', '')}_comparison.png"),
-                    **embed_common,
+                from topo_mimic.dmwk.skeletonization.rendering import render_grid_clusters_side_by_side
+
+                print(f"Rendering {variant_name} DM+W2 clusters...")
+                dm_chunks = chunk_loops_walker(
+                    variant_cluster_dict, config.data_path, config.rendering.walker_xml,
+                    max_samples=config.rendering.max_samples,
                 )
+                dm_video_path = os.path.join(config.output_dir, f"{variant_prefix}_dm_w2_clusters.mp4")
+                render_grid_clusters_side_by_side(
+                    dm_chunks, out_path=dm_video_path,
+                    framerate=config.rendering.framerate,
+                    max_samples_per_cluster=config.rendering.max_samples,
+                    target_size=config.rendering.target_size,
+                    title=f"{variant_name} DM+W2 Clusters",
+                    cluster_labels=variant_cluster_labels,
+                )
+
+                if variant_prefix == "cycle":
+                    print("Rendering GT transition groups...")
+                    gt_dict_int = {i: items for i, (_, items) in enumerate(sorted(gt_cluster_dict.items()))}
+                    gt_label_map = {i: k for i, k in enumerate(sorted(gt_cluster_dict.keys()))}
+                    gt_chunks = chunk_loops_walker(
+                        gt_dict_int, config.data_path, config.rendering.walker_xml,
+                        max_samples=config.rendering.max_samples,
+                    )
+                    gt_video_path = os.path.join(config.output_dir, "gt_transitions.mp4")
+                    render_grid_clusters_side_by_side(
+                        gt_chunks, out_path=gt_video_path,
+                        framerate=config.rendering.framerate,
+                        max_samples_per_cluster=config.rendering.max_samples,
+                        target_size=config.rendering.target_size,
+                        title="GT Transition Groups",
+                        cluster_labels=gt_label_map,
+                    )
+
+                if filtered_ids:
+                    print(f"Rendering {len(filtered_ids)} {variant_name} DM-filtered-out clips...")
+                    clip_to_gt_frames: dict[int, np.ndarray] = {}
+                    for items in gt_cluster_dict.values():
+                        for clip_id, frames in items:
+                            clip_to_gt_frames[clip_id] = frames
+                    filtered_items = [(cid, clip_to_gt_frames[cid]) for cid in sorted(filtered_ids) if cid in clip_to_gt_frames]
+                    filtered_render_dict: dict[int, list[tuple[int, np.ndarray]]] = {0: filtered_items}
+                    filt_chunks = chunk_loops_walker(
+                        filtered_render_dict, config.data_path, config.rendering.walker_xml,
+                        max_samples=15,
+                    )
+                    filt_video_path = os.path.join(config.output_dir, f"{variant_prefix}_dm_filtered_clips.mp4")
+                    render_grid_clusters_side_by_side(
+                        filt_chunks, out_path=filt_video_path,
+                        framerate=config.rendering.framerate,
+                        max_samples_per_cluster=15,
+                        target_size=config.rendering.target_size,
+                        title=f"{variant_name} DM Filtered-Out Clips ({len(filtered_ids)})",
+                        cluster_labels={0: "Filtered"},
+                        n_cols=5,
+                    )
             except Exception as e:
-                print(f"WARNING: {name} plot failed: {e}")
+                print(f"WARNING: {variant_name} rendering failed: {e}")
                 import traceback
                 traceback.print_exc()
 
-    # --- Stage 7: Label YAML ---
-    print("\n=== Stage 7: Label YAML ===")
-    labels_yaml_path = os.path.join(config.output_dir, "labels_seed_0.yaml")
-    if cluster_dict and not os.path.exists(labels_yaml_path):
-        n_clusters = len(set(labels[labels >= 0]))
-        yaml_path = generate_labels_yaml(
-            method_name="w2_dmc_int_kmeans",
-            n_clusters=n_clusters,
-            seed=0,
-            output_dir=config.output_dir,
-            experiment_id="walker_demo",
+        # --- Embedding plots ---
+        print(f"\n=== Embedding plots ({variant_name}) ===")
+        gt_pca_windows, gt_pca_labels = build_gt_pca_windows(
+            gt_cluster_dict, clip_indices, config.clustering.target_len,
         )
-        print(f"Generated label template: {yaml_path}")
-    elif os.path.exists(labels_yaml_path):
-        print(f"Label YAML already exists, skipping: {labels_yaml_path}")
+        print(f"Built {len(gt_pca_windows)} GT windows for {variant_name} plots ({len(dm_clustered_ids)} with DM clusters, {len(filtered_ids)} filtered)")
 
-    # --- Confusion table (uses full GT, not filtered) ---
-    if cluster_dict and gt_cluster_dict_full:
-        print_confusion_table(cluster_dict, gt_cluster_dict_full, cluster_labels)
+        if gt_pca_windows:
+            embed_common = dict(
+                gt_windows=gt_pca_windows, gt_labels=gt_pca_labels,
+                data=data, clip_indices=clip_indices,
+                dm_cluster_map=dm_cluster_map,
+                cluster_labels=variant_cluster_labels,
+            )
+            for name, fn in [
+                ("PCA", plot_pca_comparison),
+                ("UMAP", plot_umap_comparison),
+                ("t-SNE", plot_tsne_comparison),
+            ]:
+                try:
+                    fn(
+                        output_path=os.path.join(config.output_dir, f"{variant_prefix}_{name.lower().replace('-', '')}_comparison.png"),
+                        **embed_common,
+                    )
+                except Exception as e:
+                    print(f"WARNING: {variant_name} {name} plot failed: {e}")
+                    import traceback
+                    traceback.print_exc()
+
+        # --- Label YAML ---
+        variant_labels_yaml = os.path.join(config.output_dir, f"{variant_prefix}_labels_seed_0.yaml")
+        if variant_cluster_dict and not os.path.exists(variant_labels_yaml):
+            n_clusters = len(set(variant_labels[variant_labels >= 0])) if len(variant_labels) > 0 else 0
+            if n_clusters > 0:
+                labels_content = {
+                    "experiment_id": f"walker_demo_{variant_prefix}",
+                    "method": "w2_dmc_int_kmeans",
+                    "n_clusters": n_clusters,
+                    "seed": 0,
+                    "labels": {i: "" for i in range(n_clusters)},
+                }
+                with open(variant_labels_yaml, "w") as f:
+                    f.write("# AUTO-GENERATED - Fill in labels after watching videos\n")
+                    f.write("# Label format: single behavior (\"rear\"), transition (\"walk rear\"), compound (\"rear left_turn\")\n\n")
+                    yaml.dump(labels_content, f, default_flow_style=False, sort_keys=False)
+                print(f"Generated {variant_name} label template: {variant_labels_yaml}")
+        elif os.path.exists(variant_labels_yaml):
+            print(f"{variant_name} label YAML already exists: {variant_labels_yaml}")
+
+        # --- Confusion table ---
+        if variant_cluster_dict and gt_cluster_dict_full:
+            print(f"\n{variant_name} Confusion Table:")
+            print_confusion_table(variant_cluster_dict, gt_cluster_dict_full, variant_cluster_labels)
+
+    # --- Run analysis for cycles ---
+    print("\n" + "=" * 60)
+    print("=== Cycle Analysis ===")
+    print("=" * 60)
+    _run_analysis_stages("Cycle", cluster_dict, labels, windows, cluster_labels, "cycle")
+
+    # --- Run analysis for paths ---
+    if path_cluster_dict or (all_path_dm is not None):
+        print("\n" + "=" * 60)
+        print("=== Path Analysis ===")
+        print("=" * 60)
+        _run_analysis_stages("Path", path_cluster_dict, path_labels, path_windows, path_cluster_labels, "path")
 
     print("\n" + "=" * 60)
     print("Walker Demo Complete!")

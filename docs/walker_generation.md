@@ -56,7 +56,7 @@ checkpoints:
   step1_path: walker/checkpoints/walker_multi_behavior/260215_202424
   step2_path: walker/checkpoints/walker_imitation/260224_030923
 
-schedule:
+schedule: 
   clip_length: 500          # Frames per output clip
   rollout_frames: 2000      # Frames per rollout (before cropping)
   warmup_frames: 200        # Standing warmup (not recorded)
