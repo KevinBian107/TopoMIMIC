@@ -212,6 +212,7 @@ def compute_filmstrip_camera(
     elevation: float,
     azimuth: float,
     distance_margin: float,
+    vertical_padding: float = 0.12,
 ) -> tuple[np.ndarray, float, float]:
     """Compute a fixed camera position that frames all poses in the filmstrip.
 
@@ -222,6 +223,10 @@ def compute_filmstrip_camera(
 
     bbox_min = root_positions.min(axis=0)
     bbox_max = root_positions.max(axis=0)
+
+    bbox_max[2] += vertical_padding
+    bbox_min[2] -= vertical_padding * 0.25
+
     center = (bbox_min + bbox_max) / 2.0
 
     extent = np.linalg.norm(bbox_max - bbox_min)
@@ -243,7 +248,11 @@ def compute_filmstrip_camera(
 # ---------------------------------------------------------------------------
 
 
-def _load_mujoco_model(xml_path: str) -> tuple:
+def _load_mujoco_model(
+    xml_path: str,
+    offscreen_width: int = 1920,
+    offscreen_height: int = 1080,
+) -> tuple:
     spec = mujoco.MjSpec()
     spec = spec.from_file(xml_path)
     for geom in spec.geoms:
@@ -251,6 +260,8 @@ def _load_mujoco_model(xml_path: str) -> tuple:
             geom.size *= 0.95
         if geom.pos is not None:
             geom.pos *= 0.95
+    spec.visual.global_.offwidth = offscreen_width
+    spec.visual.global_.offheight = offscreen_height
     mj_model = spec.compile()
     mj_model.opt.solver = mujoco.mjtSolver.mjSOL_CG
     mj_model.opt.iterations = 6
@@ -332,8 +343,19 @@ def _select_longest_continuous_segment(
     return max(segments, key=len)
 
 
-def _composite_frames_opaque(frames: list[np.ndarray]) -> np.ndarray:
-    """Painter-style compositing: later poses paint over earlier, bodies stay opaque."""
+def _composite_frames_opaque(
+    frames: list[np.ndarray],
+    temporal_tint: bool = False,
+    tint_start: tuple[float, float, float] = (0.68, 0.80, 0.88),
+    tint_end: tuple[float, float, float] = (0.22, 0.38, 0.50),
+) -> np.ndarray:
+    """Painter-style compositing with optional temporal color gradient.
+
+    When temporal_tint=True, each pose is tinted along a light-to-dark
+    color ramp (Nature chronophotography style). Earlier poses are lighter,
+    later poses are darker, making the time direction visible even when
+    poses overlap.
+    """
     if not frames:
         return np.full((100, 100, 3), 255, dtype=np.uint8)
 
@@ -346,11 +368,26 @@ def _composite_frames_opaque(frames: list[np.ndarray]) -> np.ndarray:
     ])
     bg_color = np.median(border, axis=0).astype(np.float32)
 
-    composite = frames[0].copy()
-    for frame in frames[1:]:
+    h, w = ref.shape[:2]
+    composite = np.full((h, w, 3), 255, dtype=np.uint8)
+
+    n = len(frames)
+    for i, frame in enumerate(frames):
         diff = np.max(np.abs(frame.astype(np.float32) - bg_color), axis=-1)
         mask = diff > 30
-        composite[mask] = frame[mask]
+
+        if temporal_tint and n > 1:
+            t = i / (n - 1)
+            tint = np.array([
+                tint_start[c] * (1 - t) + tint_end[c] * t for c in range(3)
+            ], dtype=np.float32)
+            body_pixels = frame[mask].astype(np.float32) / 255.0
+            luminance = 1.0 - np.mean(body_pixels, axis=-1, keepdims=True)
+            tint_rgb = tint[None, :]
+            colored = luminance * tint_rgb + (1.0 - luminance) * 1.0
+            composite[mask] = np.clip(colored * 255.0, 0, 255).astype(np.uint8)
+        else:
+            composite[mask] = frame[mask]
 
     return composite
 
@@ -415,7 +452,7 @@ def create_filmstrip_composite(
             composite_image=blank, n_poses_rendered=0, frame_indices=frame_indices,
         )
 
-    composite = _composite_frames_opaque(frames)
+    composite = _composite_frames_opaque(frames, temporal_tint=True)
 
     return FilmstripResult(
         clip_id=clip_id,

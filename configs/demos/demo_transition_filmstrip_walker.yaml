@@ -1,0 +1,20 @@
+dataset: walker
+output_dir: "outputs/transition_filmstrip_walker"
+behavior_labels_csv: "walker_behavior_labels.csv"
+output_format: pdf
+data:
+  rollout_path: "data/walker.h5"
+  xml_path: "topo_mimic/dmwk/xml/walker.xml"
+filmstrip:
+  n_poses: 5
+  camera_elevation: -25
+  camera_azimuth: 90
+  camera_distance_margin: 1.8
+  render_height: 720
+  render_width: 960
+grid_columns: 4
+examples_per_type: 1
+short_threshold: 5
+max_gap: 60
+min_transition_frames: 20
+max_context_frames: 60
