@@ -84,6 +84,7 @@ class DiscoveryConfig:
     min_valley_frames: int = 10
     smooth_window: int = 5
     max_xy_displacement: float = 0.03
+    max_paths: int = 3
     clip_ids: list[int] = field(default_factory=list)
 
 
@@ -225,21 +226,22 @@ def analyze_clip(
         pca_3d = PCA(n_components=3)
         pts_3d = pca_3d.fit_transform(dm_result.takens_points)
 
-        # Extract all cycle segments
+        # Extract segments from the longest cycle
         cycle_segments = []
-        for cycle in dm_result.cycles:
-            valid = remap_cycle_to_original(cycle, remap_to_orig, n_takens)
-            if len(valid) > 1:
-                ordered = order_cycle_vertices(dm_result.takens_points, valid)
-                raw_segs = split_cycle_into_segments(
-                    ordered, gap_limit=cfg.visualization.segment_gap_limit,
-                )
-                cycle_segments.extend(
-                    s for s in raw_segs
-                    if len(s) >= cfg.filmstrip.min_segment_length
-                )
+        cycle = dm_result.cycles[0]
+        valid = remap_cycle_to_original(cycle, remap_to_orig, n_takens)
+        if len(valid) > 1:
+            ordered = order_cycle_vertices(dm_result.takens_points, valid)
+            raw_segs = split_cycle_into_segments(
+                ordered, gap_limit=cfg.visualization.segment_gap_limit,
+            )
+            cycle_segments = [
+                s for s in raw_segs
+                if len(s) >= cfg.filmstrip.min_segment_length
+            ]
 
-        # Extract path segments
+        # Extract top N path segments
+        max_paths = cfg.discovery.max_paths
         path_segments = []
         try:
             minima = find_dm_minima(dm_result)
@@ -247,17 +249,20 @@ def analyze_clip(
                 dm_result.G_dm, minima, remap_to_orig, n_takens,
             )
             if conn is not None and conn.paths_remapped:
-                for p in conn.paths_remapped:
-                    if len(p) >= cfg.filmstrip.min_segment_length:
-                        path_segments.append([np.array(p)])
+                valid_paths = [p for p in conn.paths_remapped
+                               if len(p) >= cfg.filmstrip.min_segment_length]
+                valid_paths.sort(key=len, reverse=True)
+                for p in valid_paths[:max_paths]:
+                    path_segments.append([np.array(p)])
         except Exception as e:
             print(f"  Path extraction failed: {e}")
 
         ro = load_rollout_from_source(clip_id, cfg.data.rodent_rollout_dir)
         qposes = ro["qpos"]
 
-        print(f"  Cycles: {len(cycle_segments)} segments, "
-              f"Paths: {len(path_segments)} paths")
+        print(f"  DM: {dm_result.n_cycles} total cycles, "
+              f"longest -> {len(cycle_segments)} segments; "
+              f"{len(path_segments)} paths")
 
         return ClipAnalysis(
             clip_id=clip_id,

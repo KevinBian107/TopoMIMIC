@@ -24,6 +24,7 @@ discovery:
   min_valley_frames: 10
   smooth_window: 5
   max_xy_displacement: 0.03
+  max_paths: 3
   clip_ids: []
 
 visualization:
