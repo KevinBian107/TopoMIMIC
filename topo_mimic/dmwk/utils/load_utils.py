@@ -74,10 +74,12 @@ def load_rollout_from_source(
     if is_consolidated_format(source_path):
         if use_cache:
             f = _get_consolidated_file(source_path)
-            return {'qpos': np.array(f['qpos_rollout'][clip_idx])}
+            key = 'qpos_rollout' if 'qpos_rollout' in f else 'qpos'
+            return {'qpos': np.array(f[key][clip_idx])}
         else:
             with h5py.File(source_path, 'r') as f:
-                return {'qpos': np.array(f['qpos_rollout'][clip_idx])}
+                key = 'qpos_rollout' if 'qpos_rollout' in f else 'qpos'
+                return {'qpos': np.array(f[key][clip_idx])}
     else:
         with h5py.File(f"{source_path}/clip_{clip_idx}.h5", 'r') as hf:
             return load_from_h5py(hf)

@@ -64,6 +64,14 @@ python -m demos.demo_transition_filmstrip
 ```
 Renders filmstrip visualizations of behavioral transitions captured by DM paths and cycles.
 
+### Rear-Cycle Grid Demo
+```bash
+python demos/demo_rear_cycles.py
+python demos/demo_rear_cycles.py --config configs/demos/demo_rear_cycles.yaml
+python demos/demo_rear_cycles.py --clip-ids 42 99 103
+```
+Discovers N clips with X→rear→X pattern (z low→high→low), runs DM extraction on each, and produces four grid outputs: (1) `cycle_rotating_grid.gif` — rotating 3D PCA with synced video for DM cycles, (2) `cycle_filmstrip_grid.png` — chronophotography filmstrips for cycle segments, (3) `path_rotating_grid.gif` — rotating 3D PCA with synced video for DM paths, (4) `path_filmstrip_grid.png` — filmstrips for path segments. Each grid cell shows one clip; rows/columns arranged automatically. Clip discovery uses z-height peak detection from qpos data.
+
 ### Rodent Transition Demo
 ```bash
 python demos/demo_rodent_transitions.py

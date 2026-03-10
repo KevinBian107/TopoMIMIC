@@ -277,7 +277,8 @@ def discover_rear_walk_rear_clips(
     import h5py
 
     with h5py.File(rodent_rollout_dir, "r") as f:
-        root_z = f["qpos_rollout"][:, :, 2]
+        key = "qpos_rollout" if "qpos_rollout" in f else "qpos"
+        root_z = f[key][:, :, 2]
 
     n_clips = root_z.shape[0]
     hits: list[RearWalkRearHit] = []

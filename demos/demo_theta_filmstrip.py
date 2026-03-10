@@ -260,8 +260,9 @@ def _load_mujoco_model(
             geom.size *= 0.95
         if geom.pos is not None:
             geom.pos *= 0.95
-    spec.visual.global_.offwidth = offscreen_width
-    spec.visual.global_.offheight = offscreen_height
+    vis_global = getattr(spec.visual, "global_", None) or getattr(spec.visual, "global")
+    vis_global.offwidth = offscreen_width
+    vis_global.offheight = offscreen_height
     mj_model = spec.compile()
     mj_model.opt.solver = mujoco.mjtSolver.mjSOL_CG
     mj_model.opt.iterations = 6
