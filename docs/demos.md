@@ -71,12 +71,58 @@ python demos/demo_rodent_transitions.py --config configs/demos/demo_rodent_trans
 ```
 Visualizes rodent behavioral transitions using PCA/UMAP/t-SNE with up to 3 rows per embedding plot: GT transitions, DM cycles, and DM paths — all colored by behavior transition labels looked up from the GT CSV. Finds all labeled transitions in the test clips via `find_all_transitions()`, groups by directed type, picks the top K by count, and runs DM extraction on the test-set data to extract cycle and path segments. Each DM segment is assigned a transition label by majority-vote of its per-frame GT behaviors. Outputs: `pca_comparison.png`, `umap_comparison.png`, `tsne_comparison.png` (multi-row), `transition_summary.txt`, DM extraction artifacts in `dm/`, and optionally `gt_transitions.mp4`.
 
-### Walker Transition Demo
+---
+
+## Walker Data Generation
+
+Config-driven pipeline for generating walker behavior data. Two modes are available:
+
+### Short-Sequence Generation (Single Transitions)
 ```bash
-python demos/demo_walker_transitions.py
-python demos/demo_walker_transitions.py --config configs/demos/demo_walker_transitions.yaml
+python3 -m walker_generation configs/walker_generation/short_sequence.yaml
 ```
-End-to-end demo for the walker dataset: DM extraction → W2 clustering → GT comparison → PCA/UMAP/t-SNE plots. Generates rendered videos of discovered clusters vs ground truth transition groups, plus embedding visualizations colored by GT and DM labels. Additionally produces Nature-style multi-row embedding plots (`nature_pca.png`, `nature_umap.png`, `nature_tsne.png`) showing GT transitions, DM cycles, and DM paths side by side with shared color maps and labeled legends. Set `only_analysis: false` in the config for the first run (computes DM + clustering from scratch), then `only_analysis: true` to re-run only the visualization stages on cached results.
+Generates short clips (250 frames) each containing exactly one targeted behavior transition. Each `TransitionSpec(src, dst, n_clips)` restricts the schedule to a 2-mode pair, crops around the transition, and extracts Step 2 latent activations. Output: `data/walker.h5` + `walker_behavior_labels.csv` (2 rows per clip: source and destination segments).
+
+### Long-Sequence Generation (Multi-Transition Clips)
+```bash
+python3 -m walker_generation configs/walker_generation/long_sequence.yaml
+```
+Generates long clips (~5000 frames) each containing multiple behavior transitions. Key config options:
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `n_clips` | Number of clips to generate | 20 |
+| `clip_length` | Frames per clip | 5000 |
+| `n_transitions` | Transitions per clip | 8 |
+| `source_pool` / `target_pool` | Behavior pools for random selection | 4 modes each |
+| `variable_transition_length` | Whether transition durations vary | `true` |
+| `transition_length_min/max` | Range for variable transition lengths | 50–150 |
+
+Output: `data/walker_long.h5` + `walker_long_behavior_labels.csv` (multiple rows per clip, one per behavior segment). Optionally renders a demo clip video via `output.demo_clip_video`.
+
+---
+
+## Walker Transition Demos
+
+### Walker Transitions — Short Clips
+```bash
+python demos/demo_walker_transitions_short.py
+python demos/demo_walker_transitions_short.py --config configs/demos/demo_walker_transitions_short.yaml
+```
+End-to-end demo for short transition clips (one transition per clip). DM extraction → W2 clustering → GT comparison → PCA/UMAP/t-SNE plots. Each clip is treated as a single unit with stacked feature windows. Generates rendered videos of discovered clusters vs ground truth transition groups, plus embedding visualizations colored by GT and DM labels. Set `only_analysis: false` for the first run (computes DM + clustering from scratch), then `only_analysis: true` to re-run visualization on cached results.
+
+### Walker Transitions — Long Sequences
+```bash
+python demos/demo_walker_transitions_long.py
+python demos/demo_walker_transitions_long.py --config configs/demos/demo_walker_transitions_long.yaml
+```
+Analysis pipeline for long walker clips (~5000 frames) with multiple behavior transitions per clip. DM-path extraction is the natural chunking method for these long sequences — it discovers behavior segments without relying on ground-truth labels.
+
+Two visualization modes:
+- **Per-frame**: each frame is an individual 16D point colored by GT behavior label
+- **Windowed**: sliding windows of N stacked frames colored by majority behavior
+
+Also runs DM-cycle and DM-path extraction, W2 clustering, comparison plots (GT vs discovered), and grid rendering (rows = clips, columns = longest K DM segments found). Supports `only_analysis: true` for re-running visualization on cached results with annotated cluster labels.
 
 ---
 

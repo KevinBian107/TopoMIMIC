@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """
-Walker Transition Demo
-======================
-End-to-end demo: DM extraction -> W2 clustering -> GT comparison -> PCA plots.
+Walker Transition Demo (Short Clips)
+======================================
+End-to-end demo for SHORT transition clips (one transition per clip):
+DM extraction -> W2 clustering -> GT comparison -> PCA plots.
+
+Each clip is treated as a single unit; windows are stacked feature vectors.
 
 Usage:
-    python demos/demo_walker_transitions.py
-    python demos/demo_walker_transitions.py --config configs/demos/demo_walker_transitions.yaml
+    python demos/demo_walker_transitions_short.py
+    python demos/demo_walker_transitions_short.py --config configs/demos/demo_walker_transitions_short.yaml
 """
 
 import os
@@ -1120,7 +1123,7 @@ def main():
     parser = argparse.ArgumentParser(description="Walker transition demo")
     parser.add_argument(
         "--config",
-        default="configs/demos/demo_walker_transitions.yaml",
+        default="configs/demos/demo_walker_transitions_short.yaml",
         help="Path to demo config YAML",
     )
     args = parser.parse_args()

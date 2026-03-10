@@ -33,6 +33,15 @@ DATASET_PRESETS: dict[str, DatasetPreset] = {
         qpos_dims=9,
         root_strip_dims=0,
     ),
+    "walker_long": DatasetPreset(
+        total_clips=20,
+        test_size=0,
+        default_data_path="data/walker_long.h5",
+        labels_csv="walker_long_behavior_labels.csv",
+        supported_dm_keys=["intention", "qpos"],
+        qpos_dims=9,
+        root_strip_dims=0,
+    ),
 }
 
 

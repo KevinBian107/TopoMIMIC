@@ -1,6 +1,6 @@
 """Walker generation pipeline — config-driven transition clip generation."""
 
-from walker_generation.config import GenerationConfig, load_config
+from walker_generation.config import GenerationConfig, LongSequenceConfig, load_config
 
 
 def run_generation(config: GenerationConfig) -> None:
@@ -9,4 +9,4 @@ def run_generation(config: GenerationConfig) -> None:
     _run(config)
 
 
-__all__ = ["GenerationConfig", "load_config", "run_generation"]
+__all__ = ["GenerationConfig", "LongSequenceConfig", "load_config", "run_generation"]

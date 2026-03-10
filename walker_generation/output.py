@@ -86,3 +86,36 @@ def write_labels_csv(
     df.to_csv(csv_path, index=False)
     print(f"Wrote {csv_path}: {len(df)} rows ({n_clips} clips x 2 segments)")
     return df
+
+
+def write_multi_segment_labels_csv(
+    csv_path: str,
+    clip_segment_lists: list[list[dict]],
+) -> pd.DataFrame:
+    """Write behavior labels CSV for long-sequence clips with multiple segments.
+
+    Args:
+        csv_path: Output CSV file path.
+        clip_segment_lists: Per-clip list of segment dicts, each with keys:
+            "behavior" (str), "start_frame" (int), "end_frame" (int).
+
+    Returns:
+        DataFrame with Clip, Behavior, Start_Frame, End_Frame columns.
+    """
+    rows = []
+    for clip_id, segments in enumerate(clip_segment_lists):
+        for seg in segments:
+            rows.append({
+                "Clip": clip_id,
+                "Behavior": seg["behavior"],
+                "Start_Frame": seg["start_frame"],
+                "End_Frame": seg["end_frame"],
+            })
+
+    df = pd.DataFrame(rows)
+    Path(csv_path).parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(csv_path, index=False)
+    n_clips = len(clip_segment_lists)
+    n_segs = len(df)
+    print(f"Wrote {csv_path}: {n_segs} rows ({n_clips} clips, avg {n_segs / max(n_clips, 1):.1f} segments/clip)")
+    return df

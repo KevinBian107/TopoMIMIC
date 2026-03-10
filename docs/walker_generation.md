@@ -11,7 +11,7 @@ Replaces the 3-step manual process:
 
 With a single command:
 ```bash
-python3 -m walker_generation configs/walker_generation/default.yaml
+python3 -m walker_generation configs/walker_generation/short_sequence.yaml
 ```
 
 ## Key Features

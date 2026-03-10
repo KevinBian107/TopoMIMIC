@@ -14,6 +14,23 @@ class TransitionSpec:
 
 
 @dataclass
+class LongSequenceConfig:
+    n_clips: int = 20
+    clip_length: int = 5000
+    n_transitions: int = 8
+    source_pool: list[str] = field(
+        default_factory=lambda: ["walk_slow", "run", "walk_fast", "walk_backward"]
+    )
+    target_pool: list[str] = field(
+        default_factory=lambda: ["hop", "knee_down", "tiptoe", "stand"]
+    )
+    transition_length: int = 100
+    variable_transition_length: bool = False
+    transition_length_min: int = 50
+    transition_length_max: int = 150
+
+
+@dataclass
 class CheckpointConfig:
     step1_path: str = "data/checkpoints/walker_multi_behavior/260215_202424"
     step2_path: str = "data/checkpoints/walker_imitation/260224_030923"
@@ -47,15 +64,20 @@ class RolloutConfig:
 class OutputConfig:
     h5_path: str = "data/walker.h5"
     csv_path: str = "walker_behavior_labels.csv"
+    demo_clip_video: str | None = None
 
     def __post_init__(self):
         self.h5_path = str(Path(self.h5_path).resolve())
         self.csv_path = str(Path(self.csv_path).resolve())
+        if self.demo_clip_video is not None:
+            self.demo_clip_video = str(Path(self.demo_clip_video).resolve())
 
 
 @dataclass
 class GenerationConfig:
+    mode: str = "transitions"
     transitions: list[TransitionSpec] = field(default_factory=list)
+    long_sequence: LongSequenceConfig = field(default_factory=LongSequenceConfig)
     checkpoints: CheckpointConfig = field(default_factory=CheckpointConfig)
     schedule: ScheduleConfig = field(default_factory=ScheduleConfig)
     rollout: RolloutConfig = field(default_factory=RolloutConfig)
@@ -68,13 +90,19 @@ def load_config(yaml_path: str) -> GenerationConfig:
         raw = yaml.safe_load(f)
 
     transitions = [TransitionSpec(**t) for t in raw.get("transitions", [])]
+
+    ls_dict = raw.get("long_sequence", {})
+    long_sequence = LongSequenceConfig(**ls_dict)
+
     checkpoints = CheckpointConfig(**raw.get("checkpoints", {}))
     schedule = ScheduleConfig(**raw.get("schedule", {}))
     rollout = RolloutConfig(**raw.get("rollout", {}))
     output = OutputConfig(**raw.get("output", {}))
 
     return GenerationConfig(
+        mode=raw.get("mode", "transitions"),
         transitions=transitions,
+        long_sequence=long_sequence,
         checkpoints=checkpoints,
         schedule=schedule,
         rollout=rollout,

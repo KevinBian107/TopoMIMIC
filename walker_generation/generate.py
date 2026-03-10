@@ -41,8 +41,13 @@ from vnl_playground.tasks.walker.online_reference import (
 )
 from track_mjx.agent.checkpointing import load_checkpoint_for_eval, load_inference_fn
 
-from walker_generation.config import GenerationConfig, TransitionSpec
-from walker_generation.output import WALKER_MODES, write_labels_csv, write_unified_h5
+from walker_generation.config import GenerationConfig, LongSequenceConfig, TransitionSpec
+from walker_generation.output import (
+    WALKER_MODES,
+    write_labels_csv,
+    write_multi_segment_labels_csv,
+    write_unified_h5,
+)
 
 N_MODES = consts.N_BEHAVIOR_MODES
 
@@ -195,6 +200,208 @@ def _make_transition_schedule(
         current_mode = next_mode
 
     return schedule, transitions
+
+
+# ── Long-sequence schedule ───────────────────────────────────────────────────
+
+
+@dataclass
+class LongSequenceClipMeta:
+    segments: list[dict]
+    transitions: list[TransitionMeta]
+
+
+def _make_long_sequence_schedule(
+    rng: np.random.RandomState,
+    clip_length: int,
+    n_transitions: int,
+    source_pool_idx: list[int],
+    target_pool_idx: list[int],
+    transition_length: int = 100,
+    variable: bool = False,
+    trans_min: int = 50,
+    trans_max: int = 150,
+) -> tuple[np.ndarray, LongSequenceClipMeta]:
+    all_modes = list(set(source_pool_idx + target_pool_idx))
+    schedule = np.zeros((clip_length, N_MODES), dtype=np.float32)
+    transitions = []
+    segments = []
+
+    total_trans_budget = 0
+    trans_lengths = []
+    for _ in range(n_transitions):
+        if variable:
+            tl = rng.randint(trans_min, trans_max + 1)
+        else:
+            tl = transition_length
+        trans_lengths.append(tl)
+        total_trans_budget += tl
+
+    remaining = clip_length - total_trans_budget
+    n_segments = n_transitions + 1
+    if remaining < n_segments * 10:
+        seg_dur_base = 10
+    else:
+        seg_dur_base = remaining // n_segments
+    seg_durations = [seg_dur_base] * n_segments
+    leftover = remaining - seg_dur_base * n_segments
+    for i in range(max(leftover, 0)):
+        seg_durations[i % n_segments] += 1
+
+    mode_sequence = []
+    current_mode = rng.choice(all_modes)
+    mode_sequence.append(current_mode)
+    for _ in range(n_transitions):
+        next_mode = rng.choice(all_modes)
+        while next_mode == current_mode and len(all_modes) > 1:
+            next_mode = rng.choice(all_modes)
+        mode_sequence.append(next_mode)
+        current_mode = next_mode
+
+    frame = 0
+    for i in range(n_segments):
+        seg_start = frame
+        seg_end = min(frame + seg_durations[i], clip_length)
+        mode = mode_sequence[i]
+        schedule[seg_start:seg_end, mode] = 1.0
+        segments.append({
+            "behavior": WALKER_MODES[mode],
+            "start_frame": seg_start,
+            "end_frame": seg_end,
+        })
+        frame = seg_end
+
+        if i < n_transitions and frame < clip_length:
+            trans_dur = min(trans_lengths[i], clip_length - frame)
+            trans_start = frame
+            trans_end = frame + trans_dur
+
+            src_mode = mode_sequence[i]
+            dst_mode = mode_sequence[i + 1]
+            alphas = np.linspace(0.0, 1.0, trans_dur)
+            for j, alpha in enumerate(alphas):
+                schedule[trans_start + j, src_mode] = 1.0 - alpha
+                schedule[trans_start + j, dst_mode] = alpha
+
+            transitions.append(TransitionMeta(
+                src_mode=src_mode,
+                dst_mode=dst_mode,
+                transition_start=trans_start,
+                transition_end=trans_end,
+            ))
+            frame = trans_end
+
+    if frame < clip_length:
+        last_mode = mode_sequence[-1]
+        schedule[frame:clip_length, last_mode] = 1.0
+        if segments:
+            segments[-1]["end_frame"] = clip_length
+
+    meta = LongSequenceClipMeta(segments=segments, transitions=transitions)
+    return schedule, meta
+
+
+def _generate_long_sequence_clips(
+    batched_generate,
+    np_rng: np.random.RandomState,
+    jax_rng,
+    config: GenerationConfig,
+) -> tuple[list[dict], list[LongSequenceClipMeta], int]:
+    ls = config.long_sequence
+    sched = config.schedule
+    batch_n = config.rollout.batch_size
+
+    source_pool_idx = [_resolve_mode_index(m) for m in ls.source_pool]
+    target_pool_idx = [_resolve_mode_index(m) for m in ls.target_pool]
+
+    collected_clips: list[dict] = []
+    collected_metas: list[LongSequenceClipMeta] = []
+
+    print(f"\nGenerating {ls.n_clips} long-sequence clips "
+          f"({ls.clip_length} frames, {ls.n_transitions} transitions each)")
+
+    while len(collected_clips) < ls.n_clips:
+        current_batch = min(batch_n, ls.n_clips - len(collected_clips))
+
+        batch_schedules = []
+        batch_metas = []
+        for _ in range(current_batch):
+            schedule, meta = _make_long_sequence_schedule(
+                np_rng,
+                clip_length=sched.rollout_frames,
+                n_transitions=ls.n_transitions,
+                source_pool_idx=source_pool_idx,
+                target_pool_idx=target_pool_idx,
+                transition_length=ls.transition_length,
+                variable=ls.variable_transition_length,
+                trans_min=ls.transition_length_min,
+                trans_max=ls.transition_length_max,
+            )
+            batch_schedules.append(schedule)
+            batch_metas.append(meta)
+
+        if current_batch < batch_n:
+            for _ in range(batch_n - current_batch):
+                batch_schedules.append(batch_schedules[0])
+
+        stacked_schedules = jp.stack([jp.array(s) for s in batch_schedules])
+        batch_rngs = jax.random.split(jax_rng, batch_n + 1)
+        jax_rng = batch_rngs[0]
+
+        batch_trajs = batched_generate(batch_rngs[1:], stacked_schedules)
+
+        for i in range(current_batch):
+            clip_end = ls.clip_length
+            clip_data = {
+                "qpos": np.asarray(batch_trajs.qpos[i])[:clip_end],
+                "qvel": np.asarray(batch_trajs.qvel[i])[:clip_end],
+                "xpos": np.asarray(batch_trajs.xpos[i])[:clip_end],
+                "xquat": np.asarray(batch_trajs.xquat[i])[:clip_end],
+                "behavior_labels": np.asarray(batch_trajs.behavior_labels[i])[:clip_end],
+            }
+            collected_clips.append(clip_data)
+            collected_metas.append(batch_metas[i])
+
+        print(f"  {len(collected_clips)}/{ls.n_clips} clips generated")
+
+    return collected_clips[:ls.n_clips], collected_metas[:ls.n_clips], jax_rng
+
+
+def _render_demo_clip(
+    clip_data: dict,
+    meta: LongSequenceClipMeta,
+    video_path: str,
+    xml_path: str = "topo_mimic/dmwk/xml/walker.xml",
+    framerate: int = 30,
+) -> None:
+    import mujoco
+    import imageio
+
+    qpos = clip_data["qpos"]
+    n_frames = qpos.shape[0]
+
+    mj_model = mujoco.MjModel.from_xml_path(xml_path)
+    mj_data = mujoco.MjData(mj_model)
+    renderer = mujoco.Renderer(mj_model, height=240, width=320)
+
+    frames = []
+    for fi in range(n_frames):
+        mj_data.qpos[:] = qpos[fi]
+        mujoco.mj_forward(mj_model, mj_data)
+        renderer.update_scene(mj_data, camera="side")
+        frames.append(renderer.render().copy())
+
+    renderer.close()
+
+    Path(video_path).parent.mkdir(parents=True, exist_ok=True)
+    writer = imageio.get_writer(video_path, fps=framerate)
+    for frame in frames:
+        writer.append_data(frame)
+    writer.close()
+
+    print(f"Saved demo clip video ({n_frames} frames): {video_path}")
+    for seg in meta.segments:
+        print(f"  {seg['behavior']:>15s}: frames {seg['start_frame']}-{seg['end_frame']}")
 
 
 # ── Clip cropping ────────────────────────────────────────────────────────────
@@ -589,19 +796,8 @@ def _extract_activations(
 # ── Main pipeline ────────────────────────────────────────────────────────────
 
 
-def run_generation(config: GenerationConfig) -> None:
-    """Run the full generation pipeline.
-
-    1. Load Step 1 checkpoint and build batched generator
-    2. For each TransitionSpec, generate targeted clips
-    3. Extract activations via Step 2 policy
-    4. Write unified output (H5 + CSV)
-    """
-    total_clips = sum(t.n_clips for t in config.transitions)
-    print(f"Walker generation pipeline")
-    print(f"  {len(config.transitions)} transition pairs, {total_clips} total clips")
-
-    # ── Step 1: Load checkpoint and build generator ─────────────────────
+def _build_step1_generator(config: GenerationConfig):
+    """Load Step 1 checkpoint, build env, inference fn, and batched generator."""
     print(f"\nLoading Step 1 checkpoint from {config.checkpoints.step1_path}")
     step1_params = _load_step1_checkpoint(
         config.checkpoints.step1_path,
@@ -631,7 +827,6 @@ def run_generation(config: GenerationConfig) -> None:
     batch_n = config.rollout.batch_size
     batched_generate = jax.jit(jax.vmap(generator.generate, in_axes=(0, 0)))
 
-    # JIT warmup
     print(f"JIT compiling Step 1 batched generate (batch_size={batch_n})...")
     np_rng = np.random.RandomState(config.rollout.seed)
     warmup_schedule, _ = _make_transition_schedule(
@@ -650,7 +845,32 @@ def run_generation(config: GenerationConfig) -> None:
     _ = batched_generate(warmup_rngs, warmup_schedules)
     print("JIT compilation done.")
 
-    # ── Step 2: Generate clips per transition pair ──────────────────────
+    return batched_generate
+
+
+def run_generation(config: GenerationConfig) -> None:
+    """Run the full generation pipeline.
+
+    Dispatches to transitions mode or long_sequence mode based on config.mode.
+    """
+    if config.mode == "long_sequence":
+        _run_long_sequence_generation(config)
+    elif config.mode == "transitions":
+        _run_transitions_generation(config)
+    else:
+        raise ValueError(
+            f"Unknown generation mode: {config.mode!r}. "
+            f"Expected 'transitions' or 'long_sequence'."
+        )
+
+
+def _run_transitions_generation(config: GenerationConfig) -> None:
+    total_clips = sum(t.n_clips for t in config.transitions)
+    print(f"Walker generation pipeline (transitions mode)")
+    print(f"  {len(config.transitions)} transition pairs, {total_clips} total clips")
+
+    batched_generate = _build_step1_generator(config)
+
     np_rng = np.random.RandomState(config.rollout.seed)
     jax_rng = jax.random.PRNGKey(config.rollout.seed)
 
@@ -670,10 +890,8 @@ def run_generation(config: GenerationConfig) -> None:
 
     _print_pair_summary(all_clip_metas)
 
-    # ── Step 3: Extract activations ─────────────────────────────────────
     activations = _extract_activations(all_clips, config)
 
-    # ── Step 4: Write output ────────────────────────────────────────────
     print(f"\nWriting output...")
     write_unified_h5(
         config.output.h5_path,
@@ -690,6 +908,51 @@ def run_generation(config: GenerationConfig) -> None:
         [m.transition_end_in_clip for m in all_clip_metas], dtype=np.int32
     )
     write_labels_csv(config.output.csv_path, src_modes, dst_modes, t_starts, t_ends)
+
+    print(f"\nPipeline complete.")
+    print(f"  H5:  {config.output.h5_path}")
+    print(f"  CSV: {config.output.csv_path}")
+
+
+def _run_long_sequence_generation(config: GenerationConfig) -> None:
+    import copy
+
+    ls = config.long_sequence
+    print(f"Walker generation pipeline (long_sequence mode)")
+    print(f"  {ls.n_clips} clips, {ls.clip_length} frames, {ls.n_transitions} transitions each")
+
+    gen_config = copy.deepcopy(config)
+    gen_config.schedule.rollout_frames = max(config.schedule.rollout_frames, ls.clip_length)
+
+    batched_generate = _build_step1_generator(gen_config)
+
+    np_rng = np.random.RandomState(config.rollout.seed)
+    jax_rng = jax.random.PRNGKey(config.rollout.seed)
+
+    t_start = time.time()
+    all_clips, all_metas, jax_rng = _generate_long_sequence_clips(
+        batched_generate, np_rng, jax_rng, gen_config,
+    )
+    elapsed = time.time() - t_start
+    print(f"\nStep 1 done: {len(all_clips)} clips in {elapsed:.1f}s")
+
+    gen_config.schedule.clip_length = ls.clip_length
+    activations = _extract_activations(all_clips, gen_config)
+
+    print(f"\nWriting output...")
+    write_unified_h5(
+        config.output.h5_path,
+        latent_mean=activations["latent_mean"],
+        agent_qpos=activations["agent_qpos"],
+    )
+
+    clip_segment_lists = [m.segments for m in all_metas]
+    write_multi_segment_labels_csv(config.output.csv_path, clip_segment_lists)
+
+    if config.output.demo_clip_video and len(all_clips) > 0:
+        _render_demo_clip(
+            all_clips[0], all_metas[0], config.output.demo_clip_video,
+        )
 
     print(f"\nPipeline complete.")
     print(f"  H5:  {config.output.h5_path}")

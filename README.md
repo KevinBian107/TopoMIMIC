@@ -143,7 +143,7 @@ uv pip install --reinstall "vnl-playground @ git+https://github.com/talmolab/vnl
 
 # Return to TopoVNL and run the generation pipeline
 cd ..
-python -m walker_generation configs/walker_generation/default.yaml
+python -m walker_generation configs/walker_generation/short_sequence.yaml
 ```
 
 The config specifies which transition pairs to generate (e.g. stand→hop, walk_fast→tiptoe) and how many clips per pair. See [docs/walker_generation.md](/docs/walker_generation.md) for full documentation.
