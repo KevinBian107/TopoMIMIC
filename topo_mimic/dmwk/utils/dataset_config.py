@@ -34,7 +34,7 @@ DATASET_PRESETS: dict[str, DatasetPreset] = {
         root_strip_dims=0,
     ),
     "walker_long": DatasetPreset(
-        total_clips=20,
+        total_clips=10,
         test_size=0,
         default_data_path="data/walker_long.h5",
         labels_csv="walker_long_behavior_labels.csv",

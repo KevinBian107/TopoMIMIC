@@ -16,14 +16,8 @@ dm:
   epsilon: 0.99
 
 discovery:
-  n_clips: 6
-  middle_behavior: rear
-  z_high: 0.06
-  z_low: 0.02
-  min_peak_frames: 15
-  min_valley_frames: 10
-  smooth_window: 5
-  max_xy_displacement: 0.03
+  reference_clip: 335
+  n_clips: 3
   max_paths: 3
   clip_ids: []
 

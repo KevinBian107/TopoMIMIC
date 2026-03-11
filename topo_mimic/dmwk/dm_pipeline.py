@@ -314,12 +314,9 @@ def run_dm_extraction(
             if len(orig) > 0:
                 remapped_cycles.append(orig)
 
-        if remapped_cycles:
-            longest = max(remapped_cycles, key=len)
-            segs = split_cycle_into_segments(longest, gap_limit=config.dm.segment_gap_limit)
-            segments = [seg for seg in segs if len(seg) >= config.dm.min_segment_len]
-        else:
-            segments = []
+        longest = max(remapped_cycles, key=len)
+        segments = split_cycle_into_segments(longest, gap_limit=config.dm.segment_gap_limit)
+        segments = [seg for seg in segments if len(seg) >= config.dm.min_segment_len]
 
         all_cycle_dm.append(segments)
 

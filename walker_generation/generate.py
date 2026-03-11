@@ -328,7 +328,7 @@ def _generate_long_sequence_clips(
         for _ in range(current_batch):
             schedule, meta = _make_long_sequence_schedule(
                 np_rng,
-                clip_length=sched.rollout_frames,
+                clip_length=ls.clip_length,
                 n_transitions=ls.n_transitions,
                 source_pool_idx=source_pool_idx,
                 target_pool_idx=target_pool_idx,
@@ -337,6 +337,10 @@ def _generate_long_sequence_clips(
                 trans_min=ls.transition_length_min,
                 trans_max=ls.transition_length_max,
             )
+            if schedule.shape[0] < sched.rollout_frames:
+                pad_len = sched.rollout_frames - schedule.shape[0]
+                pad = np.tile(schedule[-1:], (pad_len, 1))
+                schedule = np.concatenate([schedule, pad], axis=0)
             batch_schedules.append(schedule)
             batch_metas.append(meta)
 
@@ -376,6 +380,7 @@ def _render_demo_clip(
 ) -> None:
     import mujoco
     import imageio
+    from PIL import Image, ImageDraw, ImageFont
 
     qpos = clip_data["qpos"]
     n_frames = qpos.shape[0]
@@ -384,12 +389,47 @@ def _render_demo_clip(
     mj_data = mujoco.MjData(mj_model)
     renderer = mujoco.Renderer(mj_model, height=240, width=320)
 
+    try:
+        font_label = ImageFont.truetype("DejaVuSans.ttf", 14)
+        font_trans = ImageFont.truetype("DejaVuSans-Bold.ttf", 16)
+    except Exception:
+        font_label = ImageFont.load_default()
+        font_trans = ImageFont.load_default()
+
     frames = []
     for fi in range(n_frames):
         mj_data.qpos[:] = qpos[fi]
         mujoco.mj_forward(mj_model, mj_data)
         renderer.update_scene(mj_data, camera="side")
-        frames.append(renderer.render().copy())
+        raw = renderer.render().copy()
+
+        img = Image.fromarray(raw)
+        draw = ImageDraw.Draw(img)
+
+        behavior = None
+        for seg in meta.segments:
+            if seg["start_frame"] <= fi < seg["end_frame"]:
+                behavior = seg["behavior"]
+                break
+        if behavior:
+            draw.text((4, 4), behavior, font=font_label, fill=(255, 255, 255))
+
+        for tr in meta.transitions:
+            if tr.transition_start <= fi <= tr.transition_end:
+                from walker_generation.output import WALKER_MODES
+                src = WALKER_MODES[tr.src_mode]
+                dst = WALKER_MODES[tr.dst_mode]
+                label = f"{src} \u2192 {dst}"
+                tw = draw.textbbox((0, 0), label, font=font_trans)[2]
+                tx = max(0, (320 - tw) // 2)
+                draw.rectangle(
+                    (tx - 4, 220, tx + tw + 4, 238),
+                    fill=(0, 0, 0, 160),
+                )
+                draw.text((tx, 221), label, font=font_trans, fill=(255, 100, 100))
+                break
+
+        frames.append(np.array(img))
 
     renderer.close()
 

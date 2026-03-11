@@ -1,23 +1,20 @@
 mode: long_sequence
 
 long_sequence:
-  n_clips: 20
-  clip_length: 1000
-  n_transitions: 10
+  n_clips: 10
+  clip_length: 500
+  n_transitions: 5
   source_pool:
-    - walk_slow
     - run
-    - walk_fast
     - walk_backward
   target_pool:
     - hop
     - knee_down
     - tiptoe
-    - stand
-  transition_length: 50
+  transition_length: 25
   variable_transition_length: true
-  transition_length_min: 30
-  transition_length_max: 70
+  transition_length_min: 15
+  transition_length_max: 30
 
 checkpoints:
   step1_path: data/checkpoints/walker_multi_behavior/260215_202424
@@ -27,10 +24,10 @@ schedule:
   rollout_frames: 1500
   warmup_frames: 200
   warmup_transition_frames: 50
-  mode_duration_min: 250
-  mode_duration_extra_max: 100
-  transition_mean: 100
-  transition_std: 20
+  mode_duration_min: 50
+  mode_duration_extra_max: 20
+  transition_mean: 25
+  transition_std: 5
 
 rollout:
   batch_size: 10

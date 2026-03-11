@@ -11,25 +11,20 @@ visualization:
 dm_pipeline:
   dm_key: intention
   split: all
+  top_k_minima: 6
+  top_k_paths: 1
   takens:
     auto_estimate: true
   dm:
     pers_delta: 0.6
-    k_neighbors: 3
-
-clustering:
-  n_clusters: 10
-  target_len: 70
-  min_len: 20
-  max_len: 2000
+    k_neighbors: 8
+    min_segment_len: 10
 
 rendering:
   enabled: true
   walker_xml: topo_mimic/dmwk/xml/walker.xml
   max_clips: 10
-  max_segments: 5
-  max_samples: 5
+  max_segments: 10
+  max_debug_clips: 3
   framerate: 30
   target_size: [320, 240]
-
-only_analysis: false

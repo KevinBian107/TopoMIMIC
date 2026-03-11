@@ -2,7 +2,7 @@
 """
 Rear-Cycle Grid Demo
 =====================
-Discovers N clips with X -> middle_behavior -> X pattern (z low->high->low),
+Given a reference clip (e.g. 335), finds N similar clips in intention space,
 runs DM extraction, and produces four grid outputs:
 
   1. cycle_rotating_grid.mp4  — rotating 3D PCA + synced video for DM cycles
@@ -10,13 +10,14 @@ runs DM extraction, and produces four grid outputs:
   3. path_rotating_grid.mp4   — rotating 3D PCA + synced video for DM paths
   4. path_filmstrip_grid.png  — chronophotography filmstrip for DM path segments
 
-Each clip gets a base color. Multiple segments from the same clip use graded
-shades of that color. A combined PCA panel on the left shows all clips overlaid.
+Cycle rendering follows the theta-filmstrip style: full ordered cycle ring with
+segment-colored edges, gray inter-segment edges, and gold minima markers.
 
 Usage:
     python demos/demo_rear_cycles.py
     python demos/demo_rear_cycles.py --config configs/demos/demo_rear_cycles.yaml
     python demos/demo_rear_cycles.py --clip-ids 42 99 103
+    python demos/demo_rear_cycles.py --reference-clip 335
 """
 
 import os
@@ -33,10 +34,11 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.gridspec import GridSpec
 from sklearn.decomposition import PCA
+from sklearn.metrics.pairwise import cosine_similarity
 from pathlib import Path
 from dataclasses import dataclass, field
+from collections import OrderedDict
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.append(str(Path(__file__).resolve().parent.parent / "PCD-Graph-Recon-DM"))
@@ -52,10 +54,8 @@ from demos.demo_cycle_asymmetry import (
     DMResult,
 )
 from demos.demo_transition_topology import (
-    discover_rear_walk_rear_clips,
     find_dm_minima,
     analyze_edge_connectivity,
-    ClipDiscoveryConfig,
 )
 from demos.demo_theta_filmstrip import (
     FilmstripConfig,
@@ -76,14 +76,8 @@ from topo_mimic.dmwk.skeletonization.rendering import _ensure_rgb_uint8
 
 @dataclass
 class DiscoveryConfig:
+    reference_clip: int = 335
     n_clips: int = 6
-    middle_behavior: str = "rear"
-    z_high: float = 0.06
-    z_low: float = 0.02
-    min_peak_frames: int = 15
-    min_valley_frames: int = 10
-    smooth_window: int = 5
-    max_xy_displacement: float = 0.03
     max_paths: int = 3
     clip_ids: list[int] = field(default_factory=list)
 
@@ -122,10 +116,12 @@ class ClipAnalysis:
     dm_result: DMResult
     pts_3d: np.ndarray
     cycle_segments: list[np.ndarray]
+    ordered_cycle: np.ndarray | None
     path_segments: list[list[np.ndarray]]
     qposes: np.ndarray
     remap_to_orig: dict
     n_takens: int
+    minima_indices: list[int]
 
 
 # ── Discovery ───────────────────────────────────────────────────────────────
@@ -138,43 +134,35 @@ def discover_clips(cfg: Config) -> list[int]:
         print(f"Using provided clip IDs: {cfg.discovery.clip_ids}")
         return cfg.discovery.clip_ids
 
-    # Request more candidates so we can filter by XY displacement
-    n_candidates = cfg.discovery.n_clips * 10
-    disc_cfg = ClipDiscoveryConfig(
-        enabled=True,
-        top_k=n_candidates,
-        z_high=cfg.discovery.z_high,
-        z_low=cfg.discovery.z_low,
-        min_peak_frames=cfg.discovery.min_peak_frames,
-        min_valley_frames=cfg.discovery.min_valley_frames,
-        smooth_window=cfg.discovery.smooth_window,
-    )
-    print(f"Discovering clips with "
-          f"stationary->{cfg.discovery.middle_behavior}->stationary pattern "
-          f"(max_xy_disp={cfg.discovery.max_xy_displacement})...")
-    hits = discover_rear_walk_rear_clips(cfg.data.rodent_rollout_dir, disc_cfg)
+    ref = cfg.discovery.reference_clip
+    print(f"Finding {cfg.discovery.n_clips} clips similar to "
+          f"reference clip {ref} in intention space...")
 
-    # Filter by XY displacement: keep only near-stationary clips
-    max_disp = cfg.discovery.max_xy_displacement
     with h5py.File(cfg.data.rodent_rollout_dir, "r") as f:
-        key = "qpos_rollout" if "qpos_rollout" in f else "qpos"
-        filtered = []
-        for h in hits:
-            xy = f[key][h.clip_id, :, :2]
-            disp = np.sqrt(np.sum(np.diff(xy, axis=0) ** 2, axis=1)).mean()
-            if disp <= max_disp:
-                filtered.append((h, disp))
-        filtered.sort(key=lambda x: x[0].score, reverse=True)
+        intentions = f["intention"][:]
 
-    selected = filtered[:cfg.discovery.n_clips]
-    clip_ids = [h.clip_id for h, _ in selected]
-    print(f"  {len(hits)} rear candidates -> {len(filtered)} stationary -> "
-          f"top {len(selected)}")
-    print(f"Discovered: {clip_ids}")
-    for h, disp in selected:
-        print(f"  Clip {h.clip_id}: score={h.score:.4f}, "
-              f"peak_z=({h.peak1_max_z:.4f}, {h.peak2_max_z:.4f}), "
-              f"xy_disp={disp:.5f}")
+    n_clips = intentions.shape[0]
+    ref_mean = intentions[ref].mean(axis=0, keepdims=True)
+    all_means = intentions.mean(axis=1)
+
+    sims = cosine_similarity(ref_mean, all_means)[0]
+    ranked = np.argsort(sims)[::-1]
+
+    # Skip the reference clip itself, take top N
+    selected = []
+    for idx in ranked:
+        idx = int(idx)
+        if idx == ref:
+            continue
+        selected.append((idx, float(sims[idx])))
+        if len(selected) >= cfg.discovery.n_clips:
+            break
+
+    # Always include reference clip first
+    clip_ids = [ref] + [c for c, _ in selected]
+    print(f"  Reference clip {ref}")
+    for cid, sim in selected:
+        print(f"  Clip {cid}: similarity={sim:.4f}")
     return clip_ids
 
 
@@ -228,17 +216,30 @@ def analyze_clip(
 
         # Extract segments from the longest cycle
         cycle_segments = []
+        ordered_cycle = None
         cycle = dm_result.cycles[0]
         valid = remap_cycle_to_original(cycle, remap_to_orig, n_takens)
         if len(valid) > 1:
-            ordered = order_cycle_vertices(dm_result.takens_points, valid)
+            ordered_cycle = order_cycle_vertices(dm_result.takens_points, valid)
             raw_segs = split_cycle_into_segments(
-                ordered, gap_limit=cfg.visualization.segment_gap_limit,
+                ordered_cycle, gap_limit=cfg.visualization.segment_gap_limit,
             )
             cycle_segments = [
                 s for s in raw_segs
                 if len(s) >= cfg.filmstrip.min_segment_length
             ]
+
+        # Extract minima indices
+        minima_indices = []
+        try:
+            minima = find_dm_minima(dm_result)
+            for m_rem in [minima.min1_remapped, minima.min2_remapped]:
+                if m_rem is not None and m_rem in remap_to_orig:
+                    orig = remap_to_orig[m_rem]
+                    if orig < n_takens:
+                        minima_indices.append(orig)
+        except Exception:
+            pass
 
         # Extract top N path segments
         max_paths = cfg.discovery.max_paths
@@ -262,17 +263,20 @@ def analyze_clip(
 
         print(f"  DM: {dm_result.n_cycles} total cycles, "
               f"longest -> {len(cycle_segments)} segments; "
-              f"{len(path_segments)} paths")
+              f"{len(path_segments)} paths; "
+              f"{len(minima_indices)} minima")
 
         return ClipAnalysis(
             clip_id=clip_id,
             dm_result=dm_result,
             pts_3d=pts_3d,
             cycle_segments=cycle_segments,
+            ordered_cycle=ordered_cycle,
             path_segments=path_segments,
             qposes=qposes,
             remap_to_orig=remap_to_orig,
             n_takens=n_takens,
+            minima_indices=minima_indices,
         )
 
     except Exception as e:
@@ -282,125 +286,8 @@ def analyze_clip(
         return None
 
 
-# ── Rotating PCA frame renderer ─────────────────────────────────────────────
+# ── PCA rendering helpers (theta-filmstrip style) ─────────────────────────
 
-
-def _render_combined_pca_frame(
-    all_pts_3d: list[np.ndarray],
-    all_segment_traces: list[list[list[int]]],
-    azimuth: float,
-    progress: float,
-    figsize: tuple[float, float] = (3.0, 3.0),
-    dpi: int = 80,
-) -> np.ndarray:
-    fig = plt.figure(figsize=figsize, dpi=dpi)
-    ax = fig.add_subplot(111, projection="3d")
-
-    for pts_3d in all_pts_3d:
-        ax.scatter(
-            pts_3d[:, 0], pts_3d[:, 1], pts_3d[:, 2],
-            c="gray", s=0.5, alpha=0.08, edgecolors="none",
-        )
-
-    for ci, (pts_3d, seg_traces) in enumerate(zip(all_pts_3d, all_segment_traces)):
-        base_color = CLIP_BASE_COLORS[ci % len(CLIP_BASE_COLORS)]
-        n_segs = len(seg_traces)
-        for si, trace in enumerate(seg_traces):
-            if not trace:
-                continue
-            color = _grade_color(base_color, n_segs, si)
-            n_show = max(1, int(len(trace) * progress))
-            show = trace[:n_show]
-            valid = [i for i in show if i < len(pts_3d)]
-            if len(valid) > 1:
-                p = pts_3d[valid]
-                ax.plot(p[:, 0], p[:, 1], p[:, 2], c=color, linewidth=1.5, alpha=0.9)
-                ax.scatter([p[-1, 0]], [p[-1, 1]], [p[-1, 2]],
-                           c="gold", s=30, marker="o", zorder=200)
-
-    ax.view_init(elev=25, azim=azimuth)
-    ax.set_axis_off()
-    fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
-
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight", pad_inches=0.02)
-    plt.close(fig)
-    buf.seek(0)
-
-    from PIL import Image
-    img = np.array(Image.open(buf))[:, :, :3]
-    return img
-
-
-def _render_pca_frame(
-    pts_3d: np.ndarray,
-    segment_traces: list[list[int]],
-    azimuth: float,
-    progress: float,
-    base_color: str = "#e6194b",
-    figsize: tuple[float, float] = (3.0, 3.0),
-    dpi: int = 80,
-) -> np.ndarray:
-    fig = plt.figure(figsize=figsize, dpi=dpi)
-    ax = fig.add_subplot(111, projection="3d")
-
-    ax.scatter(
-        pts_3d[:, 0], pts_3d[:, 1], pts_3d[:, 2],
-        c="gray", s=1, alpha=0.15, edgecolors="none",
-    )
-
-    n_segs = len(segment_traces)
-    for si, trace in enumerate(segment_traces):
-        if not trace:
-            continue
-        color = _grade_color(base_color, n_segs, si)
-        n_show = max(1, int(len(trace) * progress))
-        show = trace[:n_show]
-        valid = [i for i in show if i < len(pts_3d)]
-        if len(valid) > 1:
-            p = pts_3d[valid]
-            ax.plot(p[:, 0], p[:, 1], p[:, 2], c=color, linewidth=1.5, alpha=0.9)
-            ax.scatter([p[-1, 0]], [p[-1, 1]], [p[-1, 2]],
-                       c="gold", s=40, marker="o", zorder=200)
-
-    ax.view_init(elev=25, azim=azimuth)
-    ax.set_axis_off()
-    fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
-
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight", pad_inches=0.02)
-    plt.close(fig)
-    buf.seek(0)
-
-    from PIL import Image
-    img = np.array(Image.open(buf))[:, :, :3]
-    return img
-
-
-def _render_rodent_frame(
-    qposes: np.ndarray,
-    frame_idx: int,
-    xml_path: str,
-    mj_model=None,
-    mj_data=None,
-    renderer=None,
-) -> tuple[np.ndarray, object, object, object]:
-    import mujoco
-
-    if mj_model is None:
-        mj_model = mujoco.MjModel.from_xml_path(xml_path)
-        mj_data = mujoco.MjData(mj_model)
-        renderer = mujoco.Renderer(mj_model, height=240, width=320)
-
-    fi = min(frame_idx, len(qposes) - 1)
-    mj_data.qpos[:] = qposes[fi]
-    mujoco.mj_forward(mj_model, mj_data)
-    renderer.update_scene(mj_data, camera="close_profile")
-    frame = renderer.render().copy()
-    return _ensure_rgb_uint8(frame), mj_model, mj_data, renderer
-
-
-# ── Grid rotating video ─────────────────────────────────────────────────────
 
 CLIP_BASE_COLORS = [
     "#e6194b", "#3cb44b", "#4363d8", "#f58231",
@@ -413,13 +300,179 @@ def _grade_color(hex_color: str, n_shades: int, idx: int) -> str:
     r, g, b = to_rgb(hex_color)
     if n_shades <= 1:
         return hex_color
-    # Scale from 40% (dark) to 130% (light) of base, clamped to [0,1]
-    scale = 0.4 + 0.9 * idx / (n_shades - 1)
+    scale = 0.7 + 0.5 * idx / (n_shades - 1)
     return to_hex((
         min(r * scale, 1.0),
         min(g * scale, 1.0),
         min(b * scale, 1.0),
     ))
+
+
+def _fig_to_array(fig: plt.Figure, dpi: int) -> np.ndarray:
+    from PIL import Image
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight", pad_inches=0.02)
+    plt.close(fig)
+    buf.seek(0)
+    return np.array(Image.open(buf))[:, :, :3]
+
+
+def _draw_cycle_on_ax(
+    ax: plt.Axes,
+    pts_3d: np.ndarray,
+    ordered_cycle: np.ndarray | None,
+    segments: list[np.ndarray],
+    base_color: str,
+    minima_indices: list[int],
+    progress: float = 1.0,
+):
+    ax.scatter(
+        pts_3d[:, 0], pts_3d[:, 1], pts_3d[:, 2],
+        c="gray", s=1, alpha=0.15, edgecolors="none",
+    )
+
+    if ordered_cycle is not None and len(ordered_cycle) > 1:
+        idx_to_seg: dict[int, int] = {}
+        for si, seg in enumerate(segments):
+            for idx in seg:
+                idx_to_seg[int(idx)] = si
+
+        n_segs = len(segments)
+        n_edges = len(ordered_cycle)
+        n_show = max(1, int(n_edges * progress))
+
+        for i in range(n_show):
+            j = (i + 1) % len(ordered_cycle)
+            idx_i, idx_j = int(ordered_cycle[i]), int(ordered_cycle[j])
+            if idx_i >= len(pts_3d) or idx_j >= len(pts_3d):
+                continue
+            p0, p1 = pts_3d[idx_i], pts_3d[idx_j]
+            seg_i = idx_to_seg.get(idx_i, -1)
+            seg_j = idx_to_seg.get(idx_j, -1)
+            if seg_i == seg_j and seg_i >= 0:
+                color = _grade_color(base_color, n_segs, seg_i)
+                ax.plot([p0[0], p1[0]], [p0[1], p1[1]], [p0[2], p1[2]],
+                        c=color, linewidth=2.5, alpha=0.9)
+            else:
+                ax.plot([p0[0], p1[0]], [p0[1], p1[1]], [p0[2], p1[2]],
+                        c="#888888", linewidth=1.0, alpha=0.35)
+
+        for si, seg in enumerate(segments):
+            color = _grade_color(base_color, n_segs, si)
+            valid = [int(i) for i in seg if int(i) < len(pts_3d)]
+            if valid:
+                sp = pts_3d[valid]
+                ax.scatter(sp[:, 0], sp[:, 1], sp[:, 2], c=color, s=8,
+                           alpha=0.7, edgecolors="none")
+
+    for mi in minima_indices:
+        if mi < len(pts_3d):
+            p = pts_3d[mi]
+            ax.scatter([p[0]], [p[1]], [p[2]], c="gold", s=120,
+                       marker="*", zorder=200)
+
+
+def _draw_paths_on_ax(
+    ax: plt.Axes,
+    pts_3d: np.ndarray,
+    path_segments: list[list[np.ndarray]],
+    base_color: str,
+    minima_indices: list[int],
+    progress: float = 1.0,
+):
+    temporal = np.arange(len(pts_3d)) / max(len(pts_3d) - 1, 1)
+    ax.scatter(
+        pts_3d[:, 0], pts_3d[:, 1], pts_3d[:, 2],
+        c=temporal, cmap="viridis", s=2, alpha=0.2, edgecolors="none",
+    )
+
+    n_paths = sum(len(ps) for ps in path_segments)
+    pi = 0
+    for path_segs in path_segments:
+        for seg in path_segs:
+            color = _grade_color(base_color, n_paths, pi)
+            valid = [int(i) for i in seg if int(i) < len(pts_3d)]
+            n_show = max(1, int(len(valid) * progress))
+            show = valid[:n_show]
+            if len(show) > 1:
+                p = pts_3d[show]
+                ax.plot(p[:, 0], p[:, 1], p[:, 2], c=color,
+                        linewidth=2.5, alpha=0.9)
+            pi += 1
+
+    for mi in minima_indices:
+        if mi < len(pts_3d):
+            p = pts_3d[mi]
+            ax.scatter([p[0]], [p[1]], [p[2]], c="gold", s=120,
+                       marker="*", zorder=200)
+
+
+def _render_pca_frame(
+    a: ClipAnalysis,
+    segment_type: str,
+    azimuth: float,
+    progress: float,
+    base_color: str,
+    figsize: tuple[float, float] = (3.0, 3.0),
+    dpi: int = 80,
+) -> np.ndarray:
+    fig = plt.figure(figsize=figsize, dpi=dpi)
+    ax = fig.add_subplot(111, projection="3d")
+
+    if segment_type == "cycle":
+        _draw_cycle_on_ax(
+            ax, a.pts_3d, a.ordered_cycle, a.cycle_segments,
+            base_color, a.minima_indices, progress,
+        )
+    else:
+        _draw_paths_on_ax(
+            ax, a.pts_3d, a.path_segments,
+            base_color, a.minima_indices, progress,
+        )
+
+    ax.view_init(elev=25, azim=azimuth)
+    ax.set_axis_off()
+    fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+    return _fig_to_array(fig, dpi)
+
+
+def _render_combined_pca_frame(
+    analyses: list[ClipAnalysis],
+    segment_type: str,
+    azimuth: float,
+    progress: float,
+    figsize: tuple[float, float] = (3.0, 3.0),
+    dpi: int = 80,
+) -> np.ndarray:
+    fig = plt.figure(figsize=figsize, dpi=dpi)
+    ax = fig.add_subplot(111, projection="3d")
+
+    for pts_3d in [a.pts_3d for a in analyses]:
+        ax.scatter(
+            pts_3d[:, 0], pts_3d[:, 1], pts_3d[:, 2],
+            c="gray", s=0.5, alpha=0.08, edgecolors="none",
+        )
+
+    for ci, a in enumerate(analyses):
+        base_color = CLIP_BASE_COLORS[ci % len(CLIP_BASE_COLORS)]
+        if segment_type == "cycle":
+            _draw_cycle_on_ax(
+                ax, a.pts_3d, a.ordered_cycle, a.cycle_segments,
+                base_color, a.minima_indices, progress,
+            )
+        else:
+            _draw_paths_on_ax(
+                ax, a.pts_3d, a.path_segments,
+                base_color, a.minima_indices, progress,
+            )
+
+    ax.view_init(elev=25, azim=azimuth)
+    ax.set_axis_off()
+    fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+    return _fig_to_array(fig, dpi)
+
+
+# ── Segment entries for filmstrip ──────────────────────────────────────────
 
 
 def _get_segment_traces(
@@ -450,7 +503,6 @@ class _SegmentEntry:
 def _build_segment_entries(
     analyses: list[ClipAnalysis],
     segment_type: str,
-    close_cycles: bool = True,
 ) -> list[_SegmentEntry]:
     entries = []
     for ai, a in enumerate(analyses):
@@ -458,14 +510,15 @@ def _build_segment_entries(
         base_color = CLIP_BASE_COLORS[ai % len(CLIP_BASE_COLORS)]
         n_segs = len(traces)
         for si, trace in enumerate(traces):
-            if close_cycles and segment_type == "cycle" and len(trace) > 1:
-                trace = trace + [trace[0]]
             color = _grade_color(base_color, n_segs, si)
             entries.append(_SegmentEntry(
                 analysis=a, clip_idx=ai, seg_idx=si,
                 n_segs=n_segs, trace=trace, color=color,
             ))
     return entries
+
+
+# ── Grid rotating video ─────────────────────────────────────────────────────
 
 
 def render_rotating_grid_video(
@@ -480,19 +533,14 @@ def render_rotating_grid_video(
     n_frames = cfg.visualization.gif_n_frames
     fps = cfg.visualization.gif_fps
 
-    entries = _build_segment_entries(analyses, segment_type)
-    if not entries:
-        print(f"  No valid {segment_type} segments to render")
+    valid = [a for a in analyses
+             if (segment_type == "cycle" and a.cycle_segments)
+             or (segment_type == "path" and a.path_segments)]
+    if not valid:
+        print(f"  No valid {segment_type} clips to render")
         return
 
-    # Group entries by clip — one grid cell per clip, all segments drawn together
-    from collections import OrderedDict
-    clip_groups: OrderedDict[int, list[_SegmentEntry]] = OrderedDict()
-    for e in entries:
-        clip_groups.setdefault(e.clip_idx, []).append(e)
-
-    clip_list = list(clip_groups.values())
-    n_clips = len(clip_list)
+    n_clips = len(valid)
     n_cols = min(n_clips, 3)
     n_rows = (n_clips + n_cols - 1) // n_cols
 
@@ -509,27 +557,22 @@ def render_rotating_grid_video(
     grid_w = grid_w + (grid_w % 2)
     grid_h = grid_h + (grid_h % 2)
 
-    # Build combined PCA data
-    combined_pts_3d = [grp[0].analysis.pts_3d for grp in clip_list]
-    combined_seg_traces = [[e.trace for e in grp] for grp in clip_list]
-
     import mujoco
     xml_path = cfg.data.xml_path
     renderers = []
-    for grp in clip_list:
+    for a in valid:
         mj_model = mujoco.MjModel.from_xml_path(xml_path)
         mj_data = mujoco.MjData(mj_model)
         renderer = mujoco.Renderer(mj_model, height=vid_size[1], width=vid_size[0])
         renderers.append((mj_model, mj_data, renderer))
 
-    total_segs = sum(len(grp) for grp in clip_list)
-    print(f"  Rendering {segment_type} rotating grid: "
-          f"{n_clips} clips ({total_segs} segments), {n_frames} frames, "
-          f"{n_rows}x{n_cols} grid + combined PCA")
-
     m = cfg.feature_space.takens_m
     tau = cfg.feature_space.takens_tau
     offset = (m - 1) * tau
+
+    print(f"  Rendering {segment_type} rotating grid: "
+          f"{n_clips} clips, {n_frames} frames, "
+          f"{n_rows}x{n_cols} grid + combined PCA")
 
     frames_out = []
     for fi in range(n_frames):
@@ -539,7 +582,7 @@ def render_rotating_grid_video(
         canvas = np.full((grid_h, grid_w, 3), 255, dtype=np.uint8)
 
         combined_img = _render_combined_pca_frame(
-            combined_pts_3d, combined_seg_traces, azimuth, progress,
+            valid, segment_type, azimuth, progress,
             figsize=(combined_pca_w / 80, combined_pca_h / 80), dpi=80,
         )
         combined_img = np.array(Image.fromarray(combined_img).resize(
@@ -549,29 +592,30 @@ def render_rotating_grid_video(
 
         x_offset = combined_pca_w
 
-        for ci, grp in enumerate(clip_list):
+        for ci, a in enumerate(valid):
             row = ci // n_cols
             col = ci % n_cols
             y0 = row * cell_h
             x0 = x_offset + col * cell_w
 
-            a = grp[0].analysis
-            seg_traces = [e.trace for e in grp]
-            base_color = CLIP_BASE_COLORS[grp[0].clip_idx % len(CLIP_BASE_COLORS)]
-
+            base_color = CLIP_BASE_COLORS[ci % len(CLIP_BASE_COLORS)]
             pca_img = _render_pca_frame(
-                a.pts_3d, seg_traces, azimuth, progress,
+                a, segment_type, azimuth, progress,
                 base_color=base_color,
                 figsize=(pca_size[0] / 80, pca_size[1] / 80), dpi=80,
             )
             pca_img = np.array(Image.fromarray(pca_img).resize(
                 (pca_size[0], pca_size[1]), Image.LANCZOS))
 
-            # Use combined indices across all segments for the MuJoCo frame
-            all_idx = sorted({i for t in seg_traces for i in t})
-            n_show = max(1, int(len(all_idx) * progress))
-            current_takens_idx = all_idx[min(n_show - 1, len(all_idx) - 1)]
-            frame_idx = min(current_takens_idx + offset, len(a.qposes) - 1)
+            # Get current frame index from traces
+            traces = _get_segment_traces(a, segment_type)
+            all_idx = sorted({i for t in traces for i in t})
+            if all_idx:
+                n_show = max(1, int(len(all_idx) * progress))
+                current_takens_idx = all_idx[min(n_show - 1, len(all_idx) - 1)]
+                frame_idx = min(current_takens_idx + offset, len(a.qposes) - 1)
+            else:
+                frame_idx = 0
 
             mj_model, mj_data, renderer = renderers[ci]
             mj_data.qpos[:] = a.qposes[frame_idx]
@@ -606,9 +650,8 @@ def render_rotating_grid_video(
 
 
 def _render_combined_pca_static(
-    all_pts_3d: list[np.ndarray],
-    all_seg_traces: list[list[list[int]]],
-    clip_ids: list[int],
+    analyses: list[ClipAnalysis],
+    segment_type: str,
     figsize: tuple[float, float] = (4.0, 4.0),
     dpi: int = 100,
     azimuth: float = 45.0,
@@ -619,25 +662,30 @@ def _render_combined_pca_static(
     fig = plt.figure(figsize=figsize, dpi=dpi)
     ax = fig.add_subplot(111, projection="3d")
 
-    for pts_3d in all_pts_3d:
+    for a in analyses:
         ax.scatter(
-            pts_3d[:, 0], pts_3d[:, 1], pts_3d[:, 2],
+            a.pts_3d[:, 0], a.pts_3d[:, 1], a.pts_3d[:, 2],
             c="gray", s=0.5, alpha=0.08, edgecolors="none",
         )
 
     legend_handles = []
-    for ci, (pts_3d, seg_traces) in enumerate(zip(all_pts_3d, all_seg_traces)):
+    for ci, a in enumerate(analyses):
         base_color = CLIP_BASE_COLORS[ci % len(CLIP_BASE_COLORS)]
-        n_segs = len(seg_traces)
-        for si, trace in enumerate(seg_traces):
-            color = _grade_color(base_color, n_segs, si)
-            valid = [i for i in trace if i < len(pts_3d)]
-            if len(valid) > 1:
-                p = pts_3d[valid]
-                ax.plot(p[:, 0], p[:, 1], p[:, 2], c=color, linewidth=1.5, alpha=0.9)
+        if segment_type == "cycle":
+            _draw_cycle_on_ax(
+                ax, a.pts_3d, a.ordered_cycle, a.cycle_segments,
+                base_color, a.minima_indices,
+            )
+            n_segs = len(a.cycle_segments)
+        else:
+            _draw_paths_on_ax(
+                ax, a.pts_3d, a.path_segments,
+                base_color, a.minima_indices,
+            )
+            n_segs = sum(len(ps) for ps in a.path_segments)
         legend_handles.append(
             mlines.Line2D([], [], color=base_color, linewidth=2,
-                          label=f"Clip {clip_ids[ci]} ({n_segs} seg)")
+                          label=f"Clip {a.clip_id} ({n_segs} seg)")
         )
 
     ax.view_init(elev=25, azim=azimuth)
@@ -645,13 +693,7 @@ def _render_combined_pca_static(
     ax.legend(handles=legend_handles, loc="upper left", fontsize=7,
               framealpha=0.8, handlelength=1.5)
     fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
-
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight", pad_inches=0.02)
-    plt.close(fig)
-    buf.seek(0)
-    img = np.array(PILImage.open(buf))[:, :, :3]
-    return img
+    return _fig_to_array(fig, dpi)
 
 
 def render_filmstrip_grid(
@@ -717,19 +759,8 @@ def render_filmstrip_grid(
     pca_ax = fig.add_axes([max(pca_x, 0.0), max(pca_y, 0.0),
                            min(pca_w_frac, pca_frac), min(pca_h_frac, 1.0)])
 
-    # Build per-clip grouped traces for combined PCA
-    clip_pts: dict[int, np.ndarray] = {}
-    clip_traces: dict[int, list[list[int]]] = {}
-    for e, _ in filmstrip_entries:
-        clip_pts[e.clip_idx] = e.analysis.pts_3d
-        clip_traces.setdefault(e.clip_idx, []).append(e.trace)
-    clip_ids_ordered = sorted(clip_pts)
-    combined_pts_3d = [clip_pts[k] for k in clip_ids_ordered]
-    combined_seg_traces = [clip_traces[k] for k in clip_ids_ordered]
-    clip_ids = [analyses[k].clip_id for k in clip_ids_ordered]
-
     pca_img = _render_combined_pca_static(
-        combined_pts_3d, combined_seg_traces, clip_ids,
+        analyses, segment_type,
         figsize=(pca_side, pca_side), dpi=cfg.visualization.dpi,
     )
     pca_ax.imshow(pca_img, aspect="equal")
@@ -778,6 +809,7 @@ def main():
     parser = argparse.ArgumentParser(description="Rear-Cycle Grid Demo")
     parser.add_argument("--config", type=str, default=None)
     parser.add_argument("--clip-ids", type=int, nargs="+", default=None)
+    parser.add_argument("--reference-clip", type=int, default=None)
     args = parser.parse_args()
 
     default_cfg_path = (
@@ -803,6 +835,8 @@ def main():
 
     if args.clip_ids:
         cfg.discovery.clip_ids = args.clip_ids
+    if args.reference_clip is not None:
+        cfg.discovery.reference_clip = args.reference_clip
 
     os.makedirs(cfg.output_dir, exist_ok=True)
 
@@ -810,6 +844,7 @@ def main():
     print("Rear-Cycle Grid Demo")
     print("=" * 60)
     print(f"  Output: {cfg.output_dir}")
+    print(f"  Reference clip: {cfg.discovery.reference_clip}")
     print(f"  Feature: {cfg.feature_space.dm_key} "
           f"(m={cfg.feature_space.takens_m}, tau={cfg.feature_space.takens_tau})")
     print(f"  DM: k={cfg.dm.k_neighbors}, eps={cfg.dm.epsilon}")

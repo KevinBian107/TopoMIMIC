@@ -27,5 +27,3 @@ rendering:
   max_gt_samples: 150
   framerate: 30
   target_size: [320, 240]
-
-only_analysis: true 
