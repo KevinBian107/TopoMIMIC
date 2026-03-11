@@ -1,15 +1,14 @@
 mode: long_sequence
 
 long_sequence:
-  n_clips: 10
+  n_clips: 50
   clip_length: 500
   n_transitions: 5
   source_pool:
-    - run
+    - walk_slow
     - walk_backward
   target_pool:
     - hop
-    - knee_down
     - tiptoe
   transition_length: 25
   variable_transition_length: true

@@ -71,9 +71,11 @@ class DemoDMConfig:
     top_k_paths: int = 1
 
 
+
 @dataclass
 class DemoRenderingConfig:
-    enabled: bool = True
+    enabled: bool = False
+    pca_debug: bool = False
     walker_xml: str = "topo_mimic/dmwk/xml/walker.xml"
     max_clips: int = 10
     max_segments: int = 5
@@ -81,8 +83,16 @@ class DemoRenderingConfig:
     max_gt_types: int | None = None
     max_gt_samples: int | None = None
     max_debug_clips: int = 3
+    top_k_debug_paths: int = 3
     framerate: int = 30
     target_size: tuple[int, int] = (320, 240)
+
+
+@dataclass
+class TransitionAnalysisConfig:
+    enabled: bool = True
+    top_k_paths: int = 3
+    min_segment_len: int = 10
 
 
 @dataclass
@@ -94,6 +104,7 @@ class DemoConfig:
     visualization: VisualizationConfig = field(default_factory=VisualizationConfig)
     dm_pipeline: DemoDMConfig = field(default_factory=DemoDMConfig)
     rendering: DemoRenderingConfig = field(default_factory=DemoRenderingConfig)
+    transition_analysis: TransitionAnalysisConfig = field(default_factory=TransitionAnalysisConfig)
 
 
 def load_demo_config(config_path: str) -> DemoConfig:
@@ -118,6 +129,9 @@ def load_demo_config(config_path: str) -> DemoConfig:
         rend_dict["target_size"] = tuple(rend_dict["target_size"])
     rend_cfg = DemoRenderingConfig(**rend_dict)
 
+    ta_dict = cfg.get("transition_analysis", {})
+    ta_cfg = TransitionAnalysisConfig(**ta_dict)
+
     return DemoConfig(
         dataset=cfg.get("dataset", "walker_long"),
         data_path=cfg.get("data_path", "data/walker_long.h5"),
@@ -126,6 +140,7 @@ def load_demo_config(config_path: str) -> DemoConfig:
         visualization=vis_cfg,
         dm_pipeline=dm_cfg,
         rendering=rend_cfg,
+        transition_analysis=ta_cfg,
     )
 
 
@@ -787,19 +802,21 @@ def render_clip_debug_side_by_side(
     output_dir: str,
     variant_prefix: str,
     max_clips: int = 10,
-    max_segments: int = 5,
+    top_k_paths: int = 3,
     framerate: int = 30,
     target_size: tuple[int, int] = (320, 240),
 ):
-    """Render per-clip debug videos: original clip on left, DM segments on right.
+    """Render per-clip debug videos: original clip on left, deduplicated sub-segments on right.
 
-    For each clip, produces one video with:
-      - Left panel: full clip playback with GT transition labels overlaid
-      - Right panel: DM segments stacked vertically; the active segment is
-        highlighted with a green border when the clip reaches its frame range.
+    Takes the top K longest paths per clip, splits each into contiguous
+    sub-segments, and deduplicates across paths. Each unique sub-segment
+    gets one tile with a distinct color. The tile border lights up in its
+    color when playback reaches its frame range.
     """
     import h5py
     import mujoco
+    import math
+    import bisect
     from tqdm import tqdm
 
     Wc, Hc = target_size
@@ -821,24 +838,18 @@ def render_clip_debug_side_by_side(
             continue
 
         clip_id = clip_indices[local_idx]
-        sorted_segs = sorted(clip_segments_dm, key=lambda s: len(s), reverse=True)
-        sorted_segs = [np.array(s) for s in sorted_segs[:max_segments]]
-        n_segs = len(sorted_segs)
+        top_paths = sorted(clip_segments_dm, key=lambda s: len(s), reverse=True)
+        top_paths = [np.array(s, dtype=int) for s in top_paths[:top_k_paths]]
+        if not top_paths:
+            continue
+
+        unique_segs = _build_unique_subsegments(top_paths)
+        n_segs = len(unique_segs)
         if n_segs == 0:
             continue
 
         gt_segments = clip_labels.get(clip_id, [])
 
-        seg_frame_sets = []
-        for seg in sorted_segs:
-            seg_frame_sets.append(set(int(f) for f in seg))
-
-        seg_ranges = []
-        for seg in sorted_segs:
-            s = np.array(seg, dtype=int)
-            seg_ranges.append((int(s.min()), int(s.max())))
-
-        import math
         grid_cols = max(1, int(math.ceil(math.sqrt(n_segs))))
         grid_rows = max(1, int(math.ceil(n_segs / grid_cols)))
         seg_h = max(48, min(80, Hc // grid_rows))
@@ -865,18 +876,20 @@ def render_clip_debug_side_by_side(
         mj_data = mujoco.MjData(mj_model)
         renderer = mujoco.Renderer(mj_model, height=Hc, width=Wc)
 
-        seg_rendered_frames: list[list[np.ndarray]] = []
+        seg_rendered_by_frame: list[list[tuple[int, np.ndarray]]] = []
+        seg_sorted_frame_keys: list[list[int]] = []
         seg_renderer = mujoco.Renderer(mj_model, height=seg_h, width=seg_w)
-        for si, seg in enumerate(sorted_segs):
-            seg_frames_list = []
-            for fi in sorted(int(x) for x in seg):
-                if fi >= clip_len:
+        for useg in unique_segs:
+            frame_pairs = []
+            for frame_idx in sorted(int(x) for x in useg.frames):
+                if frame_idx >= clip_len:
                     continue
-                mj_data.qpos[:] = qpos_clip[fi]
+                mj_data.qpos[:] = qpos_clip[frame_idx]
                 mujoco.mj_forward(mj_model, mj_data)
                 seg_renderer.update_scene(mj_data, camera="side")
-                seg_frames_list.append(seg_renderer.render().copy())
-            seg_rendered_frames.append(seg_frames_list)
+                frame_pairs.append((frame_idx, seg_renderer.render().copy()))
+            seg_rendered_by_frame.append(frame_pairs)
+            seg_sorted_frame_keys.append([fp[0] for fp in frame_pairs])
         seg_renderer.close()
 
         writer = imageio_ffmpeg.write_frames(
@@ -884,8 +897,6 @@ def render_clip_debug_side_by_side(
             codec="h264", macro_block_size=1,
         )
         writer.send(None)
-
-        seg_playback_pos = [0] * n_segs
 
         for fi in tqdm(range(clip_len), desc=f"Clip {clip_id}", leave=False):
             mj_data.qpos[:] = qpos_clip[fi]
@@ -922,44 +933,42 @@ def render_clip_debug_side_by_side(
             bar_w = int(Wc * fi / max(clip_len - 1, 1))
             draw.rectangle((0, progress_y, Wc, progress_y + 4), fill=(220, 220, 220))
             draw.rectangle((0, progress_y, bar_w, progress_y + 4), fill=(80, 80, 80))
-            for si, (seg_start, seg_end) in enumerate(seg_ranges):
-                sx = int(Wc * seg_start / max(clip_len - 1, 1))
-                ex = int(Wc * seg_end / max(clip_len - 1, 1))
-                color = _seg_color(si)
-                draw.rectangle((sx, progress_y, ex, progress_y + 4), fill=color)
+            for useg in unique_segs:
+                sx = int(Wc * useg.key[0] / max(clip_len - 1, 1))
+                ex = int(Wc * useg.key[1] / max(clip_len - 1, 1))
+                draw.rectangle((sx, progress_y, ex, progress_y + 4),
+                               fill=_seg_color(useg.color_idx))
 
             right_x0 = Wc + 10
             draw.text(
                 (right_x0, 2),
-                f"{variant_prefix.title()} Segments ({n_segs})",
+                f"{variant_prefix.title()} Sub-Segments ({n_segs})",
                 font=font_title, fill=(0, 0, 0),
             )
 
-            for si in range(n_segs):
+            for si, useg in enumerate(unique_segs):
                 gc = si % grid_cols
                 gr = si // grid_cols
                 cell_x = right_x0 + gc * (seg_w + gutter)
                 cell_y = title_h + gr * (seg_h + label_h + gutter)
-                seg_start, seg_end = seg_ranges[si]
+                seg_start, seg_end = useg.key
                 is_active = seg_start <= fi <= seg_end
+                color = _seg_color(useg.color_idx)
 
-                color = _seg_color(si)
-                seg_label = f"{seg_start}-{seg_end}"
+                paths_tag = ",".join(str(p) for p in useg.path_indices)
+                seg_label = f"P[{paths_tag}]:{seg_start}-{seg_end}"
                 draw.text(
                     (cell_x, cell_y), seg_label,
                     font=font_title,
                     fill=color if is_active else (180, 180, 180),
                 )
 
-                if seg_rendered_frames[si]:
-                    if is_active:
-                        seg_playback_pos[si] = min(
-                            seg_playback_pos[si] + 1,
-                            len(seg_rendered_frames[si]) - 1,
-                        )
-                    sf = seg_rendered_frames[si][
-                        seg_playback_pos[si] % len(seg_rendered_frames[si])
-                    ]
+                if seg_rendered_by_frame[si]:
+                    keys = seg_sorted_frame_keys[si]
+                    idx = bisect.bisect_right(keys, fi) - 1
+                    if idx < 0:
+                        idx = 0
+                    sf = seg_rendered_by_frame[si][idx][1]
                     seg_img = Image.fromarray(_ensure_rgb_uint8(sf))
                     tile_y = cell_y + label_h
 
@@ -968,7 +977,7 @@ def render_clip_debug_side_by_side(
                         draw.rectangle(
                             (cell_x - bw, tile_y - bw,
                              cell_x + seg_w + bw, tile_y + seg_h + bw),
-                            outline=(0, 200, 0), width=bw,
+                            outline=color, width=bw,
                         )
                     else:
                         draw.rectangle(
@@ -1015,13 +1024,63 @@ def _get_transition_label_at_frame(
     return None
 
 
+_SEG_PALETTE_RGB = [
+    (31, 119, 180), (255, 127, 14), (44, 160, 44),
+    (214, 39, 40), (148, 103, 189), (140, 86, 75),
+    (227, 119, 194), (127, 127, 127), (188, 189, 34), (23, 190, 207),
+]
+
+_SEG_PALETTE_FLOAT = [
+    (r / 255, g / 255, b / 255) for r, g, b in _SEG_PALETTE_RGB
+]
+
+
 def _seg_color(idx: int) -> tuple[int, int, int]:
-    palette = [
-        (31, 119, 180), (255, 127, 14), (44, 160, 44),
-        (214, 39, 40), (148, 103, 189), (140, 86, 75),
-        (227, 119, 194), (127, 127, 127), (188, 189, 34), (23, 190, 207),
-    ]
-    return palette[idx % len(palette)]
+    return _SEG_PALETTE_RGB[idx % len(_SEG_PALETTE_RGB)]
+
+
+def _split_contiguous(frames: np.ndarray) -> list[np.ndarray]:
+    """Split a sorted array of frame indices into contiguous sub-segments."""
+    if len(frames) == 0:
+        return []
+    sorted_f = np.sort(frames.astype(int))
+    breaks = np.where(np.diff(sorted_f) > 1)[0] + 1
+    return np.split(sorted_f, breaks)
+
+
+@dataclass
+class UniqueSubsegment:
+    key: tuple[int, int]
+    frames: np.ndarray
+    color_idx: int
+    path_indices: list[int]
+
+
+def _build_unique_subsegments(
+    paths: list[np.ndarray],
+) -> list[UniqueSubsegment]:
+    """Split paths into contiguous sub-segments and deduplicate across paths.
+
+    Sub-segments with the same (start, end) frame range are merged into one
+    entry. Each unique sub-segment gets a distinct color index.
+    """
+    seg_map: dict[tuple[int, int], UniqueSubsegment] = {}
+    next_color = 0
+
+    for pi, path in enumerate(paths):
+        for subseg in _split_contiguous(np.array(path, dtype=int)):
+            key = (int(subseg[0]), int(subseg[-1]))
+            if key not in seg_map:
+                seg_map[key] = UniqueSubsegment(
+                    key=key, frames=subseg, color_idx=next_color, path_indices=[pi],
+                )
+                next_color += 1
+            else:
+                if pi not in seg_map[key].path_indices:
+                    seg_map[key].path_indices.append(pi)
+
+    result = sorted(seg_map.values(), key=lambda s: s.key[0])
+    return result
 
 
 # ── Degenerate clip rendering ──────────────────────────────────────────────
@@ -1154,19 +1213,19 @@ def render_pca_dm_debug(
         clip_data = data[local_idx]
         T, D = clip_data.shape
 
-        segments_by_variant: dict[str, list[np.ndarray]] = {}
+        all_paths_for_clip: list[np.ndarray] = []
+        variant_labels: list[str] = []
         for variant_name, dm_results in all_dm_results.items():
             if dm_results is None or local_idx >= len(dm_results):
                 continue
             segs = dm_results[local_idx]
             if segs:
-                segments_by_variant[variant_name] = [np.array(s, dtype=int) for s in segs]
+                for s in segs:
+                    all_paths_for_clip.append(np.array(s, dtype=int))
+                    variant_labels.append(variant_name)
 
-        all_segs_flat = []
-        for segs in segments_by_variant.values():
-            all_segs_flat.extend(segs)
-
-        if not all_segs_flat:
+        unique_segs = _build_unique_subsegments(all_paths_for_clip)
+        if not unique_segs:
             continue
 
         pca = PCA(n_components=2)
@@ -1176,8 +1235,7 @@ def render_pca_dm_debug(
         frame_labels = build_frame_labels(gt_segments, T)
         color_map = _build_color_map(list(frame_labels))
 
-        n_seg_panels = len(all_segs_flat)
-        n_panels = 1 + n_seg_panels
+        n_panels = 1 + len(unique_segs)
         n_cols = min(n_panels, max(4, int(math.ceil(math.sqrt(n_panels)))))
         n_rows = max(1, int(math.ceil(n_panels / n_cols)))
 
@@ -1206,52 +1264,44 @@ def render_pca_dm_debug(
             ax0.legend(handles=handles, loc="upper right", fontsize=4,
                        framealpha=0.7, handletextpad=0.2, borderpad=0.3)
 
-            panel_idx = 1
-            seg_palette = [
-                (0.12, 0.47, 0.71), (1.0, 0.50, 0.05), (0.17, 0.63, 0.17),
-                (0.84, 0.15, 0.16), (0.58, 0.40, 0.74), (0.55, 0.34, 0.29),
-                (0.89, 0.47, 0.76), (0.50, 0.50, 0.50), (0.74, 0.74, 0.14),
-                (0.09, 0.75, 0.81),
-            ]
+            for si, useg in enumerate(unique_segs):
+                panel_idx = 1 + si
+                row = panel_idx // n_cols
+                col = panel_idx % n_cols
+                if row >= n_rows:
+                    break
+                ax = axes[row, col]
 
-            for variant_name, segs in segments_by_variant.items():
-                for si, seg in enumerate(segs):
-                    row = panel_idx // n_cols
-                    col = panel_idx % n_cols
-                    if row >= n_rows:
-                        break
-                    ax = axes[row, col]
+                ax.scatter(
+                    coords[:, 0], coords[:, 1], c=[(0.9, 0.9, 0.9)], s=2,
+                    alpha=0.3, edgecolors="none", rasterized=True,
+                )
 
+                valid = useg.frames[useg.frames < T]
+                if len(valid) > 0:
+                    seg_color = _SEG_PALETTE_FLOAT[useg.color_idx % len(_SEG_PALETTE_FLOAT)]
                     ax.scatter(
-                        coords[:, 0], coords[:, 1], c=[(0.9, 0.9, 0.9)], s=2,
-                        alpha=0.3, edgecolors="none", rasterized=True,
+                        coords[valid, 0], coords[valid, 1],
+                        c=[seg_color], s=6, alpha=0.8,
+                        edgecolors="none", rasterized=True,
+                    )
+                    ax.plot(
+                        coords[valid, 0], coords[valid, 1],
+                        color=seg_color, alpha=0.3, linewidth=0.5,
                     )
 
-                    valid = seg[seg < T]
-                    if len(valid) > 0:
-                        seg_color = seg_palette[si % len(seg_palette)]
-                        ax.scatter(
-                            coords[valid, 0], coords[valid, 1],
-                            c=[seg_color], s=6, alpha=0.8,
-                            edgecolors="none", rasterized=True,
-                        )
-                        ax.plot(
-                            coords[valid, 0], coords[valid, 1],
-                            color=seg_color, alpha=0.3, linewidth=0.5,
-                        )
+                fmin, fmax = (int(valid.min()), int(valid.max())) if len(valid) > 0 else (0, 0)
+                gt_label = _segment_transition_pattern(gt_segments, fmin, fmax + 1)
+                paths_tag = ",".join(str(p) for p in useg.path_indices)
+                ax.set_title(f"P[{paths_tag}] [{fmin}-{fmax}]\n{gt_label}", fontsize=5)
+                ax.set_xticks([])
+                ax.set_yticks([])
 
-                    fmin, fmax = int(valid.min()), int(valid.max()) if len(valid) > 0 else (0, 0)
-                    gt_label = _segment_transition_pattern(gt_segments, fmin, fmax + 1)
-                    ax.set_title(f"{variant_name[0].upper()}{si} [{fmin}-{fmax}]\n{gt_label}", fontsize=5)
-                    ax.set_xticks([])
-                    ax.set_yticks([])
-                    panel_idx += 1
-
-            for idx in range(panel_idx, n_rows * n_cols):
+            for idx in range(1 + len(unique_segs), n_rows * n_cols):
                 r, c = idx // n_cols, idx % n_cols
                 axes[r, c].set_visible(False)
 
-            fig.suptitle(f"Clip {clip_id}: PCA + DM Segments", fontsize=9, fontweight="bold")
+            fig.suptitle(f"Clip {clip_id}: PCA + DM Sub-Segments", fontsize=9, fontweight="bold")
             fig.tight_layout(rect=[0, 0, 1, 0.95])
 
             out_path = os.path.join(output_dir, f"clip_{clip_id}_pca_dm.png")
@@ -1382,6 +1432,650 @@ def render_clip_segment_grid(
         tile_labels=tile_labels,
     )
     print(f"Saved segment grid video: {output_path}")
+
+
+# ── Transition coverage analysis ───────────────────────────────────────────
+
+
+@dataclass
+class GTTransition:
+    clip_id: int
+    local_idx: int
+    src_behavior: str
+    dst_behavior: str
+    transition_type: str
+    src_start: int
+    src_end: int
+    dst_start: int
+    dst_end: int
+    gap_start: int
+    gap_end: int
+
+
+def _extract_gt_transitions(
+    clip_indices: list[int],
+    clip_labels: dict[int, list[dict]],
+    clip_length: int,
+) -> list[GTTransition]:
+    """Extract all GT transitions (consecutive behavior pairs) across clips."""
+    transitions: list[GTTransition] = []
+    for local_idx, clip_id in enumerate(clip_indices):
+        segments = clip_labels.get(clip_id, [])
+        if len(segments) < 2:
+            continue
+        for i in range(len(segments) - 1):
+            src = segments[i]
+            dst = segments[i + 1]
+            src_start = src["start_frame"]
+            src_end = src["end_frame"] if src["end_frame"] >= 0 else clip_length
+            dst_start = dst["start_frame"]
+            dst_end = dst["end_frame"] if dst["end_frame"] >= 0 else clip_length
+            pair = tuple(sorted([src["behavior"], dst["behavior"]]))
+            transitions.append(GTTransition(
+                clip_id=clip_id,
+                local_idx=local_idx,
+                src_behavior=src["behavior"],
+                dst_behavior=dst["behavior"],
+                transition_type=f"{pair[0]}\u2194{pair[1]}",
+                src_start=src_start,
+                src_end=src_end,
+                dst_start=dst_start,
+                dst_end=min(dst_end, clip_length),
+                gap_start=src_end,
+                gap_end=dst_start,
+            ))
+    return transitions
+
+
+def _check_transition_covered(
+    gt: GTTransition,
+    dm_segments: list,
+    top_k: int,
+    clip_length: int,
+    clip_labels_for_clip: list[dict],
+) -> tuple[bool, float, float]:
+    """Check if a GT transition A->B is spatially covered by any DM path.
+
+    A DM path "covers" a transition if it contains frames labeled as both
+    the source behavior A and the destination behavior B. This is a spatial
+    check — the path visits both behavior regions in the manifold.
+
+    Returns:
+        detected: True if any path visits both src and dst behavior regions.
+        src_frac: Best fraction of path frames labeled as src behavior.
+        dst_frac: Best fraction of path frames labeled as dst behavior.
+    """
+    if not dm_segments:
+        return False, 0.0, 0.0
+
+    frame_labels = build_frame_labels(clip_labels_for_clip, clip_length)
+
+    sorted_paths = sorted(dm_segments, key=lambda s: len(s), reverse=True)
+    sorted_paths = [np.array(s, dtype=int) for s in sorted_paths[:top_k]]
+
+    best_score = 0.0
+    best_src_frac = 0.0
+    best_dst_frac = 0.0
+
+    for path in sorted_paths:
+        valid = path[(path >= 0) & (path < clip_length)]
+        if len(valid) == 0:
+            continue
+
+        path_labels = frame_labels[valid]
+        n_src = np.sum(path_labels == gt.src_behavior)
+        n_dst = np.sum(path_labels == gt.dst_behavior)
+        src_frac = n_src / len(valid)
+        dst_frac = n_dst / len(valid)
+        score = min(src_frac, dst_frac)
+
+        if score > best_score:
+            best_score = score
+            best_src_frac = src_frac
+            best_dst_frac = dst_frac
+
+    detected = best_src_frac > 0 and best_dst_frac > 0
+    return detected, best_src_frac, best_dst_frac
+
+
+@dataclass
+class TransitionCoverageResult:
+    gt_transitions: list[GTTransition]
+    covered: list[bool]
+    src_fracs: list[float]
+    dst_fracs: list[float]
+    variant_name: str
+
+
+def compute_transition_coverage(
+    gt_transitions: list[GTTransition],
+    all_dm_results: list,
+    clip_labels: dict[int, list[dict]],
+    clip_length: int,
+    config: TransitionAnalysisConfig,
+    variant_name: str,
+) -> TransitionCoverageResult:
+    covered = []
+    src_fracs = []
+    dst_fracs = []
+    for gt in gt_transitions:
+        segs = all_dm_results[gt.local_idx] if gt.local_idx < len(all_dm_results) else []
+        clip_segs = clip_labels.get(gt.clip_id, [])
+        is_covered, sf, df = _check_transition_covered(
+            gt, segs, config.top_k_paths, clip_length, clip_segs,
+        )
+        covered.append(is_covered)
+        src_fracs.append(sf)
+        dst_fracs.append(df)
+    return TransitionCoverageResult(
+        gt_transitions=gt_transitions,
+        covered=covered,
+        src_fracs=src_fracs,
+        dst_fracs=dst_fracs,
+        variant_name=variant_name,
+    )
+
+
+def plot_coverage_matrix(
+    results: list[TransitionCoverageResult],
+    output_dir: str,
+):
+    """Plot transition coverage heatmaps: detection rate + mean src/dst coverage fractions."""
+    from collections import Counter
+
+    all_types = sorted(set(gt.transition_type for gt in results[0].gt_transitions))
+    type_totals = Counter(gt.transition_type for gt in results[0].gt_transitions)
+
+    variant_names = [r.variant_name for r in results]
+    n_types = len(all_types)
+    n_variants = len(variant_names)
+
+    coverage_rates = np.zeros((n_types, n_variants))
+    coverage_counts = np.zeros((n_types, n_variants), dtype=int)
+    mean_src_fracs = np.zeros((n_types, n_variants))
+    mean_dst_fracs = np.zeros((n_types, n_variants))
+
+    for vi, res in enumerate(results):
+        type_covered = Counter()
+        type_src_sum: dict[str, float] = defaultdict(float)
+        type_dst_sum: dict[str, float] = defaultdict(float)
+        for gt, cov, sf, df in zip(res.gt_transitions, res.covered, res.src_fracs, res.dst_fracs):
+            if cov:
+                type_covered[gt.transition_type] += 1
+            type_src_sum[gt.transition_type] += sf
+            type_dst_sum[gt.transition_type] += df
+
+        for ti, ttype in enumerate(all_types):
+            total = type_totals[ttype]
+            coverage_counts[ti, vi] = type_covered[ttype]
+            coverage_rates[ti, vi] = type_covered[ttype] / total if total > 0 else 0
+            mean_src_fracs[ti, vi] = type_src_sum[ttype] / total if total > 0 else 0
+            mean_dst_fracs[ti, vi] = type_dst_sum[ttype] / total if total > 0 else 0
+
+    with plt.rc_context(_NATURE_RC):
+        fig, axes = plt.subplots(1, 3, figsize=(10, max(2.5, 0.5 * n_types + 1.5)))
+        fig.subplots_adjust(wspace=0.6, left=0.12, right=0.95, top=0.85, bottom=0.15)
+
+        type_labels = [f"{t} (n={type_totals[t]})" for t in all_types]
+
+        for ax_idx, (matrix, title, cmap, fmt) in enumerate([
+            (coverage_rates, "Detection Rate\n(path visits both behaviors)", "RdYlGn",
+             lambda ti, vi: f"{coverage_counts[ti, vi]}/{type_totals[all_types[ti]]}"),
+            (mean_src_fracs, "Mean Source Behavior\nFraction in Path", "YlOrRd",
+             lambda ti, vi: f"{mean_src_fracs[ti, vi]:.2f}"),
+            (mean_dst_fracs, "Mean Dest Behavior\nFraction in Path", "YlOrRd",
+             lambda ti, vi: f"{mean_dst_fracs[ti, vi]:.2f}"),
+        ]):
+            ax = axes[ax_idx]
+            im = ax.imshow(matrix, cmap=cmap, vmin=0, vmax=1, aspect="auto")
+            ax.set_xticks(range(n_variants))
+            ax.set_xticklabels(variant_names, rotation=30, ha="right")
+            ax.set_yticks(range(n_types))
+            ax.set_yticklabels(type_labels if ax_idx == 0 else [""] * n_types)
+            ax.set_title(title, fontsize=7)
+            for ti in range(n_types):
+                for vi in range(n_variants):
+                    ax.text(vi, ti, fmt(ti, vi),
+                            ha="center", va="center", fontsize=5,
+                            color="white" if matrix[ti, vi] < 0.5 else "black")
+            fig.colorbar(im, ax=ax, shrink=0.7)
+
+        fig.suptitle("DM Transition Coverage (Spatial)", fontsize=9, fontweight="bold")
+
+        out_path = os.path.join(output_dir, "transition_coverage_matrix.png")
+        os.makedirs(output_dir, exist_ok=True)
+        fig.savefig(out_path, facecolor="white")
+        plt.close(fig)
+    print(f"Saved coverage matrix: {out_path}")
+
+
+def plot_detection_curves(
+    results: list[TransitionCoverageResult],
+    output_dir: str,
+):
+    """Plot detection curves by sweeping min behavior-fraction threshold.
+
+    Score = min(src_frac, dst_frac) for the best path per transition.
+    Sweeping the threshold answers: "if we require at least X% of the path
+    to be in each behavior, how many transitions are still detected?"
+    """
+    from collections import Counter
+
+    thresholds = np.linspace(0.0, 0.5, 51)
+
+    with plt.rc_context(_NATURE_RC):
+        fig, axes = plt.subplots(1, 2, figsize=(7.2, 3.5))
+        fig.subplots_adjust(wspace=0.4, left=0.1, right=0.95, top=0.85, bottom=0.18)
+
+        for res in results:
+            n_total = len(res.gt_transitions)
+            scores = np.array([min(s, d) for s, d in zip(res.src_fracs, res.dst_fracs)])
+
+            detection_rates = []
+            for thr in thresholds:
+                n_detected = np.sum(scores >= thr)
+                detection_rates.append(n_detected / n_total)
+
+            auc = np.trapz(detection_rates, thresholds)
+
+            axes[0].plot(thresholds, detection_rates,
+                         label=f"{res.variant_name} (AUC={auc:.3f})", linewidth=1.2)
+
+            all_types = sorted(set(gt.transition_type for gt in res.gt_transitions))
+            type_totals = Counter(gt.transition_type for gt in res.gt_transitions)
+            color_map = _build_color_map(all_types)
+
+            for ttype in all_types:
+                type_scores = np.array([
+                    min(s, d) for gt, s, d in zip(res.gt_transitions, res.src_fracs, res.dst_fracs)
+                    if gt.transition_type == ttype
+                ])
+                total = type_totals[ttype]
+                rates = [np.sum(type_scores >= thr) / total for thr in thresholds]
+                axes[1].plot(thresholds, rates, linewidth=0.8, alpha=0.7,
+                             color=color_map.get(ttype, (0.5, 0.5, 0.5, 1.0)),
+                             label=f"{ttype} (n={total})")
+
+        axes[0].set_xlabel("Min Behavior Fraction Threshold")
+        axes[0].set_ylabel("Detection Rate")
+        axes[0].set_title("Overall: min(src_frac, dst_frac) >= thr")
+        axes[0].legend(fontsize=5)
+        axes[0].set_xlim(0, 0.5)
+        axes[0].set_ylim(0, 1.05)
+
+        axes[1].set_xlabel("Min Behavior Fraction Threshold")
+        axes[1].set_ylabel("Detection Rate")
+        axes[1].set_title("Per-Transition-Type Curves")
+        handles, labels = axes[1].get_legend_handles_labels()
+        seen = set()
+        unique_h, unique_l = [], []
+        for h, l in zip(handles, labels):
+            if l not in seen:
+                unique_h.append(h)
+                unique_l.append(l)
+                seen.add(l)
+        axes[1].legend(unique_h, unique_l, fontsize=4, loc="lower left")
+        axes[1].set_xlim(0, 0.5)
+        axes[1].set_ylim(0, 1.05)
+
+        fig.suptitle("DM Spatial Detection Curves", fontsize=9, fontweight="bold")
+
+        out_path = os.path.join(output_dir, "transition_detection_curves.png")
+        os.makedirs(output_dir, exist_ok=True)
+        fig.savefig(out_path, facecolor="white")
+        plt.close(fig)
+    print(f"Saved detection curves: {out_path}")
+
+
+def plot_latent_neighborhood_analysis(
+    data: np.ndarray,
+    gt_transitions: list[GTTransition],
+    covered: list[bool],
+    src_fracs: list[float],
+    dst_fracs: list[float],
+    clip_labels: dict[int, list[dict]],
+    clip_length: int,
+    output_dir: str,
+    variant_name: str,
+):
+    """Analyze latent space properties around each transition to explain coverage.
+
+    For each GT transition, computes:
+      - Centroid distance between src and dst behavior neighborhoods
+      - Variance within each behavior neighborhood
+      - Gap-region density (how many frames fall in the transition gap)
+    Then plots these properties stratified by detected vs missed.
+    """
+    from sklearn.decomposition import PCA
+
+    records: list[dict] = []
+    for i, gt in enumerate(gt_transitions):
+        clip_data = data[gt.local_idx]
+        T = clip_data.shape[0]
+
+        segments = clip_labels.get(gt.clip_id, [])
+        src_seg = None
+        dst_seg = None
+        for s in segments:
+            if s["behavior"] == gt.src_behavior and s["end_frame"] == gt.src_end:
+                src_seg = s
+            if s["behavior"] == gt.dst_behavior and s["start_frame"] == gt.dst_start:
+                dst_seg = s
+
+        if src_seg is None or dst_seg is None:
+            continue
+
+        src_start = src_seg["start_frame"]
+        src_end = min(src_seg["end_frame"] if src_seg["end_frame"] >= 0 else T, T)
+        dst_start = dst_seg["start_frame"]
+        dst_end = min(dst_seg["end_frame"] if dst_seg["end_frame"] >= 0 else T, T)
+
+        if src_end <= src_start or dst_end <= dst_start:
+            continue
+
+        src_feats = clip_data[src_start:src_end]
+        dst_feats = clip_data[dst_start:dst_end]
+
+        src_centroid = src_feats.mean(axis=0)
+        dst_centroid = dst_feats.mean(axis=0)
+        centroid_dist = np.linalg.norm(src_centroid - dst_centroid)
+
+        src_var = np.mean(np.var(src_feats, axis=0))
+        dst_var = np.mean(np.var(dst_feats, axis=0))
+
+        gap_start = src_end
+        gap_end = min(dst_start, T)
+        gap_len = max(gap_end - gap_start, 0)
+        if gap_len > 0:
+            gap_feats = clip_data[gap_start:gap_end]
+            gap_centroid = gap_feats.mean(axis=0)
+            gap_to_src = np.linalg.norm(gap_centroid - src_centroid)
+            gap_to_dst = np.linalg.norm(gap_centroid - dst_centroid)
+        else:
+            gap_to_src = 0.0
+            gap_to_dst = 0.0
+
+        spatial_score = min(src_fracs[i], dst_fracs[i])
+        records.append({
+            "transition_type": gt.transition_type,
+            "detected": covered[i],
+            "spatial_score": spatial_score,
+            "src_frac": src_fracs[i],
+            "dst_frac": dst_fracs[i],
+            "centroid_dist": centroid_dist,
+            "src_var": src_var,
+            "dst_var": dst_var,
+            "gap_len": gap_len,
+            "gap_to_src": gap_to_src,
+            "gap_to_dst": gap_to_dst,
+            "src_behavior": gt.src_behavior,
+            "dst_behavior": gt.dst_behavior,
+        })
+
+    if not records:
+        print(f"  No records for latent neighborhood analysis ({variant_name})")
+        return
+
+    detected = [r for r in records if r["detected"]]
+    missed = [r for r in records if not r["detected"]]
+
+    metrics = [
+        ("centroid_dist", "Centroid Distance (src\u2194dst)"),
+        ("src_var", "Source Behavior Variance"),
+        ("dst_var", "Dest Behavior Variance"),
+        ("gap_len", "Transition Gap (frames)"),
+    ]
+
+    with plt.rc_context(_NATURE_RC):
+        fig, axes = plt.subplots(2, 3, figsize=(9, 6.5))
+        fig.subplots_adjust(hspace=0.55, wspace=0.45, left=0.08, right=0.95,
+                            top=0.88, bottom=0.1)
+
+        for mi, (key, label) in enumerate(metrics):
+            ax = axes[mi // 3, mi % 3]
+            det_vals = [r[key] for r in detected] if detected else []
+            mis_vals = [r[key] for r in missed] if missed else []
+
+            parts = []
+            labels_bp = []
+            positions = []
+            if det_vals:
+                parts.append(det_vals)
+                labels_bp.append(f"Detected\n(n={len(det_vals)})")
+                positions.append(0)
+            if mis_vals:
+                parts.append(mis_vals)
+                labels_bp.append(f"Missed\n(n={len(mis_vals)})")
+                positions.append(1)
+
+            if parts:
+                bp = ax.boxplot(parts, positions=positions, widths=0.5, patch_artist=True)
+                colors_bp = [(0.4, 0.76, 0.65), (0.99, 0.55, 0.38)]
+                for patch, color in zip(bp["boxes"], colors_bp[:len(parts)]):
+                    patch.set_facecolor(color)
+                    patch.set_alpha(0.7)
+                ax.set_xticks(positions)
+                ax.set_xticklabels(labels_bp)
+            ax.set_ylabel(label)
+            ax.set_title(label, fontsize=6)
+
+        ax_scatter = axes[1, 0]
+        for r in records:
+            color = (0.4, 0.76, 0.65) if r["detected"] else (0.99, 0.55, 0.38)
+            ax_scatter.scatter(r["centroid_dist"], r["spatial_score"],
+                               c=[color], s=8, alpha=0.6, edgecolors="none")
+        ax_scatter.set_xlabel("Centroid Distance")
+        ax_scatter.set_ylabel("Spatial Score\nmin(src_frac, dst_frac)")
+        ax_scatter.set_title("Separation vs Spatial Coverage", fontsize=6)
+
+        ax_type = axes[1, 1]
+        all_types = sorted(set(r["transition_type"] for r in records))
+        type_det_rates = []
+        type_mean_dists = []
+        for ttype in all_types:
+            type_recs = [r for r in records if r["transition_type"] == ttype]
+            det_rate = sum(1 for r in type_recs if r["detected"]) / len(type_recs)
+            mean_dist = np.mean([r["centroid_dist"] for r in type_recs])
+            type_det_rates.append(det_rate)
+            type_mean_dists.append(mean_dist)
+
+        color_map = _build_color_map(all_types)
+        for ti, ttype in enumerate(all_types):
+            ax_type.scatter(type_mean_dists[ti], type_det_rates[ti],
+                            c=[color_map.get(ttype, (0.5, 0.5, 0.5, 1.0))],
+                            s=40, edgecolors="black", linewidths=0.5, zorder=3)
+            ax_type.annotate(ttype.replace("\u2194", "\n\u2194"), (type_mean_dists[ti], type_det_rates[ti]),
+                             fontsize=4, ha="center", va="bottom",
+                             xytext=(0, 6), textcoords="offset points")
+        ax_type.set_xlabel("Mean Centroid Distance")
+        ax_type.set_ylabel("Detection Rate")
+        ax_type.set_title("Per-Type: Separation vs Detection", fontsize=6)
+        ax_type.set_ylim(-0.05, 1.1)
+
+        ax_gap = axes[1, 2]
+        for r in records:
+            color = (0.4, 0.76, 0.65) if r["detected"] else (0.99, 0.55, 0.38)
+            ax_gap.scatter(r["gap_len"], r["centroid_dist"],
+                           c=[color], s=8, alpha=0.6, edgecolors="none")
+        ax_gap.set_xlabel("Gap Length (frames)")
+        ax_gap.set_ylabel("Centroid Distance")
+        ax_gap.set_title("Gap Length vs Separation", fontsize=6)
+
+        from matplotlib.patches import Patch
+        legend_elements = [
+            Patch(facecolor=(0.4, 0.76, 0.65), label=f"Detected ({len(detected)})"),
+            Patch(facecolor=(0.99, 0.55, 0.38), label=f"Missed ({len(missed)})"),
+        ]
+        fig.legend(handles=legend_elements, loc="lower center",
+                   bbox_to_anchor=(0.5, 0.01), ncol=2, fontsize=6, frameon=False)
+
+        fig.suptitle(f"Latent Neighborhood Analysis ({variant_name})",
+                     fontsize=9, fontweight="bold")
+
+        out_path = os.path.join(output_dir, f"latent_neighborhood_{variant_name}.png")
+        os.makedirs(output_dir, exist_ok=True)
+        fig.savefig(out_path, facecolor="white")
+        plt.close(fig)
+    print(f"Saved latent neighborhood analysis: {out_path}")
+
+
+def plot_missed_vs_detected_proximity(
+    data: np.ndarray,
+    gt_transitions: list[GTTransition],
+    covered: list[bool],
+    clip_labels: dict[int, list[dict]],
+    clip_length: int,
+    output_dir: str,
+    variant_name: str,
+):
+    """Compare latent locations of missed vs detected transitions.
+
+    For each transition, computes src and dst behavior centroids. Then for
+    each missed transition, finds the nearest detected transition of the
+    same type and measures how far apart they are in latent space. If
+    missed transitions occupy similar regions to detected ones, the DM
+    simply failed to find a path despite the structure being there.
+    """
+    from sklearn.decomposition import PCA
+
+    @dataclass
+    class TransitionRecord:
+        idx: int
+        gt: GTTransition
+        detected: bool
+        src_centroid: np.ndarray
+        dst_centroid: np.ndarray
+
+    records: list[TransitionRecord] = []
+    for i, gt in enumerate(gt_transitions):
+        clip_data = data[gt.local_idx]
+        T = clip_data.shape[0]
+
+        src_start, src_end = gt.src_start, min(gt.src_end, T)
+        dst_start, dst_end = gt.dst_start, min(gt.dst_end, T)
+        if src_end <= src_start or dst_end <= dst_start:
+            continue
+
+        records.append(TransitionRecord(
+            idx=i,
+            gt=gt,
+            detected=covered[i],
+            src_centroid=clip_data[src_start:src_end].mean(axis=0),
+            dst_centroid=clip_data[dst_start:dst_end].mean(axis=0),
+        ))
+
+    if not records:
+        return
+
+    detected_recs = [r for r in records if r.detected]
+    missed_recs = [r for r in records if not r.detected]
+
+    if not detected_recs and not missed_recs:
+        print(f"  Skipping proximity analysis ({variant_name}): no records")
+        return
+
+    all_centroids = np.array([
+        np.concatenate([r.src_centroid, r.dst_centroid]) for r in records
+    ])
+    pca = PCA(n_components=2)
+    coords_2d = pca.fit_transform(all_centroids)
+
+    all_types = sorted(set(r.gt.transition_type for r in records))
+    color_map = _build_color_map(all_types)
+
+    with plt.rc_context(_NATURE_RC):
+        fig, ax = plt.subplots(1, 1, figsize=(5, 4.5))
+        fig.subplots_adjust(left=0.12, right=0.95, top=0.88, bottom=0.22)
+
+        for ri, r in enumerate(records):
+            c = color_map.get(r.gt.transition_type, (0.5, 0.5, 0.5, 1.0))
+            marker = "o" if r.detected else "X"
+            ax.scatter(coords_2d[ri, 0], coords_2d[ri, 1],
+                       c=[c], marker=marker,
+                       s=15 if r.detected else 25,
+                       alpha=0.7, linewidths=0.3, edgecolors="black" if not r.detected else "none")
+
+        ev = pca.explained_variance_ratio_
+        ax.set_xlabel(f"PC1 ({ev[0]:.0%})")
+        ax.set_ylabel(f"PC2 ({ev[1]:.0%})")
+        ax.set_title("Transition Centroids (src||dst PCA)", fontsize=8)
+
+        from matplotlib.lines import Line2D
+        handles = []
+        for ttype in all_types:
+            c = color_map.get(ttype, (0.5, 0.5, 0.5, 1.0))
+            handles.append(Line2D([0], [0], marker="o", color="w",
+                                  markerfacecolor=c, markersize=5, label=ttype))
+        handles.append(Line2D([0], [0], marker="o", color="w",
+                              markerfacecolor="gray", markersize=5,
+                              markeredgecolor="none", label="Detected"))
+        handles.append(Line2D([0], [0], marker="X", color="w",
+                              markerfacecolor="gray", markersize=6,
+                              markeredgecolor="black", markeredgewidth=0.3,
+                              label="Missed"))
+
+        n_det = len(detected_recs)
+        n_mis = len(missed_recs)
+        fig.legend(handles=handles, loc="lower center",
+                   bbox_to_anchor=(0.5, 0.0),
+                   ncol=min(len(handles), 4), fontsize=5, frameon=False,
+                   title=f"Detected: {n_det}, Missed: {n_mis}", title_fontsize=6)
+
+        out_path = os.path.join(output_dir, f"missed_vs_detected_{variant_name}.png")
+        os.makedirs(output_dir, exist_ok=True)
+        fig.savefig(out_path, facecolor="white")
+        plt.close(fig)
+    print(f"Saved missed-vs-detected proximity: {out_path}")
+
+
+def run_transition_analysis(
+    data: np.ndarray,
+    clip_indices: list[int],
+    clip_labels: dict[int, list[dict]],
+    clip_length: int,
+    all_cycle_dm: list,
+    allpairs_path_dm: list | None,
+    config: DemoConfig,
+):
+    ta_cfg = config.transition_analysis
+    output_dir = os.path.join(config.output_dir, "transition_analysis")
+    os.makedirs(output_dir, exist_ok=True)
+
+    gt_transitions = _extract_gt_transitions(clip_indices, clip_labels, clip_length)
+    print(f"Extracted {len(gt_transitions)} GT transitions across "
+          f"{len(set(gt.transition_type for gt in gt_transitions))} types")
+
+    coverage_results: list[TransitionCoverageResult] = []
+
+    cycle_cov = compute_transition_coverage(
+        gt_transitions, all_cycle_dm, clip_labels, clip_length, ta_cfg, "cycle",
+    )
+    coverage_results.append(cycle_cov)
+    n_det = sum(cycle_cov.covered)
+    print(f"  Cycle: {n_det}/{len(gt_transitions)} detected "
+          f"({n_det / len(gt_transitions):.1%})")
+
+    if allpairs_path_dm is not None:
+        ap_cov = compute_transition_coverage(
+            gt_transitions, allpairs_path_dm, clip_labels, clip_length, ta_cfg, "allpairs_path",
+        )
+        coverage_results.append(ap_cov)
+        n_det = sum(ap_cov.covered)
+        print(f"  AllPairs: {n_det}/{len(gt_transitions)} detected "
+              f"({n_det / len(gt_transitions):.1%})")
+
+    plot_coverage_matrix(coverage_results, output_dir)
+    plot_detection_curves(coverage_results, output_dir)
+
+    for res in coverage_results:
+        plot_latent_neighborhood_analysis(
+            data, gt_transitions, res.covered, res.src_fracs, res.dst_fracs,
+            clip_labels, clip_length, output_dir, res.variant_name,
+        )
+        plot_missed_vs_detected_proximity(
+            data, gt_transitions, res.covered,
+            clip_labels, clip_length, output_dir, res.variant_name,
+        )
 
 
 # ── Main pipeline ───────────────────────────────────────────────────────────
@@ -1551,7 +2245,7 @@ def run_demo(config: DemoConfig) -> None:
                     output_dir=variant_dir,
                     variant_prefix=prefix,
                     max_clips=config.rendering.max_debug_clips,
-                    max_segments=config.rendering.max_segments,
+                    top_k_paths=config.rendering.top_k_debug_paths,
                     framerate=config.rendering.framerate,
                     target_size=config.rendering.target_size,
                 )
@@ -1561,28 +2255,42 @@ def run_demo(config: DemoConfig) -> None:
                 traceback.print_exc()
 
     # --- PCA + DM debug plots (separate for cycle and path) ---
-    print("\n=== PCA + Cycle Debug Plots ===")
-    try:
-        render_pca_dm_debug(
-            data, clip_indices, clip_labels,
-            all_dm_results={"cycle": all_cycle_dm},
-            output_dir=os.path.join(config.output_dir, "pca_cycle_debug"),
-        )
-    except Exception as e:
-        print(f"WARNING: PCA+cycle debug plots failed: {e}")
-        import traceback
-        traceback.print_exc()
-
-    if allpairs_path_dm is not None:
-        print("\n=== PCA + AllPairs Path Debug Plots ===")
+    if config.rendering.pca_debug:
+        print("\n=== PCA + Cycle Debug Plots ===")
         try:
             render_pca_dm_debug(
                 data, clip_indices, clip_labels,
-                all_dm_results={"allpairs_path": allpairs_path_dm},
-                output_dir=os.path.join(config.output_dir, "pca_allpairs_debug"),
+                all_dm_results={"cycle": all_cycle_dm},
+                output_dir=os.path.join(config.output_dir, "pca_cycle_debug"),
             )
         except Exception as e:
-            print(f"WARNING: PCA+allpairs debug plots failed: {e}")
+            print(f"WARNING: PCA+cycle debug plots failed: {e}")
+            import traceback
+            traceback.print_exc()
+
+        if allpairs_path_dm is not None:
+            print("\n=== PCA + AllPairs Path Debug Plots ===")
+            try:
+                render_pca_dm_debug(
+                    data, clip_indices, clip_labels,
+                    all_dm_results={"allpairs_path": allpairs_path_dm},
+                    output_dir=os.path.join(config.output_dir, "pca_allpairs_debug"),
+                )
+            except Exception as e:
+                print(f"WARNING: PCA+allpairs debug plots failed: {e}")
+                import traceback
+                traceback.print_exc()
+
+    # --- Transition coverage analysis ---
+    if config.transition_analysis.enabled:
+        print("\n=== Transition Coverage Analysis ===")
+        try:
+            run_transition_analysis(
+                data, clip_indices, clip_labels, clip_length,
+                all_cycle_dm, allpairs_path_dm, config,
+            )
+        except Exception as e:
+            print(f"WARNING: Transition analysis failed: {e}")
             import traceback
             traceback.print_exc()
 

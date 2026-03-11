@@ -11,20 +11,28 @@ visualization:
 dm_pipeline:
   dm_key: intention
   split: all
-  top_k_minima: 6
+  top_k_minima: 15
   top_k_paths: 1
   takens:
     auto_estimate: true
   dm:
-    pers_delta: 0.6
+    pers_delta: 0.3
     k_neighbors: 8
     min_segment_len: 10
 
 rendering:
-  enabled: true
+  enabled: false
+  pca_debug: false
   walker_xml: topo_mimic/dmwk/xml/walker.xml
   max_clips: 10
   max_segments: 10
-  max_debug_clips: 3
+  max_debug_clips: 10
+  top_k_debug_paths: 3
   framerate: 30
   target_size: [320, 240]
+
+transition_analysis:
+  enabled: true
+  top_k_paths: 3
+  min_segment_len: 10
+
