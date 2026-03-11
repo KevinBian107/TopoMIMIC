@@ -24,15 +24,6 @@ DATASET_PRESETS: dict[str, DatasetPreset] = {
         qpos_dims=74,
         root_strip_dims=7,
     ),
-    "walker": DatasetPreset(
-        total_clips=2000,
-        test_size=400,
-        default_data_path="data/walker.h5",
-        labels_csv="walker_behavior_labels.csv",
-        supported_dm_keys=["intention", "qpos"],
-        qpos_dims=9,
-        root_strip_dims=0,
-    ),
     "walker_long": DatasetPreset(
         total_clips=10,
         test_size=0,

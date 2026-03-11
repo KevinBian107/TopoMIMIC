@@ -1,4 +1,4 @@
-"""Walker generation pipeline — config-driven transition clip generation."""
+"""Walker generation pipeline — config-driven long-sequence clip generation."""
 
 from walker_generation.config import GenerationConfig, LongSequenceConfig, load_config
 

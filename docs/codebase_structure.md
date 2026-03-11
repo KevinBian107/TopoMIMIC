@@ -298,12 +298,12 @@ Config-driven module for generating walker transition clips directly in TopoVNL 
 walker_generation/
 ├── __init__.py          # Package init, exposes run_generation()
 ├── __main__.py          # CLI entry point
-├── config.py            # TransitionSpec, GenerationConfig + YAML loader
-├── generate.py          # Core pipeline (schedule → rollout → crop → extract)
+├── config.py            # GenerationConfig + YAML loader
+├── generate.py          # Core pipeline (schedule → rollout → extract)
 └── output.py            # Direct H5/CSV writer (TopoVNL format)
 ```
 
-Key design: each `TransitionSpec(src, dst, n_clips)` restricts `allowed_modes` to `[src, dst]` for targeted 2-mode scheduling, then filters for the exact direction. All clips are batched through Step 2 extraction in a single pass.
+Key design: generates long-sequence clips with multiple behavior transitions per clip. Behavior modes are drawn from configurable source/target pools. All clips are batched through Step 2 extraction in a single pass.
 
 See `docs/walker_generation.md` for full documentation.
 

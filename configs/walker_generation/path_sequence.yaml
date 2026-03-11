@@ -1,5 +1,3 @@
-mode: long_sequence
-
 long_sequence:
   n_clips: 50
   clip_length: 500

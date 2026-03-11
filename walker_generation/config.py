@@ -7,13 +7,6 @@ import yaml
 
 
 @dataclass
-class TransitionSpec:
-    src: str
-    dst: str
-    n_clips: int
-
-
-@dataclass
 class LongSequenceConfig:
     n_clips: int = 20
     clip_length: int = 5000
@@ -75,8 +68,6 @@ class OutputConfig:
 
 @dataclass
 class GenerationConfig:
-    mode: str = "transitions"
-    transitions: list[TransitionSpec] = field(default_factory=list)
     long_sequence: LongSequenceConfig = field(default_factory=LongSequenceConfig)
     checkpoints: CheckpointConfig = field(default_factory=CheckpointConfig)
     schedule: ScheduleConfig = field(default_factory=ScheduleConfig)
@@ -89,8 +80,6 @@ def load_config(yaml_path: str) -> GenerationConfig:
     with open(yaml_path) as f:
         raw = yaml.safe_load(f)
 
-    transitions = [TransitionSpec(**t) for t in raw.get("transitions", [])]
-
     ls_dict = raw.get("long_sequence", {})
     long_sequence = LongSequenceConfig(**ls_dict)
 
@@ -100,8 +89,6 @@ def load_config(yaml_path: str) -> GenerationConfig:
     output = OutputConfig(**raw.get("output", {}))
 
     return GenerationConfig(
-        mode=raw.get("mode", "transitions"),
-        transitions=transitions,
         long_sequence=long_sequence,
         checkpoints=checkpoints,
         schedule=schedule,

@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Walker Transition Demo (Long Sequences)
-=========================================
+Walker Transition Demo (Path Analysis)
+========================================
 Analysis pipeline for long walker clips with multiple behavior transitions per clip.
 
-Runs DM-path and DM-cycle extraction, GT-labeled embeddings, and debug
+Runs DM all-pairs-path extraction, GT-labeled embeddings, and debug
 side-by-side rendering (original clip vs DM segments).
 
 Usage:
-    python demos/demo_walker_transitions_long.py
-    python demos/demo_walker_transitions_long.py --config configs/demos/demo_walker_transitions_long.yaml
+    python demos/demo_walker_transitions_path.py
+    python demos/demo_walker_transitions_path.py --config configs/demos/demo_walker_transitions_path.yaml
 """
 
 import os
@@ -1112,10 +1112,10 @@ def render_degenerate_clips(
         font_big = ImageFont.load_default()
 
     degenerate = []
-    for local_idx in range(len(all_cycle_dm)):
-        has_cycles = bool(all_cycle_dm[local_idx])
+    n_clips = len(allpairs_path_dm) if allpairs_path_dm else len(all_cycle_dm)
+    for local_idx in range(n_clips):
         has_allpairs = bool(allpairs_path_dm and local_idx < len(allpairs_path_dm) and allpairs_path_dm[local_idx])
-        if not has_cycles and not has_allpairs:
+        if not has_allpairs:
             degenerate.append(local_idx)
 
     if not degenerate:
@@ -2047,14 +2047,6 @@ def run_transition_analysis(
 
     coverage_results: list[TransitionCoverageResult] = []
 
-    cycle_cov = compute_transition_coverage(
-        gt_transitions, all_cycle_dm, clip_labels, clip_length, ta_cfg, "cycle",
-    )
-    coverage_results.append(cycle_cov)
-    n_det = sum(cycle_cov.covered)
-    print(f"  Cycle: {n_det}/{len(gt_transitions)} detected "
-          f"({n_det / len(gt_transitions):.1%})")
-
     if allpairs_path_dm is not None:
         ap_cov = compute_transition_coverage(
             gt_transitions, allpairs_path_dm, clip_labels, clip_length, ta_cfg, "allpairs_path",
@@ -2085,7 +2077,7 @@ def run_demo(config: DemoConfig) -> None:
     os.makedirs(config.output_dir, exist_ok=True)
 
     print("=" * 60)
-    print("Walker Long-Sequence Analysis Demo")
+    print("Walker Path Analysis Demo")
     print("=" * 60)
     print(f"Dataset: {config.dataset}")
     print(f"Data: {config.data_path}")
@@ -2170,12 +2162,6 @@ def run_demo(config: DemoConfig) -> None:
             print(f"Cached all-pairs paths to {allpairs_cache}")
 
     print("\n=== DM Segment Per-Frame Embeddings ===")
-    run_dm_segment_perframe_embedding(
-        data, clip_indices, clip_labels, clip_length, config,
-        all_dm_segments=all_cycle_dm,
-        top_k=config.dm_pipeline.top_k_paths,
-        variant_name="cycle",
-    )
     if allpairs_path_dm is not None:
         run_dm_segment_perframe_embedding(
             data, clip_indices, clip_labels, clip_length, config,
@@ -2185,7 +2171,6 @@ def run_demo(config: DemoConfig) -> None:
         )
 
     for variant_name, dm_results, prefix in [
-        ("Cycle", all_cycle_dm, "cycle"),
         ("AllPairsPath", allpairs_path_dm, "allpairs_path"),
     ]:
         if dm_results is None:
@@ -2255,31 +2240,18 @@ def run_demo(config: DemoConfig) -> None:
                 traceback.print_exc()
 
     # --- PCA + DM debug plots (separate for cycle and path) ---
-    if config.rendering.pca_debug:
-        print("\n=== PCA + Cycle Debug Plots ===")
+    if config.rendering.pca_debug and allpairs_path_dm is not None:
+        print("\n=== PCA + AllPairs Path Debug Plots ===")
         try:
             render_pca_dm_debug(
                 data, clip_indices, clip_labels,
-                all_dm_results={"cycle": all_cycle_dm},
-                output_dir=os.path.join(config.output_dir, "pca_cycle_debug"),
+                all_dm_results={"allpairs_path": allpairs_path_dm},
+                output_dir=os.path.join(config.output_dir, "pca_allpairs_debug"),
             )
         except Exception as e:
-            print(f"WARNING: PCA+cycle debug plots failed: {e}")
+            print(f"WARNING: PCA+allpairs debug plots failed: {e}")
             import traceback
             traceback.print_exc()
-
-        if allpairs_path_dm is not None:
-            print("\n=== PCA + AllPairs Path Debug Plots ===")
-            try:
-                render_pca_dm_debug(
-                    data, clip_indices, clip_labels,
-                    all_dm_results={"allpairs_path": allpairs_path_dm},
-                    output_dir=os.path.join(config.output_dir, "pca_allpairs_debug"),
-                )
-            except Exception as e:
-                print(f"WARNING: PCA+allpairs debug plots failed: {e}")
-                import traceback
-                traceback.print_exc()
 
     # --- Transition coverage analysis ---
     if config.transition_analysis.enabled:
@@ -2315,15 +2287,15 @@ def run_demo(config: DemoConfig) -> None:
             traceback.print_exc()
 
     print("\n" + "=" * 60)
-    print("Walker Long-Sequence Demo Complete!")
+    print("Walker Path Analysis Demo Complete!")
     print("=" * 60)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Walker long-sequence analysis demo")
+    parser = argparse.ArgumentParser(description="Walker path analysis demo")
     parser.add_argument(
         "--config",
-        default="configs/demos/demo_walker_transitions_long.yaml",
+        default="configs/demos/demo_walker_transitions_path.yaml",
         help="Path to demo config YAML",
     )
     args = parser.parse_args()

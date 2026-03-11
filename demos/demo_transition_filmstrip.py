@@ -467,7 +467,7 @@ def main():
     if not os.path.isabs(cfg.data.xml_path):
         cfg.data.xml_path = str(project_root / cfg.data.xml_path)
 
-    is_walker = cfg.dataset == "walker"
+    is_walker = cfg.dataset in ("walker", "walker_long")
 
     print("=" * 70)
     print(f"GT Transition Filmstrip Grid ({cfg.dataset})")

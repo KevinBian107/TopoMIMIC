@@ -1,6 +1,6 @@
 # Walker Generation Module
 
-Config-driven pipeline for generating walker transition clips in TopoVNL format.
+Config-driven pipeline for generating walker long-sequence clips in TopoVNL format.
 
 ## Overview
 
@@ -11,13 +11,14 @@ Replaces the 3-step manual process:
 
 With a single command:
 ```bash
-python3 -m walker_generation configs/walker_generation/short_sequence.yaml
+python3 -m walker_generation configs/walker_generation/path_sequence.yaml
 ```
 
 ## Key Features
 
-- **Per-transition-pair control**: Specify exact `(src, dst, n_clips)` tuples
-- **Targeted scheduling**: Restricts `allowed_modes` to `[src, dst]` for each pair
+- **Multi-transition clips**: Each clip contains multiple behavior transitions
+- **Configurable pools**: Source and target behavior pools for random mode selection
+- **Variable transitions**: Optional variable-length transition blending
 - **Direct output**: Writes `/intention` and `/qpos_rollout` to H5 + behavior labels CSV
 - **Single-pass extraction**: All clips processed through Step 2 in one batched pass
 
@@ -27,15 +28,11 @@ python3 -m walker_generation configs/walker_generation/short_sequence.yaml
 Config YAML
     │
     ▼
-For each TransitionSpec(src, dst, n_clips):
+Generate long-sequence clips:
     │
-    ├─ Restrict allowed_modes to [src_idx, dst_idx]
+    ├─ Build schedule with N transitions from behavior pools
     ├─ Generate rollouts via Step 1 policy (batched vmap)
-    ├─ Crop clips around transitions
-    └─ Filter for exact src→dst direction
-    │
-    ▼
-Collect ALL clips from ALL pairs
+    └─ Collect full-length clips with segment metadata
     │
     ▼
 Extract activations via Step 2 policy (batched vmap)
@@ -47,43 +44,52 @@ Write unified output (H5 + CSV)
 ## Config Structure
 
 ```yaml
-transitions:
-  - src: walk_slow      # Source behavior mode name
-    dst: hop            # Destination behavior mode name
-    n_clips: 300        # Number of clips for this pair
+long_sequence:
+  n_clips: 50
+  clip_length: 500
+  n_transitions: 5
+  source_pool:
+    - walk_slow
+    - walk_backward
+  target_pool:
+    - hop
+    - tiptoe
+  transition_length: 25
+  variable_transition_length: true
+  transition_length_min: 15
+  transition_length_max: 30
 
 checkpoints:
-  step1_path: walker/checkpoints/walker_multi_behavior/260215_202424
-  step2_path: walker/checkpoints/walker_imitation/260224_030923
+  step1_path: data/checkpoints/walker_multi_behavior/260215_202424
+  step2_path: data/checkpoints/walker_imitation/260224_030923
 
-schedule: 
-  clip_length: 500          # Frames per output clip
-  rollout_frames: 2000      # Frames per rollout (before cropping)
-  warmup_frames: 200        # Standing warmup (not recorded)
-  mode_duration_min: 250    # Min frames per behavior segment
-  transition_mean: 100      # Mean transition blend duration
+schedule:
+  rollout_frames: 1500
+  warmup_frames: 200
+  warmup_transition_frames: 50
 
 rollout:
-  batch_size: 200           # Step 1 vmap batch size
-  extraction_batch_size: 100 # Step 2 vmap batch size
+  batch_size: 10
+  extraction_batch_size: 5
   seed: 0
 
 output:
-  h5_path: data/walker.h5
-  csv_path: walker_behavior_labels.csv
+  h5_path: data/walker_long.h5
+  csv_path: walker_long_behavior_labels.csv
+  demo_clip_video: outputs/walker_long_demo/demo_clip.mp4
 ```
 
 ## Output Format
 
-**H5 file** (`data/walker.h5`):
+**H5 file** (`data/walker_long.h5`):
 - `/intention`: `(N, T, 16)` — Step 2 latent mean embeddings
 - `/qpos_rollout`: `(N, T, 9)` — Agent joint positions
 
-**CSV file** (`walker_behavior_labels.csv`):
+**CSV file** (`walker_long_behavior_labels.csv`):
 - `Clip`: Clip index
 - `Behavior`: Mode name (e.g. "walk_slow", "hop")
 - `Start_Frame`: Segment start frame within clip
-- `End_Frame`: Segment end frame within clip (-1 = end of clip)
+- `End_Frame`: Segment end frame within clip
 
 ## Available Behavior Modes
 

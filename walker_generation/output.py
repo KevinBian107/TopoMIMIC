@@ -41,53 +41,6 @@ def write_unified_h5(
     print(f"  /qpos_rollout: {agent_qpos.shape}")
 
 
-def write_labels_csv(
-    csv_path: str,
-    src_modes: np.ndarray,
-    dst_modes: np.ndarray,
-    transition_starts: np.ndarray,
-    transition_ends: np.ndarray,
-) -> pd.DataFrame:
-    """Write behavior labels CSV from clip metadata arrays.
-
-    Args:
-        csv_path: Output CSV file path.
-        src_modes: (N,) source mode indices per clip.
-        dst_modes: (N,) destination mode indices per clip.
-        transition_starts: (N,) transition start frame within each clip.
-        transition_ends: (N,) transition end frame within each clip.
-
-    Returns:
-        DataFrame with Clip, Behavior, Start_Frame, End_Frame columns.
-    """
-    n_clips = len(src_modes)
-    rows = []
-    for i in range(n_clips):
-        b1_name = WALKER_MODES[int(src_modes[i])]
-        b2_name = WALKER_MODES[int(dst_modes[i])]
-        t_start = int(transition_starts[i])
-        t_end = int(transition_ends[i])
-
-        rows.append({
-            "Clip": i,
-            "Behavior": b1_name,
-            "Start_Frame": 0,
-            "End_Frame": t_start,
-        })
-        rows.append({
-            "Clip": i,
-            "Behavior": b2_name,
-            "Start_Frame": t_end,
-            "End_Frame": -1,
-        })
-
-    df = pd.DataFrame(rows)
-    Path(csv_path).parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(csv_path, index=False)
-    print(f"Wrote {csv_path}: {len(df)} rows ({n_clips} clips x 2 segments)")
-    return df
-
-
 def write_multi_segment_labels_csv(
     csv_path: str,
     clip_segment_lists: list[list[dict]],
