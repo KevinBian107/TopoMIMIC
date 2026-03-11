@@ -23,8 +23,8 @@ These sub-trajectories are the learned manifold coordinates — they represent t
 
 For intuition of this work, read [this page](/docs/intuition.md).
 
-![Demo](figures/torus_dm_demo.gif)
-> Demonstration of discrete Morse traversal (cycle) on a torus.
+![Demo](figures/dmpc_demo.gif)
+> Demonstration of discrete Morse cycles and path in an inverse density space.
 
 ## Environment Instantiation
 We setup this repository similar to the [Mimic-mjx package](https://github.com/talmolab/track-mjx). All the `jax` dependency should be following the ones that is specified in `Mimic-mjx`. Besides the `Mimic-mjx` environment, we also need the [Stac-mjx package](https://github.com/talmolab/stac-mjx) for benchmarking (`Stac-mjx` should be installed prior to installing from `requirements.txt`, `KPMS` requires an newer version of jax dependency, which mismatch with `Stac-mjx` but workable).
