@@ -22,6 +22,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cm
 from matplotlib.colors import Normalize
+from matplotlib.animation import FuncAnimation
 from mpl_toolkits.mplot3d import Axes3D
 from scipy.spatial import KDTree
 import networkx as nx
@@ -507,6 +508,121 @@ def plot_summary(experiments, vis_cfg, output_path):
     print(f"\nSaved summary: {output_path}")
 
 
+def animate_experiment(
+    X, Y, Z, path, cycles, dm_paths, ec, min1, min2,
+    title, vis_cfg, output_path, segment_colors=None,
+    n_frames=180, fps=30, elev=30, azim_start=0,
+):
+    z_lift = 0.25
+    n_pts = len(path)
+    pts_per_frame = max(1, n_pts // n_frames)
+
+    with plt.rc_context(_NATURE_RC):
+        fig, axes = plt.subplots(1, 3, figsize=(18, 5.5),
+                                  subplot_kw={'projection': '3d'},
+                                  gridspec_kw={'wspace': 0.25, 'width_ratios': [1, 1, 1]})
+        ax0, ax1, ax2 = axes
+
+        for ax in [ax0, ax1]:
+            _plot_surface(ax, X, Y, Z, vis_cfg)
+
+        ax2.contour(
+            X, Y, Z, levels=vis_cfg.contour_levels, colors='#999999',
+            alpha=0.6, linewidths=0.4, offset=Z.min() - 0.01,
+        )
+
+        ax0.set_title("Inv. density surface", fontsize=8)
+        ax0.set_xlabel('Feature x'); ax0.set_ylabel('Feature y'); ax0.set_zlabel('Inv. density')
+
+        has_cycle = bool(cycles)
+        has_path = bool(dm_paths)
+        topo_label = []
+        if has_cycle:
+            topo_label.append("Cycle")
+        if has_path:
+            topo_label.append(f"Path (ec={ec})")
+        ax1.set_title(f"{title}\n{' | '.join(topo_label)}", fontsize=8, fontweight='bold')
+        ax1.set_xlabel('Feature x'); ax1.set_ylabel('Feature y'); ax1.set_zlabel('Inv. density')
+
+        ax2.set_title("Top-down view", fontsize=8)
+        ax2.set_xlabel('Feature x'); ax2.set_ylabel('Feature y')
+        ax2.set_zticklabels([]); ax2.set_zlabel('')
+        ax2.view_init(elev=85, azim=0)
+
+        color_map = {}
+        if segment_colors:
+            for s, e, c in segment_colors:
+                for idx in range(s, e):
+                    color_map[idx] = c
+
+        line_artists_1 = []
+        line_artists_2 = []
+        scatter_artists = []
+
+        cycle_set = set(cycles[0]) if has_cycle else set()
+        path_set = set()
+        if has_path:
+            for p in dm_paths:
+                path_set.update(p)
+
+        def update(frame):
+            azim = azim_start + frame * (360.0 / n_frames)
+            ax0.view_init(elev=elev, azim=azim)
+            ax1.view_init(elev=elev, azim=azim)
+
+            n_visible = min(n_pts, (frame + 1) * pts_per_frame)
+
+            for a in line_artists_1 + line_artists_2 + scatter_artists:
+                a.remove()
+            line_artists_1.clear()
+            line_artists_2.clear()
+            scatter_artists.clear()
+
+            z = path[:, 2] + z_lift
+            for i in range(n_visible - 1):
+                c = color_map.get(i, '#888888')
+                l1, = ax1.plot(path[i:i+2, 0], path[i:i+2, 1], z[i:i+2],
+                               color=c, linewidth=1.0, alpha=0.5, zorder=10)
+                l2, = ax2.plot(path[i:i+2, 0], path[i:i+2, 1], z[i:i+2],
+                               color=c, linewidth=1.0, alpha=0.5, zorder=10)
+                line_artists_1.append(l1)
+                line_artists_2.append(l2)
+
+            visible_idx = set(range(n_visible))
+
+            if has_cycle:
+                vis_cycle = [i for i in cycles[0] if i in visible_idx and 0 <= i < n_pts]
+                if vis_cycle:
+                    n_s = min(25, len(vis_cycle))
+                    sampled = [vis_cycle[j] for j in np.linspace(0, len(vis_cycle)-1, n_s, dtype=int)]
+                    pts = path[sampled]
+                    for ax in [ax1, ax2]:
+                        s = ax.scatter(pts[:, 0], pts[:, 1], pts[:, 2] + z_lift,
+                                       c='#e41a1c', s=45, marker='o', edgecolors='white',
+                                       linewidths=0.6, zorder=100)
+                        scatter_artists.append(s)
+
+            if has_path:
+                for p in dm_paths:
+                    vis_p = [i for i in p if i in visible_idx and 0 <= i < n_pts]
+                    if vis_p:
+                        n_s = min(25, len(vis_p))
+                        sampled = [vis_p[j] for j in np.linspace(0, len(vis_p)-1, n_s, dtype=int)]
+                        pts = path[sampled]
+                        for ax in [ax1, ax2]:
+                            s = ax.scatter(pts[:, 0], pts[:, 1], pts[:, 2] + z_lift,
+                                           c='#377eb8', s=45, marker='D', edgecolors='white',
+                                           linewidths=0.6, zorder=100)
+                            scatter_artists.append(s)
+
+            return line_artists_1 + line_artists_2 + scatter_artists
+
+        anim = FuncAnimation(fig, update, frames=n_frames, interval=1000//fps, blit=False)
+        anim.save(output_path, writer='pillow', fps=fps, dpi=150)
+        plt.close()
+    print(f"  Saved animation: {output_path}")
+
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 
@@ -660,6 +776,14 @@ def main():
         "Exp 3: Multi-basin landscape", cfg.visualization,
         str(output_dir / "exp3_multi_basin.png"), elev=30, azim=60,
         segment_colors=seg_colors_3,
+    )
+
+    print("\n  Creating exp3 animation (this may take a minute)...")
+    animate_experiment(
+        X3, Y3, Z3, multi_path, cycles3, dm_paths3, ec3, m1_3, m2_3,
+        "Exp 3: Multi-basin landscape", cfg.visualization,
+        str(output_dir / "exp3_rotating.gif"),
+        segment_colors=seg_colors_3, n_frames=120, fps=20, elev=30, azim_start=60,
     )
 
     # --- Summary ---
