@@ -31,7 +31,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from topo_mimic.dmwk.utils.dataset_config import get_dataset_preset
 from topo_mimic.dmwk.utils.load_utils import get_aggregate_data, get_clip_indices
@@ -926,7 +926,7 @@ def main():
     parser = argparse.ArgumentParser(description="Rodent transition demo")
     parser.add_argument(
         "--config",
-        default="configs/demos/demo_rodent_transitions.yaml",
+        default="configs/demos/transition_demos/demo_rodent_transitions.yaml",
         help="Path to demo config YAML",
     )
     args = parser.parse_args()

@@ -34,7 +34,7 @@ from collections import defaultdict
 
 sys.path.insert(0, "/home/jovyan/vast/kaiwen/TopoVNL")
 
-from demos.demo_theta_filmstrip import (
+from demos.property.demo_theta_filmstrip import (
     FilmstripConfig,
     FilmstripResult,
     compute_filmstrip_camera,
@@ -182,7 +182,7 @@ def render_walker_strip(
     xml_path: str,
 ) -> np.ndarray:
     """Render each walker pose individually centered, crop, tint, and tile horizontally."""
-    from demos.demo_theta_filmstrip import _load_mujoco_model, _ensure_rgb_uint8
+    from demos.property.demo_theta_filmstrip import _load_mujoco_model, _ensure_rgb_uint8
     import mujoco
 
     view_height = 2.0

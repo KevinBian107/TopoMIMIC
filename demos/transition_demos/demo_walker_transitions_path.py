@@ -8,8 +8,8 @@ Runs DM all-pairs-path extraction, GT-labeled embeddings, and debug
 side-by-side rendering (original clip vs DM segments).
 
 Usage:
-    python demos/demo_walker_transitions_path.py
-    python demos/demo_walker_transitions_path.py --config configs/demos/demo_walker_transitions_path.yaml
+    python demos/transition_demos/demo_walker_transitions_path.py
+    python demos/transition_demos/demo_walker_transitions_path.py --config configs/demos/transition_demos/demo_walker_transitions_path.yaml
 """
 
 import os
@@ -35,7 +35,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from topo_mimic.dmwk.utils.dataset_config import get_dataset_preset
 from topo_mimic.dmwk.dm_pipeline import (
@@ -2295,7 +2295,7 @@ def main():
     parser = argparse.ArgumentParser(description="Walker path analysis demo")
     parser.add_argument(
         "--config",
-        default="configs/demos/demo_walker_transitions_path.yaml",
+        default="configs/demos/transition_demos/demo_walker_transitions_path.yaml",
         help="Path to demo config YAML",
     )
     args = parser.parse_args()

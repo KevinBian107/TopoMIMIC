@@ -40,10 +40,10 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from collections import OrderedDict
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-sys.path.append(str(Path(__file__).resolve().parent.parent / "PCD-Graph-Recon-DM"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+sys.path.append(str(Path(__file__).resolve().parent.parent.parent / "PCD-Graph-Recon-DM"))
 
-from demos.demo_cycle_asymmetry import (
+from demos.property.demo_cycle_asymmetry import (
     load_single_clip,
     run_dm_extraction,
     order_cycle_vertices,
@@ -53,11 +53,11 @@ from demos.demo_cycle_asymmetry import (
     VisualizationConfig,
     DMResult,
 )
-from demos.demo_transition_topology import (
+from demos.property.demo_transition_topology import (
     find_dm_minima,
     analyze_edge_connectivity,
 )
-from demos.demo_theta_filmstrip import (
+from demos.property.demo_theta_filmstrip import (
     FilmstripConfig,
     create_filmstrip_composite,
     FilmstripResult,

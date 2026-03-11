@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 sys.path.insert(0, "/home/jovyan/vast/kaiwen/TopoVNL")
 sys.path.append("/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM")
 
-from demos.demo_cycle_asymmetry import (
+from demos.property.demo_cycle_asymmetry import (
     load_single_clip,
     run_dm_extraction,
     order_cycle_vertices,

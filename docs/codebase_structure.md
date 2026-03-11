@@ -270,19 +270,23 @@ scripts/
 
 demos/
 │
-├── demo_torus.py                    # Torus DM demo
-├── demo_stationary.py               # Stationary behavior demo
-├── demo_behavior_overlap.py         # Behavior overlap demo
-├── demo_saddle.py                   # Saddle point demo
-├── demo_cycle_asymmetry.py          # Cycle asymmetry demo
-├── demo_transition_topology.py      # Transition topology (paths vs cycles)
-├── demo_theta_filmstrip.py          # Theta-graph filmstrip
-├── demo_transition_filmstrip.py     # Transition filmstrip
+├── illustrative/                    # Visual examples of TDA concepts
+│   ├── demo_torus.py
+│   ├── demo_saddle.py
+│   ├── demo_behavior_overlap.py
+│   └── demo_transition_filmstrip.py
 │
-└── incompressibility/
-    ├── __init__.py
-    ├── incompressibility.py         # Incompressibility verification
-    └── batch_incompressibility.py   # Batch incompressibility
+├── property/                        # Model/method property demos
+│   ├── demo_cycle_asymmetry.py
+│   ├── demo_transition_topology.py
+│   ├── demo_theta_filmstrip.py
+│   ├── demo_stationary.py
+│   ├── demo_rear_cycles.py
+│   └── incompressibility/
+│
+└── transition_demos/                # End-to-end transition analysis
+    ├── demo_walker_transitions_path.py
+    └── demo_rodent_transitions.py
 
 Figure 6: Script and demo organization. Scripts provide standalone
 utilities; demos provide illustrative examples.
