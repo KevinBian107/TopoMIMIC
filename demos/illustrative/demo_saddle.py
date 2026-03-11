@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """
-Saddle Surface Discrete Morse Demonstration
-=============================================
-Demonstrates DM-G cycle detection on paths over a saddle surface.
+Density Basin Discrete Morse Demonstration
+============================================
+Demonstrates DM cycle vs DM path detection on an inverse-density surface
+where dense regions form basins (low z).
 
 Three experiments:
-1. Path crossing between two local minima (detects topological loop)
-2. Path staying within one basin (no loop detected)
-3. Combined paths from experiments 1 and 2
+1. Two basins connected by two distinct routes -> cycle (theta-graph)
+2. Two basins connected by only one route -> path only (no cycle)
+3. Multi-basin landscape: some pairs have two routes (cycle), others only one (path)
 
 Usage:
-    python demos/demo_saddle.py [--config configs/scripts/demo_saddle.yaml]
-    python demos/demo_saddle.py [--n_steps 500] [--seed 42]
+    python demos/illustrative/demo_saddle.py
+    python demos/illustrative/demo_saddle.py --config configs/demos/illustrative/demo_saddle.yaml
 """
 
 import os
@@ -22,9 +23,7 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 from matplotlib.colors import Normalize
 from mpl_toolkits.mplot3d import Axes3D
-from mpl_toolkits.mplot3d.art3d import Line3DCollection
 from scipy.spatial import KDTree
-from scipy.ndimage import gaussian_filter
 import networkx as nx
 from pathlib import Path
 from dataclasses import dataclass, field
@@ -37,13 +36,6 @@ from topo_mimic.dmwk.skeletonization.skeletonization import extract_skeleton_pcd
 
 
 @dataclass
-class SurfaceConfig:
-    x_range: tuple[float, float] = (-2.5, 2.5)
-    y_range: tuple[float, float] = (-2.5, 2.5)
-    resolution: int = 100
-
-
-@dataclass
 class MorseConfig:
     k_neighbors: int = 5
     pers_delta: float = 0.3
@@ -52,249 +44,206 @@ class MorseConfig:
 
 @dataclass
 class PathConfig:
-    n_steps: int = 500
-    noise_std: float = 0.02
+    n_steps: int = 600
+    noise_std: float = 0.03
     seed: int = 42
-    basin_radius: float = 0.5
-    basin_step_size: float = 0.03
-    basin_attraction: float = 0.02
 
 
 @dataclass
 class VisualizationConfig:
-    summary_figsize: tuple[int, int] = (18, 6)
-    individual_figsize: tuple[int, int] = (14, 6)
-    dpi: int = 150
-    perspective_elev: float = 25
-    perspective_azim: float = 45
-    topdown_elev: float = 90
-    topdown_azim: float = 0
-    surface_alpha: float = 0.35
+    dpi: int = 300
+    surface_alpha: float = 0.25
     contour_levels: int = 15
-    contour_alpha: float = 0.4
-    path_linewidth: float = 2.5
-    path_alpha: float = 0.9
-    density_k: int = 15
-    density_cmap: str = "plasma"
-    cycle_color: str = "lime"
-    cycle_edge_color: str = "darkgreen"
-    cycle_marker_size: int = 80
-    cycle_linewidth: float = 5.0
-    minima_color: str = "blue"
-    minima_marker: str = "v"
-    minima_size: int = 120
-    maxima_color: str = "red"
-    maxima_marker: str = "^"
-    maxima_size: int = 120
-    saddle_color: str = "orange"
-    saddle_marker: str = "s"
-    saddle_size: int = 100
+    contour_alpha: float = 0.35
+    path_linewidth: float = 1.5
+    density_cmap: str = "viridis"
+    cycle_color: str = "#d62728"
+    cycle_linewidth: float = 3.0
+    path_color: str = "#1f77b4"
+    path_marker_color: str = "#1f77b4"
 
 
 @dataclass
 class Config:
     output_dir: str = "outputs/saddle_dm_demo"
-    surface: SurfaceConfig = field(default_factory=SurfaceConfig)
     path: PathConfig = field(default_factory=PathConfig)
     dm: MorseConfig = field(default_factory=MorseConfig)
     visualization: VisualizationConfig = field(default_factory=VisualizationConfig)
 
 
 def load_config(config_path: str) -> Config:
-    """Load configuration from YAML file."""
     with open(config_path, "r") as f:
         cfg_dict = yaml.safe_load(f)
 
-    surface_cfg = SurfaceConfig(
-        x_range=tuple(cfg_dict.get("surface", {}).get("x_range", [-2.5, 2.5])),
-        y_range=tuple(cfg_dict.get("surface", {}).get("y_range", [-2.5, 2.5])),
-        resolution=cfg_dict.get("surface", {}).get("resolution", 100),
-    )
+    path_d = cfg_dict.get("path", {})
+    path_cfg = PathConfig(**{k: v for k, v in path_d.items() if k in PathConfig.__dataclass_fields__})
 
-    path_cfg = PathConfig(
-        n_steps=cfg_dict.get("path", {}).get("n_steps", 500),
-        noise_std=cfg_dict.get("path", {}).get("noise_std", 0.02),
-        seed=cfg_dict.get("path", {}).get("seed", 42),
-        basin_radius=cfg_dict.get("path", {}).get("basin_radius", 0.5),
-        basin_step_size=cfg_dict.get("path", {}).get("basin_step_size", 0.03),
-        basin_attraction=cfg_dict.get("path", {}).get("basin_attraction", 0.02),
-    )
+    dm_d = cfg_dict.get("dm", {})
+    dm_cfg = MorseConfig(**{k: v for k, v in dm_d.items() if k in MorseConfig.__dataclass_fields__})
 
-    dm_cfg = MorseConfig(
-        k_neighbors=cfg_dict.get("dm", {}).get("k_neighbors", 5),
-        pers_delta=cfg_dict.get("dm", {}).get("pers_delta", 0.3),
-        epsilon=cfg_dict.get("dm", {}).get("epsilon", 0.99),
-    )
-
-    vis_dict = cfg_dict.get("visualization", {})
-    vis_cfg = VisualizationConfig(
-        summary_figsize=tuple(vis_dict.get("summary_figsize", [18, 6])),
-        individual_figsize=tuple(vis_dict.get("individual_figsize", [14, 6])),
-        dpi=vis_dict.get("dpi", 150),
-        perspective_elev=vis_dict.get("perspective_elev", 25),
-        perspective_azim=vis_dict.get("perspective_azim", 45),
-        topdown_elev=vis_dict.get("topdown_elev", 90),
-        topdown_azim=vis_dict.get("topdown_azim", 0),
-        surface_alpha=vis_dict.get("surface_alpha", 0.35),
-        contour_levels=vis_dict.get("contour_levels", 15),
-        contour_alpha=vis_dict.get("contour_alpha", 0.4),
-        path_linewidth=vis_dict.get("path_linewidth", 2.5),
-        path_alpha=vis_dict.get("path_alpha", 0.9),
-        density_k=vis_dict.get("density_k", 15),
-        density_cmap=vis_dict.get("density_cmap", "plasma"),
-        cycle_color=vis_dict.get("cycle_color", "lime"),
-        cycle_edge_color=vis_dict.get("cycle_edge_color", "darkgreen"),
-        cycle_marker_size=vis_dict.get("cycle_marker_size", 80),
-        cycle_linewidth=vis_dict.get("cycle_linewidth", 5.0),
-        minima_color=vis_dict.get("minima_color", "blue"),
-        minima_marker=vis_dict.get("minima_marker", "v"),
-        minima_size=vis_dict.get("minima_size", 120),
-        maxima_color=vis_dict.get("maxima_color", "red"),
-        maxima_marker=vis_dict.get("maxima_marker", "^"),
-        maxima_size=vis_dict.get("maxima_size", 120),
-        saddle_color=vis_dict.get("saddle_color", "orange"),
-        saddle_marker=vis_dict.get("saddle_marker", "s"),
-        saddle_size=vis_dict.get("saddle_size", 100),
-    )
+    vis_d = cfg_dict.get("visualization", {})
+    vis_cfg = VisualizationConfig(**{k: v for k, v in vis_d.items() if k in VisualizationConfig.__dataclass_fields__})
 
     return Config(
         output_dir=cfg_dict.get("output_dir", "outputs/saddle_dm_demo"),
-        surface=surface_cfg,
         path=path_cfg,
         dm=dm_cfg,
         visualization=vis_cfg,
     )
 
 
-def saddle_surface(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+# ── Surface generation ──────────────────────────────────────────────────────
+
+
+def density_basin_surface_2(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """Two basins (dense regions sink down) on a flat base.
+
+    Basin A at (-1.5, 0), Basin B at (1.5, 0). Between them a ridge
+    with two low passes (at y~+0.8 and y~-0.8), creating two distinct routes.
     """
-    Generate a surface with two clear minima, an arch between them, and subtle complexity.
-
-    The surface has:
-    - Two valleys (local minima) on the left and right
-    - A clear arch/hump in the middle
-    - Small undulations to show surface complexity
-    """
-    z_base = 0.25 * x**2 - 0.08 * y**2
-
-    z_minima = (
-        -1.0 * np.exp(-((x + 1.3)**2 + y**2) / 0.6)
-        - 1.0 * np.exp(-((x - 1.3)**2 + y**2) / 0.6)
-    )
-
-    z_arch = 0.7 * np.exp(-(x**2) / 0.6) * np.exp(-(y**2) / 2.0)
-
-    z_texture = (
-        0.08 * np.sin(2.5 * x) * np.cos(2.5 * y)
-        + 0.05 * np.cos(3.0 * x + 0.5) * np.sin(3.0 * y)
-        + 0.04 * np.sin(4.0 * x) * np.sin(4.0 * y)
-    )
-
-    z = z_base + z_minima + z_arch + z_texture
-
-    return z
+    base = np.zeros_like(x)
+    basin_a = -1.2 * np.exp(-((x + 1.5)**2 + y**2) / 0.5)
+    basin_b = -1.2 * np.exp(-((x - 1.5)**2 + y**2) / 0.5)
+    ridge = 0.6 * np.exp(-(x**2) / 0.4) * np.exp(-(y**2) / 3.0)
+    pass_upper = -0.35 * np.exp(-(x**2) / 0.6) * np.exp(-((y - 0.9)**2) / 0.3)
+    pass_lower = -0.35 * np.exp(-(x**2) / 0.6) * np.exp(-((y + 0.9)**2) / 0.3)
+    return base + basin_a + basin_b + ridge + pass_upper + pass_lower
 
 
-def find_critical_points(
-    X: np.ndarray,
-    Y: np.ndarray,
-    Z: np.ndarray,
-) -> dict[str, list[tuple[float, float, float]]]:
-    """Find local minima on the surface."""
-    from scipy.ndimage import minimum_filter
-
-    min_filtered = minimum_filter(Z, size=11)
-    local_min_mask = (Z == min_filtered)
-
-    minima = []
-    border = 10
-    min_indices = np.argwhere(local_min_mask)
-    for idx in min_indices:
-        i, j = idx
-        if border < i < Z.shape[0] - border and border < j < Z.shape[1] - border:
-            minima.append((X[i, j], Y[i, j], Z[i, j]))
-
-    minima = sorted(minima, key=lambda p: p[2])[:2]
-
-    return {"minima": minima}
+def density_basin_surface_1pass(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """Two basins connected by only ONE low pass (at y~+0.8). The other direction
+    is blocked by a high wall, so only one route exists -> path only."""
+    base = np.zeros_like(x)
+    basin_a = -1.2 * np.exp(-((x + 1.5)**2 + y**2) / 0.5)
+    basin_b = -1.2 * np.exp(-((x - 1.5)**2 + y**2) / 0.5)
+    ridge = 0.8 * np.exp(-(x**2) / 0.4) * np.exp(-(y**2) / 3.0)
+    pass_upper = -0.5 * np.exp(-(x**2) / 0.6) * np.exp(-((y - 0.9)**2) / 0.3)
+    wall_lower = 0.4 * np.exp(-(x**2) / 0.5) * np.exp(-((y + 0.7)**2) / 0.4)
+    return base + basin_a + basin_b + ridge + pass_upper + wall_lower
 
 
-def generate_path_crossing(
-    min1: tuple[float, float, float],
-    min2: tuple[float, float, float],
+def density_basin_surface_multi(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """Three basins: A(-2,0), B(1,1.5), C(1,-1.5).
+    A-B: two passes (cycle). A-C: one pass (path only)."""
+    base = np.zeros_like(x)
+    ba = -1.2 * np.exp(-((x + 2)**2 + y**2) / 0.5)
+    bb = -1.2 * np.exp(-((x - 1)**2 + (y - 1.5)**2) / 0.5)
+    bc = -1.2 * np.exp(-((x - 1)**2 + (y + 1.5)**2) / 0.5)
+    ridge_ab = 0.5 * np.exp(-((x + 0.5)**2) / 0.5) * np.exp(-((y - 0.75)**2) / 1.5)
+    pass_ab_1 = -0.35 * np.exp(-((x + 0.3)**2 + (y - 1.4)**2) / 0.4)
+    pass_ab_2 = -0.35 * np.exp(-((x + 0.3)**2 + (y - 0.1)**2) / 0.4)
+    ridge_ac = 0.6 * np.exp(-((x + 0.5)**2) / 0.5) * np.exp(-((y + 0.75)**2) / 1.5)
+    pass_ac = -0.4 * np.exp(-((x + 0.3)**2 + (y + 0.8)**2) / 0.4)
+    wall_ac_lower = 0.4 * np.exp(-((x + 0.3)**2 + (y + 1.6)**2) / 0.4)
+    return base + ba + bb + bc + ridge_ab + pass_ab_1 + pass_ab_2 + ridge_ac + pass_ac + wall_ac_lower
+
+
+# ── Path generation ─────────────────────────────────────────────────────────
+
+
+def generate_round_trip_2routes(
+    min1: np.ndarray,
+    min2: np.ndarray,
+    surface_fn,
     n_steps: int,
     noise_std: float,
     rng: np.random.Generator,
+    y_offset: float = 0.8,
+    blob_fraction: float = 0.0,
 ) -> np.ndarray:
-    """
-    Generate a path that crosses over the arch: min1 -> min2 -> min1.
+    """Go from min1 to min2 via upper pass, return via lower pass -> loop.
 
-    The path goes from one minimum, over the arch to the other minimum,
-    then returns back. The outward and return paths take slightly different
-    routes (offset in y), creating a crossing pattern that DM-G can detect.
+    blob_fraction: fraction of n_steps to allocate as dense blobs at each
+    minimum (0 = pure arc, 0.25 = 25% of points as blobs at each end).
     """
-    n_half = n_steps // 2
+    n_blob = int(n_steps * blob_fraction)
+    n_arc = n_steps - 2 * n_blob
+    n_half = n_arc // 2
 
     t_out = np.linspace(0, 1, n_half)
     x_out = min1[0] + (min2[0] - min1[0]) * t_out
-    y_out = 0.15 * np.sin(np.pi * t_out)
+    y_out = min1[1] + (min2[1] - min1[1]) * t_out + y_offset * np.sin(np.pi * t_out)
 
-    t_back = np.linspace(0, 1, n_steps - n_half)
+    t_back = np.linspace(0, 1, n_arc - n_half)
     x_back = min2[0] + (min1[0] - min2[0]) * t_back
-    y_back = -0.15 * np.sin(np.pi * t_back)
+    y_back = min2[1] + (min1[1] - min2[1]) * t_back - y_offset * np.sin(np.pi * t_back)
 
-    x_path = np.concatenate([x_out, x_back])
-    y_path = np.concatenate([y_out, y_back])
+    parts_x = [x_out, x_back]
+    parts_y = [y_out, y_back]
 
-    x_path += rng.normal(0, noise_std, len(x_path))
-    y_path += rng.normal(0, noise_std, len(y_path))
+    if n_blob > 0:
+        parts_x.insert(0, min1[0] + rng.normal(0, 0.15, n_blob))
+        parts_y.insert(0, min1[1] + rng.normal(0, 0.15, n_blob))
+        parts_x.append(min2[0] + rng.normal(0, 0.15, n_blob))
+        parts_y.append(min2[1] + rng.normal(0, 0.15, n_blob))
 
-    z_path = saddle_surface(x_path, y_path)
+    x_path = np.concatenate(parts_x) + rng.normal(0, noise_std, n_steps)
+    y_path = np.concatenate(parts_y) + rng.normal(0, noise_std, n_steps)
+    z_path = surface_fn(x_path, y_path)
+    return np.column_stack([x_path, y_path, z_path])
 
-    path = np.column_stack([x_path, y_path, z_path])
-    return path
 
-
-def generate_path_no_loop(
-    center: tuple[float, float, float],
+def generate_one_way_blob(
+    min1: np.ndarray,
+    min2: np.ndarray,
+    surface_fn,
     n_steps: int,
+    noise_std: float,
     rng: np.random.Generator,
-    spread: float = 0.5,
+    y_offset: float = 0.8,
 ) -> np.ndarray:
-    """
-    Generate a path that does NOT create topological loops.
+    """Dense blobs at each minimum connected by a single bridge -> path, no cycle."""
+    n_blob = n_steps // 3
+    n_bridge = n_steps - 2 * n_blob
 
-    This is a simple linear/spiral path that never returns to previous regions.
-    The path spreads out from the center in a monotonic way, ensuring
-    the point cloud forms a tree-like structure with no cycles.
-    """
-    t = np.linspace(0, 1, n_steps)
+    blob1_x = min1[0] + rng.normal(0, 0.2, n_blob)
+    blob1_y = min1[1] + rng.normal(0, 0.2, n_blob)
+    blob2_x = min2[0] + rng.normal(0, 0.2, n_blob)
+    blob2_y = min2[1] + rng.normal(0, 0.2, n_blob)
 
-    r = spread * t
-    theta = 4 * np.pi * t
+    t_bridge = np.linspace(0, 1, n_bridge)
+    bridge_x = min1[0] + (min2[0] - min1[0]) * t_bridge + rng.normal(0, 0.03, n_bridge)
+    bridge_y = (min1[1] + (min2[1] - min1[1]) * t_bridge
+                + y_offset * np.sin(np.pi * t_bridge) + rng.normal(0, 0.03, n_bridge))
 
-    x_path = center[0] + r * np.cos(theta)
-    y_path = center[1] + r * np.sin(theta)
-
-    noise_scale = 0.02
-    x_path += rng.normal(0, noise_scale, n_steps)
-    y_path += rng.normal(0, noise_scale, n_steps)
-
-    z_path = saddle_surface(x_path, y_path)
-
-    path = np.column_stack([x_path, y_path, z_path])
-    return path
+    x_path = np.concatenate([blob1_x, bridge_x, blob2_x])
+    y_path = np.concatenate([blob1_y, bridge_y, blob2_y])
+    z_path = surface_fn(x_path, y_path)
+    return np.column_stack([x_path, y_path, z_path])
 
 
-def compute_point_density(
-    points: np.ndarray,
-    k: int = 10,
+def generate_one_way_arc(
+    min1: np.ndarray,
+    min2: np.ndarray,
+    surface_fn,
+    n_steps: int,
+    noise_std: float,
+    rng: np.random.Generator,
+    y_offset: float = 0.8,
 ) -> np.ndarray:
-    """Compute local density for each point using kNN distances."""
+    """Single arc out and back along the same route -> clean arc style, path only."""
+    n_half = n_steps // 2
+    t_out = np.linspace(0, 1, n_half)
+    x_out = min1[0] + (min2[0] - min1[0]) * t_out
+    y_out = min1[1] + (min2[1] - min1[1]) * t_out + y_offset * np.sin(np.pi * t_out)
+
+    t_back = np.linspace(1, 0, n_steps - n_half)
+    x_back = min1[0] + (min2[0] - min1[0]) * t_back
+    y_back = min1[1] + (min2[1] - min1[1]) * t_back + y_offset * np.sin(np.pi * t_back)
+
+    x_path = np.concatenate([x_out, x_back]) + rng.normal(0, noise_std * 1.5, n_steps)
+    y_path = np.concatenate([y_out, y_back]) + rng.normal(0, noise_std * 1.5, n_steps)
+    z_path = surface_fn(x_path, y_path)
+    return np.column_stack([x_path, y_path, z_path])
+
+
+# ── DM analysis ─────────────────────────────────────────────────────────────
+
+
+def compute_point_density(points: np.ndarray, k: int = 10) -> np.ndarray:
     tree = KDTree(points)
     distances, _ = tree.query(points, k=min(k + 1, len(points)))
-    density = 1.0 / (np.mean(distances[:, 1:], axis=1) + 1e-8)
-    return density
+    return 1.0 / (np.mean(distances[:, 1:], axis=1) + 1e-8)
 
 
 def run_dm_analysis(
@@ -303,13 +252,11 @@ def run_dm_analysis(
     output_dir: str,
     experiment_name: str,
 ) -> tuple[list[np.ndarray], nx.Graph]:
-    """Run discrete Morse graph analysis on point cloud."""
     exp_dir = os.path.abspath(os.path.join(output_dir, experiment_name))
     os.makedirs(exp_dir, exist_ok=True)
 
-    print(f"  Running DM-G analysis for {experiment_name}...")
+    print(f"  Running DM analysis for {experiment_name}...")
     print(f"    Points: {len(points)}, k={config.k_neighbors}, pers_delta={config.pers_delta}")
-    print(f"    Output dir: {exp_dir}")
 
     cycles, G_dm = extract_skeleton_pcd_dm(
         points=points,
@@ -330,245 +277,272 @@ def run_dm_analysis(
     return cycles, G_dm
 
 
-def plot_surface_only(
-    X: np.ndarray,
-    Y: np.ndarray,
-    Z: np.ndarray,
-    critical_points: dict,
-    vis_cfg: VisualizationConfig,
-    output_path: str,
-):
-    """Plot and save the surface showing two minima and the arch between them."""
-    fig = plt.figure(figsize=(10, 8))
-    ax = fig.add_subplot(111, projection='3d')
+def extract_paths_between_minima(
+    G_dm: nx.Graph,
+    output_dir: str,
+) -> tuple[list[list[int]], int, int | None, int | None]:
+    """Find the two most persistent minima and edge-disjoint paths between them."""
+    from topo_mimic.dmwk.skeletonization.dm_path import find_dm_minima
 
+    min1, min2 = find_dm_minima(output_dir)
+    if min1 is None or min2 is None:
+        return [], 0, min1, min2
+    if min1 not in G_dm or min2 not in G_dm:
+        return [], 0, min1, min2
+
+    ec = nx.edge_connectivity(G_dm, min1, min2)
+    try:
+        raw_paths = [list(p) for p in nx.edge_disjoint_paths(G_dm, min1, min2)]
+    except (nx.NetworkXError, nx.NetworkXNoPath, nx.NetworkXUnfeasible):
+        raw_paths = []
+    return raw_paths, ec, min1, min2
+
+
+# ── Plotting ─────────────────────────────────────────────────────────────────
+
+
+_NATURE_RC = {
+    "font.family": "sans-serif",
+    "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
+    "font.size": 7,
+    "axes.titlesize": 9,
+    "axes.labelsize": 7,
+    "axes.linewidth": 0.4,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "xtick.major.width": 0.4,
+    "ytick.major.width": 0.4,
+    "xtick.labelsize": 6,
+    "ytick.labelsize": 6,
+    "figure.dpi": 300,
+    "savefig.dpi": 300,
+    "savefig.bbox": "tight",
+    "savefig.pad_inches": 0.05,
+    "legend.fontsize": 6,
+    "legend.framealpha": 0.9,
+    "legend.edgecolor": "0.7",
+}
+
+
+def _plot_surface(ax, X, Y, Z, vis_cfg):
     ax.plot_surface(
-        X, Y, Z,
-        cmap='coolwarm',
-        alpha=0.7,
-        linewidth=0.1,
-        edgecolor='none',
-        antialiased=True,
-        zorder=0,
+        X, Y, Z, cmap='coolwarm', alpha=0.85,
+        linewidth=0, antialiased=True, zorder=0,
     )
-
-    minima = critical_points.get("minima", [])[:2]
-    for point in minima:
-        ax.scatter(
-            point[0], point[1], point[2],
-            c='blue',
-            s=150,
-            marker='o',
-            edgecolors='white',
-            linewidths=2.0,
-            zorder=200,
-        )
-
-    ax.set_xlabel('X', fontsize=10)
-    ax.set_ylabel('Y', fontsize=10)
-    ax.set_zlabel('Z', fontsize=10)
-    ax.set_title('Surface with Two Minima and Central Arch', fontsize=12, fontweight='bold', pad=10)
-
-    ax.view_init(elev=25, azim=45)
-
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=vis_cfg.dpi, bbox_inches='tight')
-    print(f"  Saved surface plot: {output_path}")
-    plt.close()
-
-
-def plot_surface_with_path(
-    ax: Axes3D,
-    X: np.ndarray,
-    Y: np.ndarray,
-    Z: np.ndarray,
-    path: np.ndarray,
-    cycles: list[np.ndarray],
-    critical_points: dict,
-    title: str,
-    vis_cfg: VisualizationConfig,
-    show_density: bool = True,
-):
-    """Plot the surface with path and highlight cycle frames."""
-    ax.plot_surface(
-        X, Y, Z,
-        cmap='Greys',
-        alpha=vis_cfg.surface_alpha,
-        linewidth=0.3,
-        edgecolor='gray',
-        antialiased=True,
-        zorder=0,
-    )
-
     ax.contour(
-        X, Y, Z,
-        levels=vis_cfg.contour_levels,
-        colors='gray',
-        alpha=vis_cfg.contour_alpha,
-        linewidths=0.5,
-        offset=Z.min() - 0.1,
-        zorder=1,
+        X, Y, Z, levels=vis_cfg.contour_levels, colors='#666666',
+        alpha=0.5, linewidths=0.4,
+        offset=Z.min() - 0.15, zorder=1,
     )
 
-    if show_density:
-        density = compute_point_density(path, k=vis_cfg.density_k)
-        density_norm = (density - density.min()) / (density.max() - density.min() + 1e-8)
-        colors = cm.get_cmap(vis_cfg.density_cmap)(density_norm)
 
+def _plot_grey_path(ax, path, linewidth=1.0, alpha=0.5, z_lift=0.25, segment_colors=None):
+    """segment_colors: list of (start_idx, end_idx, color) or None for uniform grey."""
+    z = path[:, 2] + z_lift
+    if segment_colors is None:
         for i in range(len(path) - 1):
-            ax.plot(
-                path[i:i+2, 0],
-                path[i:i+2, 1],
-                path[i:i+2, 2],
-                color=colors[i],
-                linewidth=vis_cfg.path_linewidth,
-                alpha=vis_cfg.path_alpha,
-                zorder=10,
-            )
-
-        sm = plt.cm.ScalarMappable(cmap=vis_cfg.density_cmap, norm=Normalize(vmin=0, vmax=1))
-        sm.set_array([])
+            ax.plot(path[i:i+2, 0], path[i:i+2, 1], z[i:i+2],
+                    color='#888888', linewidth=linewidth, alpha=alpha, zorder=10)
     else:
+        color_map = {}
+        for s, e, c in segment_colors:
+            for idx in range(s, e):
+                color_map[idx] = c
+        for i in range(len(path) - 1):
+            c = color_map.get(i, '#888888')
+            ax.plot(path[i:i+2, 0], path[i:i+2, 1], z[i:i+2],
+                    color=c, linewidth=linewidth, alpha=alpha, zorder=10)
+
+
+def _plot_path_density(ax, path, vis_cfg, z_lift=0.25):
+    density = compute_point_density(path, k=15)
+    density_norm = (density - density.min()) / (density.max() - density.min() + 1e-8)
+    cmap = cm.get_cmap(vis_cfg.density_cmap)
+    colors = cmap(density_norm)
+    z_raised = path[:, 2] + z_lift
+    for i in range(len(path) - 1):
         ax.plot(
-            path[:, 0], path[:, 1], path[:, 2],
-            color='steelblue',
-            linewidth=vis_cfg.path_linewidth,
-            alpha=vis_cfg.path_alpha,
-            zorder=10,
+            path[i:i+2, 0], path[i:i+2, 1], z_raised[i:i+2],
+            color=colors[i], linewidth=vis_cfg.path_linewidth, alpha=0.8, zorder=10,
         )
+    sm = cm.ScalarMappable(cmap=cmap, norm=Normalize(vmin=density.min(), vmax=density.max()))
+    sm.set_array([])
+    return sm
 
-    if cycles:
-        longest_cycle = cycles[0]
-        valid_indices = [idx for idx in longest_cycle if 0 <= idx < len(path)]
 
-        if valid_indices:
-            n_sample = min(20, len(valid_indices))
-            if len(valid_indices) > n_sample:
-                sample_idx = np.linspace(0, len(valid_indices) - 1, n_sample, dtype=int)
-                sampled_indices = [valid_indices[i] for i in sample_idx]
-            else:
-                sampled_indices = valid_indices
+def _plot_cycle_overlay(ax, path, cycle_indices, vis_cfg, label="DM Cycle", z_lift=0.25):
+    valid = [i for i in cycle_indices if 0 <= i < len(path)]
+    if not valid:
+        return
+    n_sample = min(25, len(valid))
+    sampled = [valid[i] for i in np.linspace(0, len(valid) - 1, n_sample, dtype=int)]
+    pts = path[sampled]
+    ax.scatter(
+        pts[:, 0], pts[:, 1], pts[:, 2] + z_lift,
+        c='#e41a1c', s=45, marker='o', edgecolors='white',
+        linewidths=0.6, zorder=100, **({'label': label} if label else {}),
+    )
 
-            cycle_points = path[sampled_indices]
 
-            ax.scatter(
-                cycle_points[:, 0],
-                cycle_points[:, 1],
-                cycle_points[:, 2],
-                c='red',
-                s=100,
-                marker='x',
-                linewidths=2.5,
-                zorder=100,
-                label=f'DM-G loop ({len(valid_indices)} frames)',
-            )
-    else:
-        ax.text2D(
-            0.5, 0.02,
-            "No cycle detected",
-            transform=ax.transAxes,
-            fontsize=9,
-            ha='center',
-            color='gray',
-            fontstyle='italic',
-        )
+def _plot_path_overlay(ax, path, path_indices, vis_cfg, label="DM Path", z_lift=0.25):
+    valid = [i for i in path_indices if 0 <= i < len(path)]
+    if not valid:
+        return
+    n_sample = min(25, len(valid))
+    sampled = [valid[i] for i in np.linspace(0, len(valid) - 1, n_sample, dtype=int)]
+    pts = path[sampled]
+    ax.scatter(
+        pts[:, 0], pts[:, 1], pts[:, 2] + z_lift,
+        c='#377eb8', s=45, marker='D', edgecolors='white',
+        linewidths=0.6, zorder=100, **({'label': label} if label else {}),
+    )
 
-    minima = critical_points.get("minima", [])[:2]
-    for point in minima:
+
+def _plot_minima(ax, points, minima_indices, z_lift=0.25):
+    if not minima_indices:
+        return
+    valid = [i for i in minima_indices if i is not None and 0 <= i < len(points)]
+    if valid:
+        pts = points[valid]
         ax.scatter(
-            point[0], point[1], point[2],
-            c='blue',
-            s=100,
-            marker='o',
-            edgecolors='white',
-            linewidths=1.5,
+            pts[:, 0], pts[:, 1], pts[:, 2] + z_lift,
+            c='#2ca02c', s=50, marker='v', edgecolors='white', linewidths=0.8,
             zorder=200,
         )
 
-    ax.set_xlabel('X', fontsize=9)
-    ax.set_ylabel('Y', fontsize=9)
-    ax.set_zlabel('Z', fontsize=9)
-    ax.set_title(title, fontsize=11, fontweight='bold', pad=10)
 
-    if cycles:
-        ax.legend(loc='upper right', fontsize=8, framealpha=0.8)
-
-
-def plot_experiment_summary(
-    X: np.ndarray,
-    Y: np.ndarray,
-    Z: np.ndarray,
-    results: dict,
-    critical_points: dict,
-    vis_cfg: VisualizationConfig,
-    output_path: str,
+def plot_experiment(
+    X, Y, Z, path, cycles, dm_paths, ec, min1, min2,
+    title, vis_cfg, output_path, elev=25, azim=45, segment_colors=None,
 ):
-    """Create a summary figure with all three experiments."""
-    fig = plt.figure(figsize=vis_cfg.summary_figsize)
+    with plt.rc_context(_NATURE_RC):
+        fig, axes = plt.subplots(1, 3, figsize=(18, 5.5),
+                                  subplot_kw={'projection': '3d'},
+                                  gridspec_kw={'wspace': 0.25, 'width_ratios': [1, 1, 1]})
+        ax0, ax1, ax2 = axes
 
-    for i, (exp_name, exp_data) in enumerate(results.items()):
-        ax = fig.add_subplot(1, 3, i + 1, projection='3d')
+        has_cycle = bool(cycles)
+        has_path = bool(dm_paths)
 
-        plot_surface_with_path(
-            ax=ax,
-            X=X,
-            Y=Y,
-            Z=Z,
-            path=exp_data['path'],
-            cycles=exp_data['cycles'],
-            critical_points=critical_points,
-            title=exp_data['title'],
-            vis_cfg=vis_cfg,
-            show_density=True,
+        # Panel 1: colored surface
+        _plot_surface(ax0, X, Y, Z, vis_cfg)
+        ax0.set_title("Inv. density surface", fontsize=8)
+        ax0.view_init(elev=elev, azim=azim)
+        ax0.set_xlabel('Feature x'); ax0.set_ylabel('Feature y'); ax0.set_zlabel('Inv. density')
+
+        # Panel 2: surface + grey trajectory + DM overlays
+        _plot_surface(ax1, X, Y, Z, vis_cfg)
+        _plot_grey_path(ax1, path, segment_colors=segment_colors)
+        if has_cycle:
+            _plot_cycle_overlay(ax1, path, cycles[0], vis_cfg)
+        if has_path:
+            for i, p in enumerate(dm_paths):
+                _plot_path_overlay(ax1, path, p, vis_cfg, label="DM Path" if i == 0 else None)
+        _plot_minima(ax1, path, [min1, min2])
+
+        topo_label = []
+        if has_cycle:
+            topo_label.append("Cycle")
+        if has_path:
+            topo_label.append(f"Path (ec={ec})")
+        if not has_cycle and not has_path:
+            topo_label.append("No structure found")
+        ax1.set_title(f"{title}\n{' | '.join(topo_label)}", fontsize=8, fontweight='bold')
+        ax1.view_init(elev=elev, azim=azim)
+        ax1.set_xlabel('Feature x'); ax1.set_ylabel('Feature y'); ax1.set_zlabel('Inv. density')
+        ax1.legend(loc='upper right', fontsize=5, framealpha=0.9, edgecolor='0.7')
+
+        # Panel 3: top-down, no colored surface, just contours
+        ax2.contour(
+            X, Y, Z, levels=vis_cfg.contour_levels, colors='#999999',
+            alpha=0.6, linewidths=0.4, offset=Z.min() - 0.01,
         )
+        _plot_grey_path(ax2, path, segment_colors=segment_colors)
+        if has_cycle:
+            _plot_cycle_overlay(ax2, path, cycles[0], vis_cfg)
+        if has_path:
+            for i, p in enumerate(dm_paths):
+                _plot_path_overlay(ax2, path, p, vis_cfg, label=None)
+        _plot_minima(ax2, path, [min1, min2])
+        ax2.set_title("Top-down view", fontsize=8)
+        ax2.view_init(elev=85, azim=0)
+        ax2.set_xlabel('Feature x'); ax2.set_ylabel('Feature y')
+        ax2.set_zticklabels([]); ax2.set_zlabel('')
 
-        ax.view_init(elev=vis_cfg.perspective_elev, azim=vis_cfg.perspective_azim + i * 30)
-
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=vis_cfg.dpi, bbox_inches='tight')
-    print(f"\nSaved summary figure to {output_path}")
-    plt.close()
-
-
-def plot_individual_experiment(
-    X: np.ndarray,
-    Y: np.ndarray,
-    Z: np.ndarray,
-    path: np.ndarray,
-    cycles: list[np.ndarray],
-    critical_points: dict,
-    title: str,
-    vis_cfg: VisualizationConfig,
-    output_path: str,
-):
-    """Create a detailed figure for a single experiment with multiple views."""
-    fig = plt.figure(figsize=vis_cfg.individual_figsize)
-
-    ax1 = fig.add_subplot(1, 2, 1, projection='3d')
-    plot_surface_with_path(ax1, X, Y, Z, path, cycles, critical_points, f"{title} (Perspective)", vis_cfg, True)
-    ax1.view_init(elev=vis_cfg.perspective_elev, azim=vis_cfg.perspective_azim)
-
-    ax2 = fig.add_subplot(1, 2, 2, projection='3d')
-    plot_surface_with_path(ax2, X, Y, Z, path, cycles, critical_points, f"{title} (Top-Down)", vis_cfg, True)
-    ax2.view_init(elev=vis_cfg.topdown_elev, azim=vis_cfg.topdown_azim)
-
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=vis_cfg.dpi, bbox_inches='tight')
+        plt.savefig(output_path, dpi=vis_cfg.dpi, bbox_inches='tight', facecolor='white')
+        plt.close()
     print(f"  Saved {output_path}")
-    plt.close()
+
+
+def plot_summary(experiments, vis_cfg, output_path):
+    n = len(experiments)
+    with plt.rc_context(_NATURE_RC):
+        fig = plt.figure(figsize=(5 * n, 5))
+        for i, exp in enumerate(experiments):
+            ax = fig.add_subplot(1, n, i + 1, projection='3d')
+            _plot_surface(ax, exp['X'], exp['Y'], exp['Z'], vis_cfg)
+            _plot_grey_path(ax, exp['path'])
+            if exp['cycles']:
+                _plot_cycle_overlay(ax, exp['path'], exp['cycles'][0], vis_cfg)
+            if exp['dm_paths']:
+                for j, p in enumerate(exp['dm_paths']):
+                    _plot_path_overlay(ax, exp['path'], p, vis_cfg, label="DM Path" if j == 0 else None)
+            _plot_minima(ax, exp['path'], [exp['min1'], exp['min2']])
+
+            topo = []
+            if exp['cycles']:
+                topo.append("Cycle")
+            if exp['dm_paths']:
+                topo.append(f"Path (ec={exp['ec']})")
+            if not topo:
+                topo.append("None")
+            ax.set_title(f"{exp['title']}\n[{', '.join(topo)}]", fontsize=7, fontweight='bold')
+            ax.view_init(elev=30, azim=45 + i * 25)
+            ax.set_xlabel('Feature x'); ax.set_ylabel('Feature y'); ax.set_zlabel('Inv. density')
+            ax.legend(loc='upper right', fontsize=4.5, framealpha=0.9, edgecolor='0.7')
+
+        plt.tight_layout()
+        plt.savefig(output_path, dpi=vis_cfg.dpi, bbox_inches='tight', facecolor='white')
+        plt.close()
+    print(f"\nSaved summary: {output_path}")
+
+
+# ── Main ─────────────────────────────────────────────────────────────────────
+
+
+def _run_experiment(
+    name, surface_fn, path_fn, path_kwargs,
+    x_range, y_range, resolution,
+    dm_cfg, output_dir, vis_cfg,
+):
+    x = np.linspace(*x_range, resolution)
+    y = np.linspace(*y_range, resolution)
+    X, Y = np.meshgrid(x, y)
+    Z = surface_fn(X, Y)
+
+    path = path_fn(**path_kwargs)
+
+    cycles, G_dm = run_dm_analysis(path, dm_cfg, output_dir, name)
+
+    exp_dir = os.path.abspath(os.path.join(output_dir, name))
+    dm_paths, ec, min1, min2 = extract_paths_between_minima(G_dm, exp_dir)
+
+    return {
+        'X': X, 'Y': Y, 'Z': Z, 'path': path,
+        'cycles': cycles, 'dm_paths': dm_paths,
+        'ec': ec, 'min1': min1, 'min2': min2,
+    }
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Saddle Surface DM-G Demo")
-    parser.add_argument("--config", type=str, default=None, help="Path to YAML config file")
-    parser.add_argument("--n_steps", type=int, default=None, help="Number of timesteps per path")
-    parser.add_argument("--seed", type=int, default=None, help="Random seed for reproducibility")
-    parser.add_argument("--k", type=int, default=None, help="k-neighbors for DM-G")
-    parser.add_argument("--pers_delta", type=float, default=None, help="Persistence threshold")
+    parser = argparse.ArgumentParser(description="Density Basin DM Demo")
+    parser.add_argument("--config", type=str, default=None)
+    parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--k", type=int, default=None)
+    parser.add_argument("--pers_delta", type=float, default=None)
     args = parser.parse_args()
 
-    default_config_path = Path(__file__).parent.parent / "configs" / "demos" / "demo_saddle.yaml"
-
+    default_config_path = Path(__file__).parent.parent.parent / "configs" / "demos" / "illustrative" / "demo_saddle.yaml"
     if args.config:
         cfg = load_config(args.config)
     elif default_config_path.exists():
@@ -577,8 +551,6 @@ def main():
     else:
         cfg = Config()
 
-    if args.n_steps is not None:
-        cfg.path.n_steps = args.n_steps
     if args.seed is not None:
         cfg.path.seed = args.seed
     if args.k is not None:
@@ -589,155 +561,128 @@ def main():
     if os.path.isabs(cfg.output_dir):
         output_dir = Path(cfg.output_dir)
     else:
-        output_dir = Path(__file__).parent.parent / cfg.output_dir
+        output_dir = Path(__file__).parent.parent.parent / cfg.output_dir
     output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print("=" * 70)
-    print("Saddle Surface Discrete Morse Demonstration")
+    print("Density Basin Discrete Morse Demonstration")
     print("=" * 70)
-    print(f"  Output dir: {output_dir}")
-    print(f"  Path length: {cfg.path.n_steps} steps")
-    print(f"  Random seed: {cfg.path.seed}")
-    print(f"  DM-G params: k={cfg.dm.k_neighbors}, pers_delta={cfg.dm.pers_delta}")
+    print(f"  Output: {output_dir}")
+    print(f"  DM params: k={cfg.dm.k_neighbors}, pers_delta={cfg.dm.pers_delta}")
+    print(f"  Seed: {cfg.path.seed}")
 
-    rng = np.random.default_rng(cfg.path.seed)
+    n_steps = cfg.path.n_steps
+    noise = cfg.path.noise_std
+    x_range = (-3.5, 3.5)
+    y_range = (-3.5, 3.5)
+    res = 120
 
-    print("\n[1/7] Generating saddle surface...")
-    x = np.linspace(*cfg.surface.x_range, cfg.surface.resolution)
-    y = np.linspace(*cfg.surface.y_range, cfg.surface.resolution)
-    X, Y = np.meshgrid(x, y)
-    Z = saddle_surface(X, Y)
-    print(f"  Surface grid: {cfg.surface.resolution}x{cfg.surface.resolution}")
+    experiments = []
 
-    print("\n[2/7] Finding minima...")
-    critical_points = find_critical_points(X, Y, Z)
-    print(f"  Found {len(critical_points['minima'])} local minima")
-
-    print("\n[3/7] Saving surface visualization...")
-    plot_surface_only(
-        X, Y, Z, critical_points, cfg.visualization,
-        str(output_dir / "surface.png"),
+    # --- Exp 1: Two basins, two routes -> cycle ---
+    print("\n[1/3] Exp 1: Two basins, two routes (expects CYCLE)")
+    min_a = np.array([-1.5, 0.0])
+    min_b = np.array([1.5, 0.0])
+    rng1 = np.random.default_rng(cfg.path.seed)
+    exp1 = _run_experiment(
+        "exp1_two_routes", density_basin_surface_2,
+        generate_round_trip_2routes,
+        dict(min1=min_a, min2=min_b, surface_fn=density_basin_surface_2,
+             n_steps=n_steps, noise_std=noise, rng=rng1, y_offset=0.9),
+        x_range, y_range, res, cfg.dm, str(output_dir), cfg.visualization,
+    )
+    exp1['title'] = "Exp 1: Two Routes (Cycle)"
+    experiments.append(exp1)
+    plot_experiment(
+        exp1['X'], exp1['Y'], exp1['Z'], exp1['path'],
+        exp1['cycles'], exp1['dm_paths'], exp1['ec'], exp1['min1'], exp1['min2'],
+        "Exp 1: Two routes between basins", cfg.visualization,
+        str(output_dir / "exp1_two_routes.png"),
     )
 
-    minima = critical_points['minima']
-    if len(minima) >= 2:
-        min1 = minima[0]
-        min2 = minima[1]
-    else:
-        x1, x2 = -1.2, 1.2
-        min1 = (x1, 0.0, float(saddle_surface(np.array([x1]), np.array([0.0]))[0]))
-        min2 = (x2, 0.0, float(saddle_surface(np.array([x2]), np.array([0.0]))[0]))
-
-    dist = np.sqrt((min2[0] - min1[0])**2 + (min2[1] - min1[1])**2)
-    print(f"  Two minima (distance = {dist:.2f}):")
-    print(f"    Min 1: ({min1[0]:.2f}, {min1[1]:.2f}, {min1[2]:.2f})")
-    print(f"    Min 2: ({min2[0]:.2f}, {min2[1]:.2f}, {min2[2]:.2f})")
-
-    results = {}
-
-    print("\n[4/7] Experiment 1: Path crossing over arch (min1 -> min2 -> min1)...")
-    rng_exp1 = np.random.default_rng(cfg.path.seed)
-    path1 = generate_path_crossing(
-        min1=min1,
-        min2=min2,
-        n_steps=cfg.path.n_steps,
-        noise_std=cfg.path.noise_std,
-        rng=rng_exp1,
+    # --- Exp 2: Two basins, one route -> path only ---
+    print("\n[2/3] Exp 2: Two basins, one route (expects PATH only)")
+    rng2 = np.random.default_rng(cfg.path.seed + 100)
+    exp2 = _run_experiment(
+        "exp2_one_route", density_basin_surface_1pass,
+        generate_one_way_blob,
+        dict(min1=min_a, min2=min_b, surface_fn=density_basin_surface_1pass,
+             n_steps=n_steps, noise_std=noise, rng=rng2, y_offset=0.9),
+        x_range, y_range, res, cfg.dm, str(output_dir), cfg.visualization,
     )
-    cycles1, G1 = run_dm_analysis(path1, cfg.dm, str(output_dir), "experiment_1_crossing")
-    results['exp1'] = {
-        'path': path1,
-        'cycles': cycles1,
-        'graph': G1,
-        'title': 'Exp 1: Crossing Path\n(Expects Cycle Detection)',
+    exp2['title'] = "Exp 2: One Route (Path)"
+    experiments.append(exp2)
+    plot_experiment(
+        exp2['X'], exp2['Y'], exp2['Z'], exp2['path'],
+        exp2['cycles'], exp2['dm_paths'], exp2['ec'], exp2['min1'], exp2['min2'],
+        "Exp 2: One route between basins", cfg.visualization,
+        str(output_dir / "exp2_one_route.png"),
+    )
+
+    # --- Exp 3: Three basins ---
+    print("\n[3/3] Exp 3: Three basins (A-B cycle, A-C path)")
+    min_A = np.array([-2.0, 0.0])
+    min_B = np.array([1.0, 1.5])
+    min_C = np.array([1.0, -1.5])
+    rng3 = np.random.default_rng(cfg.path.seed + 200)
+    n_sub = n_steps // 2
+
+    path_AB = generate_round_trip_2routes(
+        min_A, min_B, density_basin_surface_multi, n_sub, noise, rng3, y_offset=0.7)
+    path_AC = generate_one_way_arc(
+        min_A, min_C, density_basin_surface_multi, n_sub, noise,
+        np.random.default_rng(cfg.path.seed + 201), y_offset=0.6)
+    multi_path = np.vstack([path_AB, path_AC])
+
+    x3 = np.linspace(-3.5, 3.5, res)
+    y3 = np.linspace(-3.5, 3.5, res)
+    X3, Y3 = np.meshgrid(x3, y3)
+    Z3 = density_basin_surface_multi(X3, Y3)
+
+    cycles3, G3 = run_dm_analysis(multi_path, cfg.dm, str(output_dir), "exp3_multi_basin")
+    exp3_dir = os.path.abspath(os.path.join(str(output_dir), "exp3_multi_basin"))
+    dm_paths3, ec3, m1_3, m2_3 = extract_paths_between_minima(G3, exp3_dir)
+
+    exp3 = {
+        'X': X3, 'Y': Y3, 'Z': Z3, 'path': multi_path,
+        'cycles': cycles3, 'dm_paths': dm_paths3,
+        'ec': ec3, 'min1': m1_3, 'min2': m2_3,
+        'title': "Exp 3: Three Basins (Mixed)",
     }
-    plot_individual_experiment(
-        X, Y, Z, path1, cycles1, critical_points,
-        "Experiment 1: Crossing Path",
-        cfg.visualization,
-        str(output_dir / "exp1_crossing.png"),
+    experiments.append(exp3)
+    seg_colors_3 = [
+        (0, len(path_AB), '#e41a1c'),
+        (len(path_AB), len(path_AB) + len(path_AC), '#377eb8'),
+    ]
+    plot_experiment(
+        X3, Y3, Z3, multi_path, cycles3, dm_paths3, ec3, m1_3, m2_3,
+        "Exp 3: Multi-basin landscape", cfg.visualization,
+        str(output_dir / "exp3_multi_basin.png"), elev=30, azim=60,
+        segment_colors=seg_colors_3,
     )
 
-    print("\n[5/7] Experiment 2: Path within single basin (no crossing)...")
-    rng_exp2 = np.random.default_rng(cfg.path.seed + 1000)
-    path2 = generate_path_no_loop(
-        center=min1,
-        n_steps=cfg.path.n_steps,
-        rng=rng_exp2,
-        spread=cfg.path.basin_radius,
-    )
-    cycles2, G2 = run_dm_analysis(path2, cfg.dm, str(output_dir), "experiment_2_basin")
-    results['exp2'] = {
-        'path': path2,
-        'cycles': cycles2,
-        'graph': G2,
-        'title': 'Exp 2: Single Basin Path\n(Expects No Cycle)',
-    }
-    plot_individual_experiment(
-        X, Y, Z, path2, cycles2, critical_points,
-        "Experiment 2: Basin Path",
-        cfg.visualization,
-        str(output_dir / "exp2_basin.png"),
-    )
-
-    print("\n[6/7] Experiment 3: Combined paths (same seeds as Exp 1 & 2)...")
-    rng_exp3_crossing = np.random.default_rng(cfg.path.seed)
-    rng_exp3_basin = np.random.default_rng(cfg.path.seed + 1000)
-
-    path3_crossing = generate_path_crossing(
-        min1=min1,
-        min2=min2,
-        n_steps=cfg.path.n_steps,
-        noise_std=cfg.path.noise_std,
-        rng=rng_exp3_crossing,
-    )
-    path3_basin = generate_path_no_loop(
-        center=min1,
-        n_steps=cfg.path.n_steps,
-        rng=rng_exp3_basin,
-        spread=cfg.path.basin_radius,
-    )
-
-    path3_combined = np.vstack([path3_crossing, path3_basin])
-
-    cycles3, G3 = run_dm_analysis(path3_combined, cfg.dm, str(output_dir), "experiment_3_combined")
-    results['exp3'] = {
-        'path': path3_combined,
-        'cycles': cycles3,
-        'graph': G3,
-        'title': 'Exp 3: Combined Paths\n(Crossing + Basin)',
-    }
-    plot_individual_experiment(
-        X, Y, Z, path3_combined, cycles3, critical_points,
-        "Experiment 3: Combined Paths",
-        cfg.visualization,
-        str(output_dir / "exp3_combined.png"),
-    )
-
-    print("\n[7/7] Creating summary figure...")
-    plot_experiment_summary(
-        X, Y, Z, results, critical_points,
-        cfg.visualization,
-        str(output_dir / "saddle_dm_summary.png"),
-    )
+    # --- Summary ---
+    print("\nCreating summary figure...")
+    plot_summary(experiments, cfg.visualization, str(output_dir / "saddle_dm_summary.png"))
 
     print("\n" + "=" * 70)
     print("Results Summary")
     print("=" * 70)
-    print(f"  Experiment 1 (Crossing):  {len(cycles1)} cycles detected")
-    if cycles1:
-        print(f"    -> Longest cycle: {len(cycles1[0])} vertices")
-    print(f"  Experiment 2 (Basin):     {len(cycles2)} cycles detected")
-    if cycles2:
-        print(f"    -> Longest cycle: {len(cycles2[0])} vertices")
-    else:
-        print(f"    -> No cycle (as expected)")
-    print(f"  Experiment 3 (Combined):  {len(cycles3)} cycles detected")
-    if cycles3:
-        print(f"    -> Longest cycle: {len(cycles3[0])} vertices")
+    for exp in experiments:
+        n_cyc = len(exp['cycles'])
+        n_pth = len(exp['dm_paths'])
+        label = exp['title']
+        parts = []
+        if n_cyc > 0:
+            parts.append(f"CYCLE ({len(exp['cycles'][0])} pts)")
+        if n_pth > 0:
+            parts.append(f"PATH (ec={exp['ec']}, {n_pth} disjoint)")
+        if not parts:
+            parts.append("nothing found")
+        print(f"  {label}: {', '.join(parts)}")
 
-    print(f"\nOutput saved to: {output_dir}")
+    print(f"\nOutput: {output_dir}")
     print("=" * 70)
 
 

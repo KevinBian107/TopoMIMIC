@@ -121,7 +121,3 @@ python3 -m walker_generation configs/walker_generation/path_sequence.yaml
 ```
 
 See [walker_generation.md](walker_generation.md) for full documentation.
-
----
-
-*Document generated for TopoVNL demo documentation.*
