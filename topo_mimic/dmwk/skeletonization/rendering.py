@@ -44,6 +44,7 @@ def render_grid_clusters_side_by_side(
     selected_clusters: list[int] | None = None,
     cluster_labels: dict[int, str] | None = None,
     cluster_clip_ids: dict[int, list[int]] | None = None,
+    tile_labels: dict[tuple[int, int], str] | None = None,
 ) -> None:
     """
     Render cluster samples in a grid layout.
@@ -64,6 +65,7 @@ def render_grid_clusters_side_by_side(
         selected_clusters: Specific clusters to render
         cluster_labels: Dict mapping cluster_id to label string
         cluster_clip_ids: Dict mapping cluster_id to list of clip_ids for each sample
+        tile_labels: Dict mapping (cluster_id, col) to per-cell label string (overrides default)
     """
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
@@ -157,11 +159,14 @@ def render_grid_clusters_side_by_side(
                 fr = seq[t % len(seq)]
                 img = Image.fromarray(_ensure_rgb_uint8(fr)).resize((Wc, Hc))
                 if per_tile_labels:
-                    clip_id = clip_ids[col] if col < len(clip_ids) else None
-                    if clip_id is not None:
-                        label_text = f"{cname} (clip {clip_id})"
+                    if tile_labels and (cid, col) in tile_labels:
+                        label_text = tile_labels[(cid, col)]
                     else:
-                        label_text = f"{cname} · Sample {col+1}"
+                        clip_id = clip_ids[col] if col < len(clip_ids) else None
+                        if clip_id is not None:
+                            label_text = f"{cname} (clip {clip_id})"
+                        else:
+                            label_text = f"{cname} · Sample {col+1}"
                     draw_centered(draw, label_text, x + cell_w//2, y + label_h//2, font_label)
                 canvas.paste(img, (x, y + label_h))
         writer.send(np.asarray(canvas, dtype=np.uint8))

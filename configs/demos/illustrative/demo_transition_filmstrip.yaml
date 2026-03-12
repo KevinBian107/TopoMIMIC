@@ -1,16 +1,19 @@
+dataset: rodent
 output_dir: "outputs/transition_filmstrip"
 behavior_labels_csv: "behavior_labels.csv"
+output_format: pdf
 data:
-  rodent_rollout_dir: "data/rodent_ar.h5"
+  rollout_path: "data/rodent_ar.h5"
   xml_path: "topo_mimic/dmwk/xml/rodent.xml"
 filmstrip:
   n_poses: 5
-  camera_elevation: -55
-  camera_distance_margin: 2.5
-  render_height: 480
-  render_width: 640
-grid_columns: 5
+  camera_elevation: -40
+  camera_distance_margin: 2.0
+  render_height: 720
+  render_width: 960
+grid_columns: 4
 examples_per_type: 1
 short_threshold: 10
 max_gap: 10
 min_transition_frames: 20
+max_context_frames: 120

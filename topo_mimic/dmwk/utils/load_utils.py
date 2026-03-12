@@ -74,10 +74,12 @@ def load_rollout_from_source(
     if is_consolidated_format(source_path):
         if use_cache:
             f = _get_consolidated_file(source_path)
-            return {'qpos': np.array(f['qpos_rollout'][clip_idx])}
+            key = 'qpos_rollout' if 'qpos_rollout' in f else 'qpos'
+            return {'qpos': np.array(f[key][clip_idx])}
         else:
             with h5py.File(source_path, 'r') as f:
-                return {'qpos': np.array(f['qpos_rollout'][clip_idx])}
+                key = 'qpos_rollout' if 'qpos_rollout' in f else 'qpos'
+                return {'qpos': np.array(f[key][clip_idx])}
     else:
         with h5py.File(f"{source_path}/clip_{clip_idx}.h5", 'r') as hf:
             return load_from_h5py(hf)
@@ -228,28 +230,31 @@ def subsample_data(
     return X[indices]
 
 
-TOTAL_CLIPS = 842
-TEST_SIZE = 200
-
-
-def get_clip_indices(split: str, n_clips: int | None = None) -> list[int]:
+def get_clip_indices(
+    split: str,
+    n_clips: int | None = None,
+    total_clips: int = 842,
+    test_size: int = 200,
+) -> list[int]:
     """
     Get clip indices for a given split.
 
     Args:
         split: One of "train", "test", or "all"
         n_clips: Optional limit on number of clips to return (from start of split)
+        total_clips: Total number of clips in the dataset
+        test_size: Number of clips reserved for the test split
 
     Returns:
         List of clip indices for the specified split
     """
-    train_end = TOTAL_CLIPS - TEST_SIZE
+    train_end = total_clips - test_size
     if split == "train":
         indices = list(range(train_end))
     elif split == "test":
-        indices = list(range(train_end, TOTAL_CLIPS))
+        indices = list(range(train_end, total_clips))
     elif split == "all":
-        indices = list(range(TOTAL_CLIPS))
+        indices = list(range(total_clips))
     else:
         raise ValueError(f"Unknown split: {split}. Must be 'train', 'test', or 'all'")
 

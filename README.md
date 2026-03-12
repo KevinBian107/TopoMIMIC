@@ -23,8 +23,8 @@ These sub-trajectories are the learned manifold coordinates — they represent t
 
 For intuition of this work, read [this page](/docs/intuition.md).
 
-![Demo](figures/torus_dm_demo.gif)
-> Demonstration of discrete Morse traversal (cycle) on a torus.
+![Demo](figures/dmpc_demo.gif)
+> Demonstration of discrete Morse cycles and path in an inverse density space.
 
 ## Environment Instantiation
 We setup this repository similar to the [Mimic-mjx package](https://github.com/talmolab/track-mjx). All the `jax` dependency should be following the ones that is specified in `Mimic-mjx`. Besides the `Mimic-mjx` environment, we also need the [Stac-mjx package](https://github.com/talmolab/stac-mjx) for benchmarking (`Stac-mjx` should be installed prior to installing from `requirements.txt`, `KPMS` requires an newer version of jax dependency, which mismatch with `Stac-mjx` but workable).
@@ -126,6 +126,27 @@ Generate variance heatmaps, cross-method comparison, and seed stability analysis
 python -m topo_mimic.benchmark.analysis.main configs/benchmark/analysis.yaml
 python -m topo_mimic.benchmark.generate_results_table
 ```
+
+## Walker Generation Pipeline
+To generate walker transition clips, you need the [track-mjx](https://github.com/talmolab/track-mjx) environment with the walker branch of [vnl-playground](https://github.com/talmolab/vnl-playground). Clone track-mjx, create the environment, install the walker-enabled vnl-playground, then run from the TopoVNL root:
+
+```bash
+# Clone and set up track-mjx environment
+git clone https://github.com/talmolab/track-mjx.git
+cd track-mjx
+uv venv
+source .venv/bin/activate
+uv pip install -e ".[cuda12]"
+
+# Install vnl-playground with walker task support (topo_walker branch)
+uv pip install --reinstall "vnl-playground @ git+https://github.com/talmolab/vnl-playground.git@scott_claude/topo_walker"
+
+# Return to TopoVNL and run the generation pipeline
+cd ..
+python -m walker_generation configs/walker_generation/path_sequence.yaml
+```
+
+The config specifies long-sequence generation parameters (clip length, number of transitions, behavior pools). See [docs/walker_generation.md](/docs/walker_generation.md) for full documentation.
 
 ## Incompressibility
 To verify the incompressibility statement:

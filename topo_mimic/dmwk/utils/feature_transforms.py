@@ -159,11 +159,16 @@ def apply_dm_key_transform(
     xml_path: str = "topo_mimic/dmwk/xml/rodent.xml",
     stac_data_path: str = "data/rodent_reference_clips.h5",
     render_output_dir: str | None = None,
+    dataset: str = "rodent",
 ) -> np.ndarray:
     if dm_key == "intention":
         return data
     elif dm_key == "qpos":
-        return strip_root_dims(data, skip_dims=7)
+        from topo_mimic.dmwk.utils.dataset_config import get_dataset_preset
+        preset = get_dataset_preset(dataset)
+        if preset.root_strip_dims == 0:
+            return data
+        return strip_root_dims(data, skip_dims=preset.root_strip_dims)
     elif dm_key == "ekp":
         return compute_egocentric_keypoints(data, xml_path, stac_data_path, render_output_dir)
     else:

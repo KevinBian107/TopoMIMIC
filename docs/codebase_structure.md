@@ -43,6 +43,11 @@ TopoVNL/
 │       ├── analysis/          # Result analysis & viz
 │       └── labeling/          # Automatic labeling
 │
+├── walker_generation/          # Config-driven walker clip generation
+│   ├── config.py              # Dataclasses + YAML loader
+│   ├── generate.py            # Core pipeline (schedule → rollout → extract)
+│   └── output.py              # Direct H5/CSV writer (TopoVNL format)
+│
 ├── PCD-Graph-Recon-DM/        # Discrete Morse C++ backend
 │   ├── dmpcd/                 # Python bindings
 │   │   ├── pcd/               # Point cloud DM methods
@@ -69,6 +74,7 @@ TopoVNL/
 ├── configs/                   # YAML configurations
 │   ├── dmwk/                  # DM pipeline + granularity configs
 │   ├── benchmark/             # Experiment configs
+│   ├── walker_generation/     # Walker clip generation configs
 │   └── scripts/               # Script configs
 │
 ├── data/                      # Input data (Mimic-MJX rollouts)
@@ -264,23 +270,46 @@ scripts/
 
 demos/
 │
-├── demo_torus.py                    # Torus DM demo
-├── demo_stationary.py               # Stationary behavior demo
-├── demo_behavior_overlap.py         # Behavior overlap demo
-├── demo_saddle.py                   # Saddle point demo
-├── demo_cycle_asymmetry.py          # Cycle asymmetry demo
-├── demo_transition_topology.py      # Transition topology (paths vs cycles)
-├── demo_theta_filmstrip.py          # Theta-graph filmstrip
-├── demo_transition_filmstrip.py     # Transition filmstrip
+├── illustrative/                    # Visual examples of TDA concepts
+│   ├── demo_torus.py
+│   ├── demo_saddle.py
+│   ├── demo_behavior_overlap.py
+│   └── demo_transition_filmstrip.py
 │
-└── incompressibility/
-    ├── __init__.py
-    ├── incompressibility.py         # Incompressibility verification
-    └── batch_incompressibility.py   # Batch incompressibility
+├── property/                        # Model/method property demos
+│   ├── demo_cycle_asymmetry.py
+│   ├── demo_transition_topology.py
+│   ├── demo_theta_filmstrip.py
+│   ├── demo_stationary.py
+│   ├── demo_rear_cycles.py
+│   └── incompressibility/
+│
+└── transition_demos/                # End-to-end transition analysis
+    ├── demo_walker_transitions_path.py
+    └── demo_rodent_transitions.py
 
 Figure 6: Script and demo organization. Scripts provide standalone
 utilities; demos provide illustrative examples.
 ```
+
+---
+
+## Walker Generation: walker_generation/
+
+Config-driven module for generating walker transition clips directly in TopoVNL format. Replaces the 3-step manual process (generate → extract → convert) with a single `python3 -m walker_generation <config.yaml>` invocation.
+
+```
+walker_generation/
+├── __init__.py          # Package init, exposes run_generation()
+├── __main__.py          # CLI entry point
+├── config.py            # GenerationConfig + YAML loader
+├── generate.py          # Core pipeline (schedule → rollout → extract)
+└── output.py            # Direct H5/CSV writer (TopoVNL format)
+```
+
+Key design: generates long-sequence clips with multiple behavior transitions per clip. Behavior modes are drawn from configurable source/target pools. All clips are batched through Step 2 extraction in a single pass.
+
+See `docs/walker_generation.md` for full documentation.
 
 ---
 
@@ -301,6 +330,9 @@ configs/
 │   ├── experiment.yaml             # Method comparison
 │   ├── analysis.yaml               # Analysis settings
 │   └── labeling.yaml               # Labeling settings
+│
+├── walker_generation/
+│   └── default.yaml             # Walker transition clip generation
 │
 └── scripts/
     ├── render_cycle.yaml
