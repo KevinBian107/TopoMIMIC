@@ -28,3 +28,15 @@ rendering:
   max_samples: 5
   framerate: 30
   target_size: [640, 480]
+
+skeleton_analysis:
+  enabled: true
+  n_minima: 8
+  k_paths: 1
+  umap_n_neighbors: 15
+  umap_min_dist: 0.1
+  render_minima: true
+  minima_n_frames: 5
+  minima_frame_radius: 10
+  frechet_enabled: true
+  target_size: [640, 480]

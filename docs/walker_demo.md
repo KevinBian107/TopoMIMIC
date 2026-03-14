@@ -2,6 +2,12 @@
 
 The skeleton analysis extracts a **behavioral state machine** from DM (Discrete Morse) graph output. It identifies stable behavioral modes as graph minima, connects them via topological paths, and visualizes the result against dimensionality-reduced projections and MuJoCo-rendered pose sequences.
 
+## Core Claim: Behavioral Basis Discovery
+
+The skeleton analysis demonstrates that DM minima form a **basis for the behavioral latent space**. Each minimum corresponds to a distinct, stable behavioral mode (walk, hop, tiptoe, etc.), and the DM paths between minima trace transition corridors through the manifold. The key insight is that the full space of observed behaviors can be understood as **linear combinations of these basis behaviors** — interpolations and transitions between the stable modes that the minima identify.
+
+When purity = 1.0, every minimum maps to a unique behavior, meaning DM has recovered a subspace that spans the original behavioral space. The paths between minima then describe how the agent moves between these basis states, recovering the behavioral state machine without any supervision. This is what DM uniquely provides over standard clustering: not just "which behaviors exist" but "how do they relate to each other geometrically."
+
 This document traces the exact algorithmic pipeline, from raw intention features to the final combined figure.
 
 ## Pipeline Overview
@@ -141,6 +147,10 @@ The Fréchet distance measures how well the DM path captures the geometric shape
 ![Skeleton analysis for Clip 1 (purity=1.00)](../figures/walker_skeleton_sample.png)
 
 Clip 1 with 4 behaviors (hop, tiptoe, walk_backward, walk_slow). Left column: PCA/UMAP/t-SNE with skeleton overlay — each star is a DM minimum landing in a distinct behavior cluster, connected by grey dotted DM paths. Right column: top section shows MuJoCo-rendered neighborhoods around each minimum (rows M0–M3), bottom section shows rendered frames along each DM path between minima pairs (M0→M1, M0→M2, etc.). Purity = 1.00 indicates all 4 minima map to distinct behaviors.
+
+![Skeleton analysis for Rodent Clip 647 (purity=1.00)](../figures/rodent_skeleton_sample.png)
+
+Rodent clip 647 with 4 behaviors (Immobility, Left Turn, Supported Rear, Walking). The same skeleton analysis generalizes to the rodent domain — DM recovers 4 behavior-diverse minima at purity 1.00. Note that Left Turn and Right Turn are treated as distinct behaviors (no merging). The rodent renders use the `close_profile` camera. Path rows (M0→M1, M0→M2, etc.) show the DM transition corridors between behavioral modes.
 
 ## Step 5: Combined Visualization
 
