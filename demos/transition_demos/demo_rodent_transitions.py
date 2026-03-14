@@ -66,6 +66,20 @@ class DMPipelineConfig:
 
 
 @dataclass
+class SkeletonAnalysisConfig:
+    enabled: bool = False
+    n_minima: int = 8
+    k_paths: int = 1
+    umap_n_neighbors: int = 15
+    umap_min_dist: float = 0.1
+    render_minima: bool = True
+    minima_n_frames: int = 5
+    minima_frame_radius: int = 10
+    frechet_enabled: bool = True
+    target_size: tuple[int, int] = (640, 480)
+
+
+@dataclass
 class Config:
     dataset: str = "rodent"
     data_path: str = "data/rodent_ar.h5"
@@ -80,6 +94,7 @@ class Config:
     bootstrap_n: int = 1200
     rendering: RenderingConfig = field(default_factory=RenderingConfig)
     dm_pipeline: DMPipelineConfig = field(default_factory=DMPipelineConfig)
+    skeleton_analysis: SkeletonAnalysisConfig = field(default_factory=SkeletonAnalysisConfig)
 
 
 def load_config(config_path: str) -> Config:
@@ -102,7 +117,12 @@ def load_config(config_path: str) -> Config:
     )
     cfg.pop("slide_stride", None)
 
-    return Config(**cfg, rendering=rend_cfg, dm_pipeline=dm_cfg)
+    sk_dict = cfg.pop("skeleton_analysis", {})
+    if "target_size" in sk_dict:
+        sk_dict["target_size"] = tuple(sk_dict["target_size"])
+    sk_cfg = SkeletonAnalysisConfig(**sk_dict)
+
+    return Config(**cfg, rendering=rend_cfg, dm_pipeline=dm_cfg, skeleton_analysis=sk_cfg)
 
 
 NATURE_PALETTE = [
@@ -586,6 +606,588 @@ def _label_dm_segments(
     return labeled
 
 
+# --- Skeleton analysis ---
+
+
+@dataclass
+class SkeletonResult:
+    minima_orig: list[int]
+    minima_behaviors: list[str]
+    paths: list[np.ndarray]
+    path_pair_labels: list[tuple[int, int]]
+    purity: float
+
+
+def discrete_frechet_distance(P: np.ndarray, Q: np.ndarray) -> float:
+    n, m = len(P), len(Q)
+    ca = np.full((n, m), -1.0)
+    ca[0, 0] = np.linalg.norm(P[0] - Q[0])
+    for i in range(1, n):
+        ca[i, 0] = max(ca[i - 1, 0], np.linalg.norm(P[i] - Q[0]))
+    for j in range(1, m):
+        ca[0, j] = max(ca[0, j - 1], np.linalg.norm(P[0] - Q[j]))
+    for i in range(1, n):
+        for j in range(1, m):
+            ca[i, j] = max(
+                min(ca[i - 1, j], ca[i, j - 1], ca[i - 1, j - 1]),
+                np.linalg.norm(P[i] - Q[j]),
+            )
+    return float(ca[n - 1, m - 1])
+
+
+def _find_all_persistent_minima(
+    output_dir: str,
+    top_k: int = 10,
+    min_persistence: float = 0.0,
+) -> list[int]:
+    from topo_mimic.dmwk.skeletonization.dm_path import (
+        _parse_persistence_pairs,
+        _parse_sorted_weights,
+    )
+    pairs = _parse_persistence_pairs(output_dir)
+    weights = _parse_sorted_weights(output_dir)
+
+    type0_pairs = [(v0, v1, pers) for v0, v1, t, pers in pairs if t == 0]
+    type0_pairs.sort(key=lambda x: abs(x[2]), reverse=True)
+
+    seen = set()
+    minima = []
+    for v0, v1, pers in type0_pairs:
+        if abs(pers) < min_persistence:
+            break
+        w0 = weights.get(v0, float("inf"))
+        w1 = weights.get(v1, float("inf"))
+        min_v = v0 if w0 < w1 else v1
+        if min_v not in seen:
+            minima.append(min_v)
+            seen.add(min_v)
+        if len(minima) >= top_k:
+            break
+    return minima
+
+
+def _build_frame_labels_rodent(
+    clip_id: int,
+    clip_length: int,
+    clip_behaviors: dict[int, dict[int, set[str]]],
+) -> np.ndarray:
+    labels = np.full(clip_length, "transition", dtype=object)
+    frame_map = clip_behaviors.get(clip_id, {})
+    for frame, behaviors in frame_map.items():
+        if frame < clip_length and behaviors:
+            labels[frame] = sorted(behaviors)[0]
+    return labels
+
+
+def extract_skeleton_for_clip(
+    G_sm: "nx.Graph",
+    clip_dir: str,
+    data_clip: np.ndarray,
+    frame_labels: np.ndarray,
+    config: SkeletonAnalysisConfig,
+    n_takens: int,
+    n_minima_override: int | None = None,
+) -> SkeletonResult | None:
+    from topo_mimic.dmwk.skeletonization.remap import (
+        parse_swr_remap,
+        remap_cycle_to_original,
+    )
+    from itertools import combinations
+    import networkx as nx
+
+    remap = parse_swr_remap(clip_dir)
+    n_desired = n_minima_override if n_minima_override is not None else config.n_minima
+    candidate_pool = _find_all_persistent_minima(clip_dir, top_k=max(n_desired * 5, 30))
+    candidate_pool = [m for m in candidate_pool if m in G_sm]
+
+    if len(candidate_pool) < 2:
+        return None
+
+    candidate_orig = []
+    candidate_behaviors = []
+    for m in candidate_pool:
+        orig_frames = remap_cycle_to_original([m], remap, n_takens)
+        orig_idx = orig_frames[0] if orig_frames else 0
+        orig_idx = min(orig_idx, len(frame_labels) - 1)
+        candidate_orig.append(orig_idx)
+        candidate_behaviors.append(str(frame_labels[orig_idx]))
+
+    seen_behaviors: set[str] = set()
+    selected_indices: list[int] = []
+    for idx, beh in enumerate(candidate_behaviors):
+        if beh != "transition" and beh not in seen_behaviors:
+            seen_behaviors.add(beh)
+            selected_indices.append(idx)
+    for idx, beh in enumerate(candidate_behaviors):
+        if idx not in selected_indices and len(selected_indices) < n_desired:
+            selected_indices.append(idx)
+    selected_indices = selected_indices[:n_desired]
+
+    graph_minima = [candidate_pool[i] for i in selected_indices]
+    minima_orig = [candidate_orig[i] for i in selected_indices]
+    minima_behaviors = [candidate_behaviors[i] for i in selected_indices]
+
+    if len(graph_minima) < 2:
+        return None
+
+    paths: list[np.ndarray] = []
+    path_pair_labels: list[tuple[int, int]] = []
+
+    for i, j in combinations(range(len(graph_minima)), 2):
+        m_a, m_b = graph_minima[i], graph_minima[j]
+        try:
+            raw_paths = list(nx.edge_disjoint_paths(G_sm, m_a, m_b))
+        except (nx.NetworkXError, nx.NetworkXNoPath, nx.NetworkXUnfeasible):
+            continue
+
+        for k, p in enumerate(raw_paths[:config.k_paths]):
+            remapped = remap_cycle_to_original(p, remap, n_takens)
+            if len(remapped) >= 3:
+                paths.append(np.array(remapped, dtype=int))
+                path_pair_labels.append((i, j))
+
+    unique_behaviors = set(minima_behaviors)
+    unique_behaviors.discard("transition")
+    purity = len(unique_behaviors) / max(len(graph_minima), 1)
+
+    return SkeletonResult(
+        minima_orig=minima_orig,
+        minima_behaviors=minima_behaviors,
+        paths=paths,
+        path_pair_labels=path_pair_labels,
+        purity=purity,
+    )
+
+
+_SKEL_PALETTE_FLOAT = [
+    (r / 255, g / 255, b / 255)
+    for r, g, b in [
+        (31, 119, 180), (255, 127, 14), (44, 160, 44), (214, 39, 40),
+        (148, 103, 189), (140, 86, 75), (227, 119, 194), (127, 127, 127),
+        (188, 189, 34), (23, 190, 207), (174, 199, 232), (255, 187, 120),
+    ]
+]
+
+
+def _overlay_skeleton_on_ax(
+    ax,
+    coords: np.ndarray,
+    frame_labels: np.ndarray,
+    skeleton: SkeletonResult,
+    color_map: dict,
+    title: str,
+) -> None:
+    colors = [color_map.get(str(l), (0.5, 0.5, 0.5, 1.0)) for l in frame_labels]
+    ax.scatter(
+        coords[:, 0], coords[:, 1],
+        c=colors, s=2, alpha=0.3, edgecolors="none", rasterized=True,
+    )
+
+    for path_frames, (pi, pj) in zip(skeleton.paths, skeleton.path_pair_labels):
+        valid = path_frames[path_frames < len(coords)]
+        if len(valid) < 2:
+            continue
+        path_coords = coords[valid]
+        ax.plot(
+            path_coords[:, 0], path_coords[:, 1],
+            color=(0.5, 0.5, 0.5), linestyle=":", linewidth=1.0, alpha=0.6, zorder=3,
+        )
+
+    for k, (orig_idx, beh) in enumerate(
+        zip(skeleton.minima_orig, skeleton.minima_behaviors)
+    ):
+        if orig_idx < len(coords):
+            ax.scatter(
+                coords[orig_idx, 0], coords[orig_idx, 1],
+                marker="*", s=120, c=[color_map.get(beh, (0.2, 0.2, 0.2, 1.0))],
+                edgecolors="black", linewidths=0.5, zorder=5,
+            )
+            ax.annotate(
+                f"M{k}:{beh}", (coords[orig_idx, 0], coords[orig_idx, 1]),
+                fontsize=5, ha="left", va="bottom",
+                xytext=(3, 3), textcoords="offset points",
+            )
+
+    ax.set_title(title, fontsize=7)
+
+
+def _build_skel_color_map(labels: list[str]) -> dict[str, tuple]:
+    unique = sorted(set(l for l in labels if l != "transition"))
+    cmap = {label: _SKEL_PALETTE_FLOAT[i % len(_SKEL_PALETTE_FLOAT)] for i, label in enumerate(unique)}
+    cmap["transition"] = (0.7, 0.7, 0.7, 1.0)
+    return cmap
+
+
+def _render_minima_grid_image(
+    skeleton: SkeletonResult,
+    qpos_clip: np.ndarray,
+    xml_path: str,
+    config: SkeletonAnalysisConfig,
+) -> np.ndarray:
+    import mujoco
+
+    n_minima = len(skeleton.minima_orig)
+    n_cols = config.minima_n_frames
+    radius = config.minima_frame_radius
+    w, h = config.target_size
+
+    mj_model = mujoco.MjModel.from_xml_path(xml_path)
+    mj_data = mujoco.MjData(mj_model)
+    renderer = mujoco.Renderer(mj_model, height=h, width=w)
+
+    grid_img = np.zeros((n_minima * h, n_cols * w, 3), dtype=np.uint8)
+
+    for row, (orig_idx, beh) in enumerate(
+        zip(skeleton.minima_orig, skeleton.minima_behaviors)
+    ):
+        start = max(0, orig_idx - radius)
+        end = min(len(qpos_clip), orig_idx + radius + 1)
+        neighborhood = list(range(start, end))
+        if len(neighborhood) < n_cols:
+            sample_frames = neighborhood
+        else:
+            step = max(1, len(neighborhood) // n_cols)
+            sample_frames = neighborhood[::step][:n_cols]
+
+        for col, fi in enumerate(sample_frames):
+            if fi >= len(qpos_clip):
+                continue
+            mj_data.qpos[:] = qpos_clip[fi]
+            mujoco.mj_forward(mj_model, mj_data)
+            renderer.update_scene(mj_data, camera="close_profile")
+            frame = renderer.render().copy()
+            grid_img[row * h:(row + 1) * h, col * w:(col + 1) * w] = frame
+
+    renderer.close()
+    return grid_img
+
+
+def _render_paths_grid_image(
+    skeleton: SkeletonResult,
+    qpos_clip: np.ndarray,
+    xml_path: str,
+    config: SkeletonAnalysisConfig,
+) -> np.ndarray | None:
+    import mujoco
+
+    if not skeleton.paths:
+        return None
+
+    n_paths = len(skeleton.paths)
+    n_cols = config.minima_n_frames
+    w, h = config.target_size
+
+    mj_model = mujoco.MjModel.from_xml_path(xml_path)
+    mj_data = mujoco.MjData(mj_model)
+    renderer = mujoco.Renderer(mj_model, height=h, width=w)
+
+    grid_img = np.zeros((n_paths * h, n_cols * w, 3), dtype=np.uint8)
+
+    for row, path_frames in enumerate(skeleton.paths):
+        valid = path_frames[path_frames < len(qpos_clip)]
+        if len(valid) == 0:
+            continue
+        if len(valid) <= n_cols:
+            sample_frames = list(valid)
+        else:
+            step = max(1, len(valid) // n_cols)
+            sample_frames = list(valid[::step][:n_cols])
+
+        for col, fi in enumerate(sample_frames):
+            mj_data.qpos[:] = qpos_clip[int(fi)]
+            mujoco.mj_forward(mj_model, mj_data)
+            renderer.update_scene(mj_data, camera="close_profile")
+            frame = renderer.render().copy()
+            grid_img[row * h:(row + 1) * h, col * w:(col + 1) * w] = frame
+
+    renderer.close()
+    return grid_img
+
+
+def plot_skeleton_combined(
+    data_clip: np.ndarray,
+    frame_labels: np.ndarray,
+    skeleton: SkeletonResult,
+    config: SkeletonAnalysisConfig,
+    output_path: str,
+    clip_id: int,
+    qpos_clip: np.ndarray | None = None,
+    xml_path: str | None = None,
+) -> np.ndarray:
+    from umap import UMAP
+    from sklearn.decomposition import PCA
+    from sklearn.manifold import TSNE
+
+    labels_list = list(frame_labels)
+    color_map = _build_skel_color_map(labels_list)
+    n_points = data_clip.shape[0]
+
+    pca = PCA(n_components=2)
+    pca_coords = pca.fit_transform(data_clip)
+
+    pca_pre = PCA(n_components=min(50, data_clip.shape[1]))
+    feats_pca = pca_pre.fit_transform(data_clip)
+
+    umap_obj = UMAP(
+        n_components=2,
+        n_neighbors=config.umap_n_neighbors,
+        min_dist=config.umap_min_dist,
+        random_state=42,
+    )
+    umap_coords = umap_obj.fit_transform(feats_pca)
+
+    perp = min(30, n_points - 1)
+    tsne_coords = TSNE(n_components=2, random_state=42, perplexity=perp).fit_transform(feats_pca)
+
+    has_render = (
+        config.render_minima
+        and qpos_clip is not None
+        and xml_path is not None
+    )
+
+    grid_img = None
+    paths_img = None
+    if has_render:
+        grid_img = _render_minima_grid_image(skeleton, qpos_clip, xml_path, config)
+        paths_img = _render_paths_grid_image(skeleton, qpos_clip, xml_path, config)
+
+    with plt.rc_context(_NATURE_RC):
+        if grid_img is not None:
+            n_minima = len(skeleton.minima_orig)
+            n_paths = len(skeleton.paths) if paths_img is not None else 0
+
+            if paths_img is not None:
+                stacked_img = np.vstack([grid_img, paths_img])
+            else:
+                stacked_img = grid_img
+
+            render_aspect = stacked_img.shape[1] / stacked_img.shape[0]
+            left_h = 12.0
+            right_h = left_h
+            right_w = right_h * render_aspect
+            left_w = left_h / 3.0
+
+            fig = plt.figure(figsize=(left_w + right_w + 0.5, left_h))
+            gs = fig.add_gridspec(
+                3, 2,
+                width_ratios=[left_w, right_w],
+                wspace=0.15, hspace=0.3,
+            )
+        else:
+            left_h = 12.0
+            fig = plt.figure(figsize=(5, left_h))
+            gs = fig.add_gridspec(3, 1, hspace=0.3)
+
+        embeddings = [
+            (pca_coords, f"PCA (var={pca.explained_variance_ratio_[:2].sum():.1%})"),
+            (umap_coords, "UMAP"),
+            (tsne_coords, "t-SNE"),
+        ]
+        for row, (coords, method_name) in enumerate(embeddings):
+            ax = fig.add_subplot(gs[row, 0])
+            _overlay_skeleton_on_ax(
+                ax, coords, frame_labels, skeleton, color_map, method_name,
+            )
+            ax.set_aspect("equal", adjustable="datalim")
+            if row == 0:
+                unique = sorted(set(str(l) for l in frame_labels if str(l) != "transition"))
+                if len(unique) <= 20:
+                    handles = [
+                        plt.Line2D([0], [0], marker="o", color="w",
+                                   markerfacecolor=color_map.get(l, (0.5, 0.5, 0.5, 1.0)),
+                                   markersize=4, label=l)
+                        for l in unique
+                    ]
+                    handles.append(plt.Line2D([0], [0], marker="*", color="w",
+                                              markerfacecolor="gray", markersize=8,
+                                              markeredgecolor="black", label="DM minimum"))
+                    ax.legend(handles=handles, fontsize=5, loc="best", frameon=False)
+
+        if grid_img is not None:
+            ax_render = fig.add_subplot(gs[:, 1])
+            ax_render.imshow(stacked_img)
+            ax_render.set_xticks([])
+
+            _, h_px = config.target_size
+            ytick_positions = []
+            ytick_labels_list = []
+            for row in range(n_minima):
+                ytick_positions.append((row + 0.5) * h_px)
+                ytick_labels_list.append(
+                    f"M{row}: {skeleton.minima_behaviors[row]} (f{skeleton.minima_orig[row]})"
+                )
+            for row, (pi, pj) in enumerate(skeleton.path_pair_labels):
+                ytick_positions.append((n_minima + row + 0.5) * h_px)
+                ytick_labels_list.append(f"M{pi}\u2192M{pj}")
+
+            ax_render.set_yticks(ytick_positions)
+            ax_render.set_yticklabels(ytick_labels_list, fontsize=6)
+
+            separator_y = n_minima * h_px - 0.5
+            ax_render.axhline(separator_y, color="white", linewidth=2)
+            ax_render.set_title("Minima Neighborhoods  |  Paths", fontsize=7)
+
+        fig.suptitle(
+            f"Clip {clip_id} \u2014 DM Skeleton (purity={skeleton.purity:.2f})",
+            fontsize=9, fontweight="bold",
+        )
+
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        fig.savefig(output_path, facecolor="white")
+        plt.close(fig)
+
+    print(f"  Saved skeleton combined: {output_path}")
+    return umap_coords
+
+
+def plot_path_geometry(
+    data_clip: np.ndarray,
+    skeleton: SkeletonResult,
+    umap_coords: np.ndarray,
+    output_path: str,
+    clip_id: int,
+) -> None:
+    n_paths = len(skeleton.paths)
+    if n_paths == 0:
+        return
+
+    n_plot = min(n_paths, 6)
+    with plt.rc_context(_NATURE_RC):
+        fig, axes = plt.subplots(1, n_plot + 1, figsize=(3 * (n_plot + 1), 3))
+        if n_plot + 1 == 1:
+            axes = [axes]
+
+        frechet_dm = []
+        frechet_baseline = []
+        path_labels = []
+
+        for pidx in range(n_plot):
+            path_frames = skeleton.paths[pidx]
+            pi, pj = skeleton.path_pair_labels[pidx]
+            valid = path_frames[path_frames < len(umap_coords)]
+            if len(valid) < 2:
+                frechet_dm.append(0)
+                frechet_baseline.append(0)
+                path_labels.append(f"M{pi}-M{pj}")
+                continue
+
+            dm_path_umap = umap_coords[valid]
+
+            temporal_order = np.argsort(valid)
+            temporal_umap = umap_coords[valid[temporal_order]]
+
+            m_i_umap = umap_coords[skeleton.minima_orig[pi]]
+            m_j_umap = umap_coords[skeleton.minima_orig[pj]]
+            t_interp = np.linspace(0, 1, len(valid))[:, None]
+            baseline_umap = m_i_umap[None, :] + t_interp * (m_j_umap - m_i_umap)[None, :]
+
+            fd_dm = discrete_frechet_distance(dm_path_umap, temporal_umap)
+            fd_bl = discrete_frechet_distance(baseline_umap, temporal_umap)
+            frechet_dm.append(fd_dm)
+            frechet_baseline.append(fd_bl)
+            path_labels.append(f"M{pi}-M{pj}")
+
+            ax = axes[pidx]
+            ax.plot(dm_path_umap[:, 0], dm_path_umap[:, 1],
+                    "b-", linewidth=1.2, alpha=0.8, label="DM path")
+            ax.plot(temporal_umap[:, 0], temporal_umap[:, 1],
+                    "r--", linewidth=1.0, alpha=0.6, label="Temporal")
+            ax.plot(baseline_umap[:, 0], baseline_umap[:, 1],
+                    "k:", linewidth=0.8, alpha=0.4, label="Straight")
+            ax.scatter([m_i_umap[0], m_j_umap[0]], [m_i_umap[1], m_j_umap[1]],
+                       marker="*", s=80, c="gold", edgecolors="black", zorder=5)
+            ax.set_title(f"M{pi}\u2192M{pj}\nFD={fd_dm:.2f} vs BL={fd_bl:.2f}", fontsize=6)
+            ax.legend(fontsize=4)
+
+        ax_bar = axes[n_plot]
+        x = np.arange(len(path_labels))
+        width = 0.35
+        ax_bar.bar(x - width / 2, frechet_dm, width, label="DM path", color="steelblue")
+        ax_bar.bar(x + width / 2, frechet_baseline, width, label="Straight line", color="gray")
+        ax_bar.set_xticks(x)
+        ax_bar.set_xticklabels(path_labels, rotation=45, fontsize=5)
+        ax_bar.set_ylabel("Fr\u00e9chet distance")
+        ax_bar.set_title("DM path vs baseline", fontsize=7)
+        ax_bar.legend(fontsize=5)
+
+        fig.suptitle(f"Clip {clip_id} \u2014 Path Geometry Comparison", fontsize=9, fontweight="bold")
+        fig.tight_layout()
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        fig.savefig(output_path, facecolor="white")
+        plt.close(fig)
+
+    print(f"  Saved path geometry: {output_path}")
+
+
+def run_skeleton_analysis(
+    data: np.ndarray,
+    clip_indices: list[int],
+    clip_behaviors: dict[int, dict[int, set[str]]],
+    all_G_sm: list,
+    config: Config,
+) -> None:
+    import networkx as nx
+
+    sk_cfg = config.skeleton_analysis
+    dm_output = os.path.join(config.output_dir, "dm")
+    out_dir = os.path.join(config.output_dir, "skeleton_analysis")
+    os.makedirs(out_dir, exist_ok=True)
+    clip_length = data.shape[1]
+
+    for local_idx, G_sm in enumerate(all_G_sm):
+        clip_id = clip_indices[local_idx]
+        clip_dir = os.path.join(dm_output, "clips", f"clip_{local_idx}")
+
+        feat_path = os.path.join(clip_dir, "features.txt")
+        if not os.path.exists(feat_path):
+            continue
+
+        with open(feat_path) as f:
+            n_takens = sum(1 for _ in f)
+
+        frame_labels = _build_frame_labels_rodent(clip_id, clip_length, clip_behaviors)
+        data_clip = data[local_idx]
+
+        n_behaviors = len(set(frame_labels) - {"transition"})
+        if n_behaviors < 2:
+            continue
+
+        skeleton = extract_skeleton_for_clip(
+            G_sm, clip_dir, data_clip, frame_labels, sk_cfg, n_takens,
+            n_minima_override=n_behaviors,
+        )
+        if skeleton is None:
+            print(f"  Clip {clip_id}: insufficient minima, skipping")
+            continue
+
+        print(f"  Clip {clip_id}: {len(skeleton.minima_orig)} minima, "
+              f"{len(skeleton.paths)} paths, purity={skeleton.purity:.2f}")
+
+        qpos_clip = None
+        if sk_cfg.render_minima:
+            try:
+                import h5py
+                with h5py.File(config.data_path, "r") as f:
+                    qpos_clip = f["qpos_rollout"][clip_id][:]
+            except Exception as e:
+                print(f"  WARNING: Could not load qpos for clip {clip_id}: {e}")
+
+        umap_coords = plot_skeleton_combined(
+            data_clip, frame_labels, skeleton, sk_cfg,
+            os.path.join(out_dir, f"clip_{clip_id}_skeleton.png"),
+            clip_id,
+            qpos_clip=qpos_clip,
+            xml_path=config.rendering.xml_path,
+        )
+
+        if sk_cfg.frechet_enabled:
+            plot_path_geometry(
+                data_clip, skeleton, umap_coords,
+                os.path.join(out_dir, f"clip_{clip_id}_path_geometry.png"),
+                clip_id,
+            )
+
+
 # --- Main demo ---
 
 
@@ -695,6 +1297,7 @@ def run_demo(config: Config) -> None:
         cycles_cache = os.path.join(dm_output, "all_cycle_dm.pkl")
         paths_cache = os.path.join(dm_output, "all_path_dm.pkl")
 
+        all_G_sm = None
         if os.path.exists(cycles_cache):
             import pickle as pkl
             print(f"Loading cached DM results from {dm_output}")
@@ -704,8 +1307,13 @@ def run_demo(config: Config) -> None:
             if os.path.exists(paths_cache):
                 with open(paths_cache, "rb") as f:
                     all_path_dm = pkl.load(f)
+            graphs_cache = os.path.join(dm_output, "all_G_sm.pkl")
+            if os.path.exists(graphs_cache):
+                with open(graphs_cache, "rb") as f:
+                    all_G_sm = pkl.load(f)
             print(f"Loaded {len(all_cycle_dm)} cycle sets"
-                  + (f", {len(all_path_dm)} path sets" if all_path_dm else ""))
+                  + (f", {len(all_path_dm)} path sets" if all_path_dm else "")
+                  + (f", {len(all_G_sm)} graphs" if all_G_sm else ""))
 
             diag_path = os.path.join(dm_output, "ami_fnn_diagnostics.pkl")
             if os.path.exists(diag_path):
@@ -739,6 +1347,21 @@ def run_demo(config: Config) -> None:
                 all_path_dm, test_indices, clip_behaviors, min_seg, takens_offset,
             )
             print(f"DM path raw segments with labels: {len(path_labeled)}")
+
+    # --- Skeleton analysis ---
+    if config.skeleton_analysis.enabled and all_G_sm is not None:
+        print("\n=== Skeleton Analysis ===")
+        try:
+            clip_behaviors_skel = load_behavior_segments_multilabel(
+                config.labels_csv, merge_rear=False,
+            )
+            run_skeleton_analysis(
+                data, test_indices, clip_behaviors_skel, all_G_sm, config,
+            )
+        except Exception as e:
+            print(f"WARNING: Skeleton analysis failed: {e}")
+            import traceback
+            traceback.print_exc()
 
     # --- Stage 3d: Bootstrap all groups to same target count ---
     print("\n=== Stage 3d: Bootstrap resampling ===")
