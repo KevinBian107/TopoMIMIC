@@ -114,7 +114,7 @@ class DemoConfig:
     dataset: str = "walker_long"
     data_path: str = "data/walker_long.h5"
     labels_csv: str = "walker_long_behavior_labels.csv"
-    output_dir: str = "outputs/walker_long_demo"
+    output_dir: str = "outputs/walker_transitions"
     visualization: VisualizationConfig = field(default_factory=VisualizationConfig)
     dm_pipeline: DemoDMConfig = field(default_factory=DemoDMConfig)
     rendering: DemoRenderingConfig = field(default_factory=DemoRenderingConfig)
@@ -156,7 +156,7 @@ def load_demo_config(config_path: str) -> DemoConfig:
         dataset=cfg.get("dataset", "walker_long"),
         data_path=cfg.get("data_path", "data/walker_long.h5"),
         labels_csv=cfg.get("labels_csv", "walker_long_behavior_labels.csv"),
-        output_dir=cfg.get("output_dir", "outputs/walker_long_demo"),
+        output_dir=cfg.get("output_dir", "outputs/walker_transitions"),
         visualization=vis_cfg,
         dm_pipeline=dm_cfg,
         rendering=rend_cfg,

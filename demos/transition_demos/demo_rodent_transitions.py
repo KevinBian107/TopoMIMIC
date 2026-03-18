@@ -77,6 +77,7 @@ class SkeletonAnalysisConfig:
     minima_frame_radius: int = 10
     frechet_enabled: bool = True
     target_size: tuple[int, int] = (640, 480)
+    max_clips: int = 10
 
 
 @dataclass
@@ -1133,8 +1134,11 @@ def run_skeleton_analysis(
     out_dir = os.path.join(config.output_dir, "skeleton_analysis")
     os.makedirs(out_dir, exist_ok=True)
     clip_length = data.shape[1]
+    clips_done = 0
 
     for local_idx, G_sm in enumerate(all_G_sm):
+        if clips_done >= sk_cfg.max_clips:
+            break
         clip_id = clip_indices[local_idx]
         clip_dir = os.path.join(dm_output, "clips", f"clip_{local_idx}")
 
@@ -1200,6 +1204,8 @@ def run_skeleton_analysis(
                 output_path=os.path.join(filmstrip_dir, f"clip_{clip_id}_filmstrip.pdf"),
                 clip_id=clip_id,
             )
+
+        clips_done += 1
 
 
 # --- Main demo ---

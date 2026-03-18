@@ -38,6 +38,7 @@ def _render_poses_individually(
     camera_lookat_fn,
     render_h: int = 720,
     render_w: int = 480,
+    fixed_crop: tuple[int, int, int, int] | None = None,
 ) -> list[tuple[np.ndarray, np.ndarray]]:
     from demos.property.demo_theta_filmstrip import _load_mujoco_model
     import mujoco
@@ -76,22 +77,25 @@ def _render_poses_individually(
         geom_ids = seg[:, :, 0].astype(np.int32)
         body_mask = (geom_ids >= 0) & (geom_ids != floor_id)
 
-        rows_with_body = np.any(body_mask, axis=1)
-        cols_with_body = np.any(body_mask, axis=0)
-        if not np.any(rows_with_body):
-            cropped_poses.append((
-                np.full((100, 60, 3), 255, dtype=np.uint8),
-                np.zeros((100, 60), dtype=bool),
-            ))
-            continue
+        if fixed_crop is not None:
+            r_min, r_max, c_min, c_max = fixed_crop
+        else:
+            rows_with_body = np.any(body_mask, axis=1)
+            cols_with_body = np.any(body_mask, axis=0)
+            if not np.any(rows_with_body):
+                cropped_poses.append((
+                    np.full((100, 60, 3), 255, dtype=np.uint8),
+                    np.zeros((100, 60), dtype=bool),
+                ))
+                continue
 
-        r_min, r_max = np.where(rows_with_body)[0][[0, -1]]
-        c_min, c_max = np.where(cols_with_body)[0][[0, -1]]
-        pad = 6
-        r_min = max(0, r_min - pad)
-        r_max = min(render_h - 1, r_max + pad)
-        c_min = max(0, c_min - pad)
-        c_max = min(render_w - 1, c_max + pad)
+            r_min, r_max = np.where(rows_with_body)[0][[0, -1]]
+            c_min, c_max = np.where(cols_with_body)[0][[0, -1]]
+            pad = 6
+            r_min = max(0, r_min - pad)
+            r_max = min(render_h - 1, r_max + pad)
+            c_min = max(0, c_min - pad)
+            c_max = min(render_w - 1, c_max + pad)
 
         cropped_poses.append((
             rgb[r_min:r_max + 1, c_min:c_max + 1],
@@ -103,38 +107,9 @@ def _render_poses_individually(
     return cropped_poses
 
 
-def _normalize_crop_size(
-    crop_rgb: np.ndarray,
-    crop_mask: np.ndarray,
-    target_h: int,
-    target_w: int,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Resize crop+mask to uniform target size, preserving aspect ratio, white-padded."""
-    oh, ow = crop_rgb.shape[:2]
-    scale = min(target_h / oh, target_w / ow)
-    nh, nw = int(oh * scale), int(ow * scale)
-    if nh < 1 or nw < 1:
-        return (np.full((target_h, target_w, 3), 255, dtype=np.uint8),
-                np.zeros((target_h, target_w), dtype=bool))
-
-    resized_rgb = np.array(Image.fromarray(crop_rgb).resize((nw, nh), Image.LANCZOS))
-    mask_img = Image.fromarray(crop_mask.astype(np.uint8) * 255).resize(
-        (nw, nh), Image.NEAREST)
-    resized_mask = np.array(mask_img) > 127
-
-    out_rgb = np.full((target_h, target_w, 3), 255, dtype=np.uint8)
-    out_mask = np.zeros((target_h, target_w), dtype=bool)
-    y_off = (target_h - nh) // 2
-    x_off = (target_w - nw) // 2
-    out_rgb[y_off:y_off + nh, x_off:x_off + nw] = resized_rgb
-    out_mask[y_off:y_off + nh, x_off:x_off + nw] = resized_mask
-    return out_rgb, out_mask
-
-
 def _tile_cropped_poses(
     cropped_poses: list[tuple[np.ndarray, np.ndarray]],
     gap_fraction: float = 0.3,
-    uniform_size: bool = True,
 ) -> np.ndarray:
     if not cropped_poses:
         return np.full((100, 100, 3), 255, dtype=np.uint8)
@@ -143,32 +118,24 @@ def _tile_cropped_poses(
     tint_start = np.array([0.68, 0.80, 0.88])
     tint_end = np.array([0.22, 0.38, 0.50])
 
-    if uniform_size:
-        target_h = max(c[0].shape[0] for c in cropped_poses)
-        median_w = int(np.median([c[0].shape[1] for c in cropped_poses]))
-        target_w = max(median_w, target_h // 2)
-        normalized = [_normalize_crop_size(rgb, mask, target_h, target_w)
-                      for rgb, mask in cropped_poses]
-    else:
-        max_h = max(c[0].shape[0] for c in cropped_poses)
-        normalized = []
-        for crop_rgb, crop_mask in cropped_poses:
-            h, w = crop_rgb.shape[:2]
-            if h < max_h:
-                pad_top = (max_h - h) // 2
-                pad_bot = max_h - h - pad_top
-                crop_rgb = np.pad(crop_rgb, ((pad_top, pad_bot), (0, 0), (0, 0)),
-                                  mode='constant', constant_values=255)
-                crop_mask = np.pad(crop_mask, ((pad_top, pad_bot), (0, 0)),
-                                   mode='constant', constant_values=False)
-            normalized.append((crop_rgb, crop_mask))
+    max_h = max(c[0].shape[0] for c in cropped_poses)
+    normalized = []
+    for crop_rgb, crop_mask in cropped_poses:
+        h, w = crop_rgb.shape[:2]
+        if h < max_h:
+            pad_top = (max_h - h) // 2
+            pad_bot = max_h - h - pad_top
+            crop_rgb = np.pad(crop_rgb, ((pad_top, pad_bot), (0, 0), (0, 0)),
+                              mode='constant', constant_values=255)
+            crop_mask = np.pad(crop_mask, ((pad_top, pad_bot), (0, 0)),
+                               mode='constant', constant_values=False)
+        normalized.append((crop_rgb, crop_mask))
 
-    tile_h = normalized[0][0].shape[0]
-    tile_w = normalized[0][0].shape[1]
-    gap = max(int(tile_w * gap_fraction), 2)
-    total_w = n_poses * tile_w + (n_poses - 1) * gap
+    avg_w = sum(c[0].shape[1] for c in normalized) // n_poses
+    gap = max(int(avg_w * gap_fraction), 2)
+    total_w = sum(c[0].shape[1] for c in normalized) + gap * (n_poses - 1)
 
-    composite = np.full((tile_h, total_w, 3), 255, dtype=np.uint8)
+    composite = np.full((max_h, total_w, 3), 255, dtype=np.uint8)
     x_cursor = 0
     for pose_i, (crop_rgb, crop_mask) in enumerate(normalized):
         h, w = crop_rgb.shape[:2]
@@ -193,13 +160,14 @@ def _tile_cropped_poses(
 def _get_camera_params(dataset: str):
     if dataset in ("walker", "walker_long"):
         fovy_rad = math.radians(45.0)
-        view_h = 2.0
-        dist = (view_h / 2.0) / math.tan(fovy_rad / 2.0) * 1.05
+        view_h = 2.4
+        dist = (view_h / 2.0) / math.tan(fovy_rad / 2.0) * 1.2
 
         def lookat_fn(qpos):
             return [qpos[1], 0.0, 0.65]
 
-        return -10.0, 90.0, dist, lookat_fn, 720, 400
+        fixed_crop = (80, 620, 80, 320)
+        return -10.0, 90.0, dist, lookat_fn, 720, 400, fixed_crop
     else:
         fovy_rad = math.radians(45.0)
         view_h = 0.35
@@ -208,7 +176,7 @@ def _get_camera_params(dataset: str):
         def lookat_fn(qpos):
             return [qpos[0], qpos[1], qpos[2] + 0.02]
 
-        return -35.0, 90.0, dist, lookat_fn, 800, 800
+        return -35.0, 90.0, dist, lookat_fn, 800, 800, None
 
 
 def render_filmstrip_for_frames(
@@ -225,16 +193,18 @@ def render_filmstrip_for_frames(
     if len(frame_indices) > n_poses:
         idx = np.linspace(0, len(frame_indices) - 1, n_poses).round().astype(int)
         frame_indices = [frame_indices[i] for i in idx]
+    frame_indices = frame_indices[:n_poses]
 
-    elev, azim, dist, lookat_fn, rh, rw = _get_camera_params(dataset)
+    elev, azim, dist, lookat_fn, rh, rw, fixed_crop = _get_camera_params(dataset)
 
     cropped = _render_poses_individually(
         qposes, frame_indices, xml_path,
         camera_elevation=elev, camera_azimuth=azim,
         camera_distance=dist, camera_lookat_fn=lookat_fn,
         render_h=rh, render_w=rw,
+        fixed_crop=fixed_crop,
     )
-    return _tile_cropped_poses(cropped, gap_fraction=gap_fraction, uniform_size=True)
+    return _tile_cropped_poses(cropped, gap_fraction=gap_fraction)
 
 
 def _resize_to_height(img: np.ndarray, h: int) -> np.ndarray:
@@ -253,6 +223,7 @@ def _overlay_skeleton_on_ax(
     skeleton,
     color_map: dict,
     title: str,
+    show_legend: bool = False,
 ) -> None:
     colors = [color_map.get(str(l), (0.5, 0.5, 0.5, 1.0)) for l in frame_labels]
     ax.scatter(
@@ -282,6 +253,21 @@ def _overlay_skeleton_on_ax(
 
     ax.set_title(title, fontsize=6, pad=2)
     ax.tick_params(axis="both", labelsize=4, length=1.5, pad=1)
+
+    if show_legend:
+        unique = sorted(set(str(l) for l in frame_labels if str(l) != "transition"))
+        handles = [
+            plt.Line2D([0], [0], marker="o", color="w",
+                        markerfacecolor=color_map.get(l, (0.5, 0.5, 0.5)),
+                        markersize=3, label=l)
+            for l in unique
+        ]
+        handles.append(plt.Line2D([0], [0], marker="*", color="w",
+                                   markerfacecolor="gray", markersize=5,
+                                   markeredgecolor="black", label="DM min"))
+        ax.legend(handles=handles, fontsize=3.5, loc="best",
+                  frameon=True, framealpha=0.8, edgecolor="none",
+                  handletextpad=0.2, borderpad=0.3)
 
 
 def plot_skeleton_filmstrip(
@@ -337,17 +323,17 @@ def plot_skeleton_filmstrip(
 
     n_cols = max(n_minima, 3)
     embed_h_ratio = 1.0
-    filmstrip_h_ratio = 0.45
-    label_h_ratio = 0.06
+    filmstrip_h_ratio = 0.4
+    label_h_ratio = 0.05
 
-    fig = plt.figure(figsize=(1.6 * n_cols, 1.6 * n_cols * 1.05))
+    fig = plt.figure(figsize=(1.6 * n_cols, 1.6 * n_cols * 0.85))
     fig.patch.set_facecolor("white")
 
     gs_main = gridspec.GridSpec(
         5, 1,
         height_ratios=[embed_h_ratio, label_h_ratio, filmstrip_h_ratio,
                        label_h_ratio, filmstrip_h_ratio],
-        hspace=0.18,
+        hspace=0.12,
         figure=fig,
     )
 
@@ -360,22 +346,27 @@ def plot_skeleton_filmstrip(
     ]
     for col, (coords, title) in enumerate(embeddings):
         ax = fig.add_subplot(gs_embed[0, col])
-        _overlay_skeleton_on_ax(ax, coords, frame_labels, skeleton, color_map, title)
+        _overlay_skeleton_on_ax(
+            ax, coords, frame_labels, skeleton, color_map, title,
+            show_legend=(col == 0),
+        )
         ax.set_aspect("equal", adjustable="datalim")
 
-    print(f"  Rendering {n_minima} minima filmstrips...")
+    n_poses = filmstrip_cfg.n_filmstrip_poses
+
+    print(f"  Rendering {n_minima} minima filmstrips ({n_poses} poses each)...")
     minima_strips = []
     for k, (orig_idx, beh) in enumerate(
         zip(skeleton.minima_orig, skeleton.minima_behaviors)
     ):
-        radius = filmstrip_cfg.n_filmstrip_poses * 5
+        radius = n_poses * 5
         start = max(0, orig_idx - radius)
         end = min(qpos_clip.shape[0], orig_idx + radius + 1)
         frames = list(range(start, end))
 
         strip = render_filmstrip_for_frames(
             qpos_clip, frames, xml_path, dataset,
-            n_poses=filmstrip_cfg.n_filmstrip_poses,
+            n_poses=n_poses,
             gap_fraction=filmstrip_cfg.gap_fraction,
         )
         minima_strips.append((strip, beh, k))
@@ -400,7 +391,7 @@ def plot_skeleton_filmstrip(
         ax.set_axis_off()
         ax.set_title(f"M{idx}: {beh}", fontsize=5, pad=2)
 
-    print(f"  Rendering {n_paths} transition filmstrips...")
+    print(f"  Rendering {n_paths} transition filmstrips ({n_poses} poses each)...")
     path_strips = []
     for pidx in range(n_paths):
         path_frames = skeleton.paths[pidx]
@@ -409,7 +400,7 @@ def plot_skeleton_filmstrip(
 
         strip = render_filmstrip_for_frames(
             qpos_clip, valid, xml_path, dataset,
-            n_poses=filmstrip_cfg.n_filmstrip_poses,
+            n_poses=n_poses,
             gap_fraction=filmstrip_cfg.gap_fraction,
         )
 
@@ -441,20 +432,8 @@ def plot_skeleton_filmstrip(
         ax = fig.add_subplot(gs_paths[0, pidx])
         ax.set_axis_off()
 
-    handles = [
-        plt.Line2D([0], [0], marker="o", color="w",
-                    markerfacecolor=color_map.get(l, (0.5, 0.5, 0.5)),
-                    markersize=4, label=l)
-        for l in unique
-    ]
-    handles.append(plt.Line2D([0], [0], marker="*", color="w",
-                               markerfacecolor="gray", markersize=6,
-                               markeredgecolor="black", label="DM minimum"))
-    fig.legend(handles=handles, fontsize=4, loc="upper right",
-               bbox_to_anchor=(0.99, 0.99), frameon=False, ncol=1)
-
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     fig.savefig(output_path, dpi=filmstrip_cfg.dpi, bbox_inches="tight",
-                facecolor="white", pad_inches=0.05)
+                facecolor="white", pad_inches=0.03)
     plt.close(fig)
     print(f"  Saved skeleton filmstrip: {output_path}")
