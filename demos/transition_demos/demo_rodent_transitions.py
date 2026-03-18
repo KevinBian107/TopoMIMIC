@@ -1187,6 +1187,20 @@ def run_skeleton_analysis(
                 clip_id,
             )
 
+        if qpos_clip is not None:
+            from demos.transition_demos.skeleton_filmstrip import (
+                plot_skeleton_filmstrip,
+                FilmstripSkeletonConfig,
+            )
+            filmstrip_dir = os.path.join(config.output_dir, "skeleton_analysis_filmstrip")
+            plot_skeleton_filmstrip(
+                data_clip, frame_labels, skeleton,
+                qpos_clip, config.rendering.xml_path,
+                dataset=config.dataset,
+                output_path=os.path.join(filmstrip_dir, f"clip_{clip_id}_filmstrip.pdf"),
+                clip_id=clip_id,
+            )
+
 
 # --- Main demo ---
 

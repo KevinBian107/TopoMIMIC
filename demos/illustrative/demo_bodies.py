@@ -7,8 +7,8 @@ on the left, an arrow in the middle, and one or two rodent filmstrips on
 the right, illustrating increasing morphological complexity.
 
 Usage:
-    python demos/illustrative/demo_complexity_arrow.py
-    python demos/illustrative/demo_complexity_arrow.py --config configs/demos/illustrative/demo_complexity_arrow.yaml
+    python demos/illustrative/demo_bodies.py
+    python demos/illustrative/demo_bodies.py --config configs/demos/illustrative/demo_bodies.yaml
 """
 
 import os
@@ -403,7 +403,7 @@ def main():
     args = parser.parse_args()
 
     project_root = Path(__file__).parent.parent.parent.resolve()
-    default_config = project_root / "configs" / "demos" / "illustrative" / "demo_complexity_arrow.yaml"
+    default_config = project_root / "configs" / "demos" / "illustrative" / "demo_bodies.yaml"
 
     if args.config:
         cfg = load_config(args.config)

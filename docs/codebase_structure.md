@@ -275,7 +275,7 @@ demos/
 │   ├── demo_saddle.py
 │   ├── demo_behavior_overlap.py
 │   ├── demo_transition_filmstrip.py
-│   └── demo_complexity_arrow.py    # Fig 1E: walker→rodent complexity
+│   └── demo_bodies.py              # Fig 1E: walker→rodent complexity
 │
 ├── property/                        # Model/method property demos
 │   ├── demo_cycle_asymmetry.py
@@ -287,7 +287,8 @@ demos/
 │
 └── transition_demos/                # End-to-end transition analysis
     ├── demo_walker_transitions_path.py
-    └── demo_rodent_transitions.py
+    ├── demo_rodent_transitions.py
+    └── skeleton_filmstrip.py        # Fig 2B/C helper (not run directly)
 
 Figure 6: Script and demo organization. Scripts provide standalone
 utilities; demos provide illustrative examples.
@@ -654,8 +655,8 @@ python -m topo_mimic.granularity.main configs/dmwk/granularity.yaml
 **Demos**
 ```bash
 # Figure 1E: Walker → Rodent complexity arrow
-python demos/illustrative/demo_complexity_arrow.py
-python demos/illustrative/demo_complexity_arrow.py --config configs/demos/illustrative/demo_complexity_arrow.yaml
+python demos/illustrative/demo_bodies.py
+python demos/illustrative/demo_bodies.py --config configs/demos/illustrative/demo_bodies.yaml
 ```
 
 ---
