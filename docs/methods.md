@@ -507,7 +507,7 @@ Output: `outputs/dm_pipeline_{space}/{all_cycle_dm.pkl, all_path_dm.pkl, all_G_s
 
 **Step 2: Run W2/GW + KMeans Clustering**
 ```bash
-python -m topo_mimic.benchmark.experiment configs/benchmark/experiment.yaml
+python -m topo_mimic.benchmark.experiment_transitions configs/benchmark/experiment_transitions.yaml
 ```
 Enable methods in config:
 - `w2_dmc_int_kmeans`: W2 on DM cycles (intention)
@@ -517,7 +517,7 @@ Enable methods in config:
 
 **Step 3: Analyze Results**
 ```bash
-python -m topo_mimic.benchmark.analysis.main configs/benchmark/analysis.yaml
+python -m topo_mimic.benchmark.analysis.main_transitions configs/benchmark/analysis_transitions.yaml
 ```
 Output: Transition comparisons, MDS plots in `outputs/analysis_output/`
 

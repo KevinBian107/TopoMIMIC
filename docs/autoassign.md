@@ -7,7 +7,7 @@ Automatically recommend labels for discovered behavioral clusters by comparing t
 The labeling module sits between the experiment pipeline (which discovers clusters) and the analysis pipeline (which evaluates clusters against ground truth). It computes W2 distances between discovered clusters and GT transition types, then recommends the best-matching labels for each cluster.
 
 ```
-experiment.py → labeling/ → analysis/
+experiment_transitions.py → labeling/ → analysis/
     ↓              ↓            ↓
  clusters    recommendations  evaluation
 ```
@@ -103,7 +103,7 @@ out/benchmark_experiment/{method}/
 The analysis pipeline automatically loads labels from `labels_seed_{seed}.yaml`. After using the labeling module (either accepting recommendations or manually assigning via GUI), run the analysis:
 
 ```bash
-python -m topo_mimic.benchmark.analysis.main configs/benchmark/analysis.yaml
+python -m topo_mimic.benchmark.analysis.main_transitions configs/benchmark/analysis_transitions.yaml
 ```
 
 ## Transition Type Format

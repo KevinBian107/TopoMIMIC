@@ -26,7 +26,7 @@ echo "=============================="
 echo "Benchmark Experiment"
 echo "=============================="
 
-$PYTHON -m topo_mimic.benchmark.experiment configs/benchmark/experiment.yaml
+$PYTHON -m topo_mimic.benchmark.experiment_transitions configs/benchmark/experiment_transitions.yaml
 
 echo ""
 echo "DM pipeline + benchmark complete."

@@ -1571,7 +1571,7 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
     return ExperimentResults(results=all_results, config=config)
 
 
-def main(config_path: str = "configs/benchmark/experiment.yaml"):
+def main(config_path: str = "configs/benchmark/experiment_transitions.yaml"):
     if os.path.exists(config_path):
         cfg = load_config(config_path)
     else:
@@ -1581,5 +1581,5 @@ def main(config_path: str = "configs/benchmark/experiment.yaml"):
 
 
 if __name__ == "__main__":
-    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/benchmark/experiment.yaml"
+    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/benchmark/experiment_transitions.yaml"
     main(config_path)

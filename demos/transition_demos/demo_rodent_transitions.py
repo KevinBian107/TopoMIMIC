@@ -37,7 +37,7 @@ from topo_mimic.dmwk.utils.dataset_config import get_dataset_preset
 from topo_mimic.dmwk.utils.load_utils import get_aggregate_data, get_clip_indices
 from topo_mimic.dmwk.utils.feature_transforms import get_hdf5_key_for_dm_key
 from topo_mimic.dmwk.skeletonization.postprocess import _uniform_downsample
-from topo_mimic.benchmark.experiment import build_feature_matrix
+from topo_mimic.benchmark.experiment_transitions import build_feature_matrix
 from topo_mimic.benchmark.analysis.ground_truth import (
     find_all_transitions,
     load_behavior_segments_multilabel,
