@@ -310,19 +310,31 @@ def plot_skeleton_filmstrip(
     color_map = {label: _PALETTE[i % len(_PALETTE)] for i, label in enumerate(unique)}
     color_map["transition"] = (0.7, 0.7, 0.7, 1.0)
 
+    # --- Compute all three embeddings ---
+    pca_2d = PCA(n_components=2)
+    pca_coords = pca_2d.fit_transform(data_clip)
+    pca_title = f"PCA ({pca_2d.explained_variance_ratio_[:2].sum():.0%} var)"
+
     pca_pre = PCA(n_components=min(50, data_clip.shape[1]))
     feats_pca = pca_pre.fit_transform(data_clip)
 
     try:
+        from umap import UMAP
+        umap_coords = UMAP(n_components=2, random_state=42).fit_transform(feats_pca)
+        umap_title = "UMAP"
+    except Exception:
+        umap_coords = pca_coords.copy()
+        umap_title = "PCA (UMAP failed)"
+
+    try:
         from sklearn.manifold import TSNE
         perp = min(30, data_clip.shape[0] - 1)
-        embed_coords = TSNE(n_components=2, random_state=42,
-                            perplexity=perp).fit_transform(feats_pca)
-        embed_title = "t-SNE"
+        tsne_coords = TSNE(n_components=2, random_state=42,
+                           perplexity=perp).fit_transform(feats_pca)
+        tsne_title = "t-SNE"
     except Exception:
-        pca2 = PCA(n_components=2)
-        embed_coords = pca2.fit_transform(data_clip)
-        embed_title = "PCA"
+        tsne_coords = pca_coords.copy()
+        tsne_title = "PCA (t-SNE failed)"
 
     # --- Render filmstrips ---
     print(f"  Rendering {n_minima} minima filmstrips ({n_poses} poses each)...")
@@ -356,12 +368,12 @@ def plot_skeleton_filmstrip(
 
     # --- Normalize all strips to same pixel dimensions ---
     all_strips = [s for s, _, _ in minima_strips] + [s for s, _, _ in path_strips]
+    box_rgb = (232, 232, 232)
     if all_strips:
         target_h = max(s.shape[0] for s in all_strips)
         target_w = max(s.shape[1] for s in all_strips)
 
         def _pad_to_size(img, th, tw):
-            oh, ow = img.shape[:2]
             resized = _resize_to_height(img, th)
             rh, rw = resized.shape[:2]
             if rw >= tw:
@@ -380,91 +392,133 @@ def plot_skeleton_filmstrip(
             for s, pair, beh in path_strips
         ]
 
-    # --- Layout ---
-    n_right_cols = max(n_minima, n_paths, 1)
-    fig_w = max(8.5, 2.5 + n_right_cols * 1.6)
-    fig_h = 4.0
+    out_dir = os.path.dirname(output_path) or "."
+    out_name = os.path.basename(output_path)
+    base_name, ext = os.path.splitext(out_name)
+    embed_name = base_name.replace("_filmstrip", "_embeddings") + ext
+    embed_path = os.path.join(out_dir, embed_name)
+    os.makedirs(out_dir, exist_ok=True)
 
-    fig = plt.figure(figsize=(fig_w, fig_h))
-    fig.patch.set_facecolor("white")
+    _NATURE_RC = {
+        "font.family": "sans-serif",
+        "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
+        "font.size": 7,
+        "axes.titlesize": 8,
+        "axes.labelsize": 7,
+        "xtick.labelsize": 6,
+        "ytick.labelsize": 6,
+        "axes.linewidth": 0.5,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "figure.dpi": 300,
+        "savefig.dpi": 300,
+    }
 
-    gs = gridspec.GridSpec(
-        2, 2,
-        width_ratios=[0.30, 0.70],
-        height_ratios=[1, 1],
-        wspace=0.06, hspace=0.18,
-        figure=fig,
+    # --- Figure 1: Embeddings (PCA, UMAP, t-SNE) side by side as squares ---
+    with plt.rc_context(_NATURE_RC):
+        fig_e, axes_e = plt.subplots(1, 3, figsize=(9.6, 3.4))
+        fig_e.subplots_adjust(wspace=0.38, left=0.05, right=0.97, top=0.84, bottom=0.06)
+
+        for i, (ax, coords, title) in enumerate([
+            (axes_e[0], pca_coords, pca_title),
+            (axes_e[1], umap_coords, umap_title),
+            (axes_e[2], tsne_coords, tsne_title),
+        ]):
+            _overlay_skeleton_on_ax(
+                ax, coords, frame_labels, skeleton, color_map,
+                title, show_legend=(i == 0),
+            )
+            ax.set_aspect("equal", adjustable="datalim")
+            ax.set_box_aspect(1)
+            ax.margins(0.05)
+
+        fig_e.suptitle(
+            f"Clip {clip_id} \u2014 Skeleton Embeddings (purity={skeleton.purity:.2f})",
+            fontsize=9, fontweight="bold",
+        )
+        fig_e.savefig(embed_path, dpi=filmstrip_cfg.dpi, bbox_inches="tight",
+                      facecolor="white", pad_inches=0.03)
+        plt.close(fig_e)
+    print(f"  Saved embeddings: {embed_path}")
+
+    # --- Figure 2: Filmstrips (minima top, transitions bottom) ---
+    if not minima_strips and not path_strips:
+        return
+
+    n_cols = max(n_minima, n_paths, 1)
+    strip_w_in = 1.8
+    fig_w = max(5.0, n_cols * strip_w_in + 0.8)
+    fig_h = 4.5
+
+    fig_f = plt.figure(figsize=(fig_w, fig_h))
+    fig_f.patch.set_facecolor("white")
+
+    gs_f = gridspec.GridSpec(
+        2, n_cols, figure=fig_f,
+        wspace=0.45, hspace=0.50,
+        left=0.04, right=0.96, top=0.86, bottom=0.04,
     )
 
-    # Left: t-SNE spanning both rows, forced square
-    ax_embed = fig.add_subplot(gs[:, 0])
-    _overlay_skeleton_on_ax(
-        ax_embed, embed_coords, frame_labels, skeleton, color_map,
-        embed_title, show_legend=True,
-    )
-    ax_embed.set_aspect("equal", adjustable="box")
-    ax_embed.margins(0.05)
-
-    box_color = "#e8e8e8"
-    box_edge = "#b0b0b0"
-    box_rgb = (232, 232, 232)
     filmstrip_axes = []
 
-    # Top right: Density Minima
-    gs_minima = gridspec.GridSpecFromSubplotSpec(
-        1, n_right_cols, subplot_spec=gs[0, 1], wspace=0.14,
-    )
     for k, (strip, beh, idx) in enumerate(minima_strips):
-        ax = fig.add_subplot(gs_minima[0, k])
+        ax = fig_f.add_subplot(gs_f[0, k])
         strip_grey = _replace_white_bg(strip, box_rgb)
         ax.imshow(strip_grey)
         ax.set_axis_off()
-        ax.set_title(f"M{idx}: {beh}", fontsize=5, pad=2)
+        ax.set_title(f"Minimum M{idx}\n{beh}", fontsize=5, pad=3)
         filmstrip_axes.append(ax)
 
-    for k in range(n_minima, n_right_cols):
-        ax = fig.add_subplot(gs_minima[0, k])
+    for k in range(n_minima, n_cols):
+        ax = fig_f.add_subplot(gs_f[0, k])
         ax.set_axis_off()
 
-
-    # Bottom right: Transition Paths
-    gs_paths = gridspec.GridSpecFromSubplotSpec(
-        1, n_right_cols, subplot_spec=gs[1, 1], wspace=0.14,
-    )
     for pidx, (strip, pair_label, beh_label) in enumerate(path_strips):
-        ax = fig.add_subplot(gs_paths[0, pidx])
+        ax = fig_f.add_subplot(gs_f[1, pidx])
         strip_grey = _replace_white_bg(strip, box_rgb)
         ax.imshow(strip_grey)
         ax.set_axis_off()
-        ax.set_title(f"{pair_label}\n{beh_label}", fontsize=4, pad=2)
+        ax.set_title(f"{pair_label}\n{beh_label}", fontsize=5, pad=3)
         filmstrip_axes.append(ax)
 
-    for pidx in range(n_paths, n_right_cols):
-        ax = fig.add_subplot(gs_paths[0, pidx])
+    for pidx in range(n_paths, n_cols):
+        ax = fig_f.add_subplot(gs_f[1, pidx])
         ax.set_axis_off()
 
+    fig_f.canvas.draw()
+    renderer_f = fig_f.canvas.get_renderer()
 
-    # Draw layout first so get_tightbbox returns correct positions
-    fig.canvas.draw()
-    renderer = fig.canvas.get_renderer()
+    bboxes = []
     for ax in filmstrip_axes:
-        tb = ax.get_tightbbox(renderer)
-        if tb is None:
-            continue
-        bb = tb.transformed(fig.transFigure.inverted())
-        pad_box = 0.005
-        rect = FancyBboxPatch(
-            (bb.x0 - pad_box, bb.y0 - pad_box),
-            bb.width + 2 * pad_box,
-            bb.height + 2 * pad_box,
-            boxstyle="round,pad=0.002,rounding_size=0.008",
-            facecolor=box_color, edgecolor=box_edge, linewidth=0.8,
-            transform=fig.transFigure, zorder=-1,
-        )
-        fig.patches.append(rect)
+        tb = ax.get_tightbbox(renderer_f)
+        if tb is not None:
+            bboxes.append(tb.transformed(fig_f.transFigure.inverted()))
+        else:
+            bboxes.append(None)
 
-    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-    fig.savefig(output_path, dpi=filmstrip_cfg.dpi, bbox_inches="tight",
-                facecolor="white", pad_inches=0.03)
-    plt.close(fig)
-    print(f"  Saved skeleton filmstrip: {output_path}")
+    valid_heights = [bb.height for bb in bboxes if bb is not None]
+    max_box_h = max(valid_heights) if valid_heights else 0.1
+    pad_box = 0.008
+
+    for bb in bboxes:
+        if bb is None:
+            continue
+        h_diff = max_box_h - bb.height
+        rect = FancyBboxPatch(
+            (bb.x0 - pad_box, bb.y0 - pad_box - h_diff / 2),
+            bb.width + 2 * pad_box,
+            max_box_h + 2 * pad_box,
+            boxstyle="round,pad=0.002,rounding_size=0.008",
+            facecolor="#e8e8e8", edgecolor="#b0b0b0", linewidth=0.8,
+            transform=fig_f.transFigure, zorder=-1,
+        )
+        fig_f.patches.append(rect)
+
+    fig_f.suptitle(
+        f"Clip {clip_id} \u2014 Density Minima & Transition Paths",
+        fontsize=9, fontweight="bold",
+    )
+    fig_f.savefig(output_path, dpi=filmstrip_cfg.dpi, bbox_inches="tight",
+                  facecolor="white", pad_inches=0.03)
+    plt.close(fig_f)
+    print(f"  Saved filmstrip: {output_path}")
