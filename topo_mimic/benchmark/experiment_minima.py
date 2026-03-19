@@ -32,9 +32,11 @@ class SSSourceEntry:
 
 @dataclass
 class MinimaExperimentConfig:
+    dataset: str = "rodent"
     output_dir: str = "outputs/benchmark_experiment_minima"
-    rodent_rollout_dir: str = "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
-    behavior_labels_csv: str = "/home/jovyan/vast/kaiwen/TopoVNL/behavior_labels.csv"
+    data_path: str = ""
+    rodent_rollout_dir: str = ""
+    behavior_labels_csv: str = ""
 
     dm_sources: dict[str, DMSourceEntry] = field(default_factory=dict)
     state_space_sources: dict[str, SSSourceEntry] = field(default_factory=dict)
@@ -44,13 +46,31 @@ class MinimaExperimentConfig:
     minima_frame_radius: int = 10
     minima_n_frames: int = 5
     render_target_size: tuple[int, int] = (320, 240)
-    xml_path: str = "topo_mimic/dmwk/xml/rodent.xml"
+    xml_path: str = ""
     camera: str = "close_profile"
 
     n_clusters: int = 10
     n_samples_per_cluster: int = 5
     min_neighborhood_frames: int = 10
-    skip_clips: tuple[int, ...] = (80, 187, 227, 246, 267, 392, 434, 456, 491, 562, 610, 685)
+    skip_clips: tuple[int, ...] = ()
+
+    def __post_init__(self):
+        from topo_mimic.dmwk.utils.dataset_config import get_dataset_preset
+
+        preset = get_dataset_preset(self.dataset)
+
+        if not self.data_path and not self.rodent_rollout_dir:
+            self.data_path = preset.default_data_path
+        elif not self.data_path:
+            self.data_path = self.rodent_rollout_dir
+        self.rodent_rollout_dir = self.data_path
+
+        if not self.behavior_labels_csv:
+            self.behavior_labels_csv = preset.labels_csv
+        if not self.xml_path:
+            self.xml_path = preset.xml_path
+        if not self.skip_clips and preset.skip_clips:
+            self.skip_clips = preset.skip_clips
 
 
 def load_config(config_path: str) -> MinimaExperimentConfig:
@@ -65,10 +85,13 @@ def load_config(config_path: str) -> MinimaExperimentConfig:
     for name, src in cfg.get("state_space_sources", {}).items():
         ss_sources[name] = SSSourceEntry(experiment_dir=src["experiment_dir"])
 
+    data_path = cfg.get("data_path", cfg.get("rodent_rollout_dir", ""))
+
     return MinimaExperimentConfig(
+        dataset=cfg.get("dataset", "rodent"),
         output_dir=cfg.get("output_dir", "outputs/benchmark_experiment_minima"),
-        rodent_rollout_dir=cfg.get("rodent_rollout_dir", MinimaExperimentConfig.rodent_rollout_dir),
-        behavior_labels_csv=cfg.get("behavior_labels_csv", MinimaExperimentConfig.behavior_labels_csv),
+        data_path=data_path,
+        behavior_labels_csv=cfg.get("behavior_labels_csv", ""),
         dm_sources=dm_sources,
         state_space_sources=ss_sources,
         per_clip_n=cfg.get("per_clip_n", 3),
@@ -76,12 +99,12 @@ def load_config(config_path: str) -> MinimaExperimentConfig:
         minima_frame_radius=cfg.get("minima_frame_radius", 10),
         minima_n_frames=cfg.get("minima_n_frames", 5),
         render_target_size=tuple(cfg.get("render_target_size", [320, 240])),
-        xml_path=cfg.get("xml_path", "topo_mimic/dmwk/xml/rodent.xml"),
+        xml_path=cfg.get("xml_path", ""),
         camera=cfg.get("camera", "close_profile"),
         n_clusters=cfg.get("n_clusters", 10),
         n_samples_per_cluster=cfg.get("n_samples_per_cluster", 5),
         min_neighborhood_frames=cfg.get("min_neighborhood_frames", 10),
-        skip_clips=tuple(cfg.get("skip_clips", MinimaExperimentConfig.skip_clips)),
+        skip_clips=tuple(cfg.get("skip_clips", ())),
     )
 
 
