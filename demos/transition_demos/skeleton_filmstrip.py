@@ -107,16 +107,36 @@ def _render_poses_individually(
     return cropped_poses
 
 
+def _behavior_tints(color: tuple) -> tuple[np.ndarray, np.ndarray]:
+    c = np.array(color[:3])
+    tint_start = np.clip(c * 0.5 + 0.5, 0, 1)
+    tint_end = np.clip(c * 0.75, 0, 1)
+    return tint_start, tint_end
+
+
+def _transition_tints(
+    src_color: tuple, dst_color: tuple,
+) -> tuple[np.ndarray, np.ndarray]:
+    return (
+        np.clip(np.array(src_color[:3]) * 0.5 + 0.5, 0, 1),
+        np.clip(np.array(dst_color[:3]) * 0.75, 0, 1),
+    )
+
+
 def _tile_cropped_poses(
     cropped_poses: list[tuple[np.ndarray, np.ndarray]],
     gap_fraction: float = 0.3,
+    tint_start: np.ndarray | None = None,
+    tint_end: np.ndarray | None = None,
 ) -> np.ndarray:
     if not cropped_poses:
         return np.full((100, 100, 3), 255, dtype=np.uint8)
 
     n_poses = len(cropped_poses)
-    tint_start = np.array([0.68, 0.80, 0.88])
-    tint_end = np.array([0.22, 0.38, 0.50])
+    if tint_start is None:
+        tint_start = np.array([0.68, 0.80, 0.88])
+    if tint_end is None:
+        tint_end = np.array([0.22, 0.38, 0.50])
 
     max_h = max(c[0].shape[0] for c in cropped_poses)
     normalized = []
@@ -186,6 +206,8 @@ def render_filmstrip_for_frames(
     dataset: str,
     n_poses: int = 5,
     gap_fraction: float = 0.3,
+    tint_start: np.ndarray | None = None,
+    tint_end: np.ndarray | None = None,
 ) -> np.ndarray:
     if not frame_indices:
         return np.full((100, 200, 3), 255, dtype=np.uint8)
@@ -204,7 +226,8 @@ def render_filmstrip_for_frames(
         render_h=rh, render_w=rw,
         fixed_crop=fixed_crop,
     )
-    return _tile_cropped_poses(cropped, gap_fraction=gap_fraction)
+    return _tile_cropped_poses(cropped, gap_fraction=gap_fraction,
+                               tint_start=tint_start, tint_end=tint_end)
 
 
 def _resize_to_height(img: np.ndarray, h: int) -> np.ndarray:
@@ -228,7 +251,8 @@ def _overlay_skeleton_on_ax(
     colors = [color_map.get(str(l), (0.5, 0.5, 0.5, 1.0)) for l in frame_labels]
     ax.scatter(
         coords[:, 0], coords[:, 1],
-        c=colors, s=1.5, alpha=0.3, edgecolors="none", rasterized=True,
+        c=colors, s=8, alpha=0.6, edgecolors="white", linewidths=0.1,
+        rasterized=True,
     )
 
     for path_frames, (pi, pj) in zip(skeleton.paths, skeleton.path_pair_labels):
@@ -238,7 +262,7 @@ def _overlay_skeleton_on_ax(
         path_coords = coords[valid]
         ax.plot(
             path_coords[:, 0], path_coords[:, 1],
-            color=(0.4, 0.4, 0.4), linestyle=":", linewidth=0.6, alpha=0.5, zorder=3,
+            color=(0.4, 0.4, 0.4), linestyle=":", linewidth=0.8, alpha=0.5, zorder=3,
         )
 
     for k, (orig_idx, beh) in enumerate(
@@ -247,27 +271,28 @@ def _overlay_skeleton_on_ax(
         if orig_idx < len(coords):
             ax.scatter(
                 coords[orig_idx, 0], coords[orig_idx, 1],
-                marker="*", s=60, c=[color_map.get(beh, (0.2, 0.2, 0.2, 1.0))],
-                edgecolors="black", linewidths=0.4, zorder=5,
+                marker="*", s=120, c=[color_map.get(beh, (0.2, 0.2, 0.2, 1.0))],
+                edgecolors="black", linewidths=0.5, zorder=5,
             )
 
-    ax.set_title(title, fontsize=7, pad=3)
-    ax.tick_params(axis="both", labelsize=4, length=1.5, pad=1)
+    ax.set_title(title, fontsize=8, fontweight="bold", pad=4)
+    ax.tick_params(axis="both", labelsize=5, length=2, pad=2)
 
     if show_legend:
         unique = sorted(set(str(l) for l in frame_labels if str(l) != "transition"))
         handles = [
             plt.Line2D([0], [0], marker="o", color="w",
                         markerfacecolor=color_map.get(l, (0.5, 0.5, 0.5)),
-                        markersize=3, label=l)
+                        markeredgecolor="white", markeredgewidth=0.3,
+                        markersize=5, label=l)
             for l in unique
         ]
         handles.append(plt.Line2D([0], [0], marker="*", color="w",
-                                   markerfacecolor="gray", markersize=5,
+                                   markerfacecolor="gray", markersize=7,
                                    markeredgecolor="black", label="DM min"))
-        ax.legend(handles=handles, fontsize=3.5, loc="best",
-                  frameon=True, framealpha=0.8, edgecolor="none",
-                  handletextpad=0.2, borderpad=0.3)
+        ax.legend(handles=handles, fontsize=6, loc="best",
+                  frameon=True, framealpha=0.85, edgecolor="none",
+                  handletextpad=0.3, borderpad=0.4)
 
 
 def _replace_white_bg(img: np.ndarray, color: tuple[int, int, int],
@@ -346,9 +371,12 @@ def plot_skeleton_filmstrip(
         start = max(0, orig_idx - radius)
         end = min(qpos_clip.shape[0], orig_idx + radius + 1)
         frames = list(range(start, end))
+        beh_color = color_map.get(beh, (0.5, 0.5, 0.5))
+        ts, te = _behavior_tints(beh_color)
         strip = render_filmstrip_for_frames(
             qpos_clip, frames, xml_path, dataset,
             n_poses=n_poses, gap_fraction=filmstrip_cfg.gap_fraction,
+            tint_start=ts, tint_end=te,
         )
         minima_strips.append((strip, beh, k))
 
@@ -358,12 +386,16 @@ def plot_skeleton_filmstrip(
         path_frames = skeleton.paths[pidx]
         pi, pj = skeleton.path_pair_labels[pidx]
         valid = [int(f) for f in path_frames if f < qpos_clip.shape[0]]
+        src_beh = skeleton.minima_behaviors[pi]
+        dst_beh = skeleton.minima_behaviors[pj]
+        src_color = color_map.get(src_beh, (0.5, 0.5, 0.5))
+        dst_color = color_map.get(dst_beh, (0.5, 0.5, 0.5))
+        ts, te = _transition_tints(src_color, dst_color)
         strip = render_filmstrip_for_frames(
             qpos_clip, valid, xml_path, dataset,
             n_poses=n_poses, gap_fraction=filmstrip_cfg.gap_fraction,
+            tint_start=ts, tint_end=te,
         )
-        src_beh = skeleton.minima_behaviors[pi]
-        dst_beh = skeleton.minima_behaviors[pj]
         path_strips.append((strip, f"M{pi}\u2192M{pj}", f"{src_beh}\u2192{dst_beh}"))
 
     # --- Normalize all strips to same pixel dimensions ---

@@ -2,12 +2,12 @@
 # Run after experiment.py to generate label recommendations
 
 # Experiment location
-experiment_dir: "outputs/benchmark_experiment_train"
+experiment_dir: "outputs/benchmark_experiment_transitions"
 rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
 behavior_labels_csv: "/home/jovyan/vast/kaiwen/TopoVNL/behavior_labels.csv"
 
 # Method and seed to label (can be overridden via CLI)
-method: "kpms_keypoint"
+method: "w2_dmc_int_kmeans"
 seed: 0
 
 # GT extraction parameters
