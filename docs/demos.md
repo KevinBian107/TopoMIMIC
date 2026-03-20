@@ -78,11 +78,12 @@ python -m demos.property.demo_theta_filmstrip --config configs/demos/property/de
 ```
 Renders filmstrip visualizations of theta-graph structures (two edge-disjoint paths between density minima), showing the distinct forward and return transition trajectories.
 
-### Stationary Behavior Demo
+### Stationary Behavior Demo (Appendix: DM-G Identifies Stationary Clips)
 ```bash
 python -m demos.property.demo_stationary
+python -m demos.property.demo_stationary --config configs/demos/property/demo_stationary.yaml
 ```
-Analyzes stationary (low root displacement) clips, showing how DM cycles capture subtle movements like grooming and orienting even when the rodent is not locomoting.
+Compares clips with DM-G cycles (behaviorally rich) vs clips without cycles (stationary/simple topology). Produces: (1) `stationary_comparison.pdf` — Nature-style bar plots of root motion and body part variance for cycle vs no-cycle clips, (2) `stationary_filmstrip_grid.png` — grey-box chronophotography grid of representative no-cycle (stationary) clips. Used for the appendix section on stationary clip identification.
 
 ### Rear-Cycle Grid Demo
 ```bash
@@ -92,12 +93,12 @@ python -m demos.property.demo_rear_cycles --clip-ids 42 99 103
 ```
 Discovers N clips with X→rear→X pattern (z low→high→low), runs DM extraction on each, and produces four grid outputs: (1) `cycle_rotating_grid.gif` — rotating 3D PCA with synced video for DM cycles, (2) `cycle_filmstrip_grid.png` — chronophotography filmstrips for cycle segments, (3) `path_rotating_grid.gif` — rotating 3D PCA with synced video for DM paths, (4) `path_filmstrip_grid.png` — filmstrips for path segments.
 
-### Incompressibility Verification
+### Topological Simplification (Figure 3)
 ```bash
 python -m demos.property.incompressibility.incompressibility configs/scripts/incompressibility.yaml
 python -m demos.property.incompressibility.batch_incompressibility
 ```
-Verifies the incompressibility property of the DM skeleton. Use `--use-dm-path` to include DM path extraction alongside cycles.
+Validates topologically invariant simplification — that the DM skeleton retains only the minimal frames needed to preserve topological structure. `incompressibility.py` produces per-trial outputs including: (1) `static_intention_graph.png` — compact Nature-style plot of mean intention traces with DM-retained frames marked, (2) `dm_graph_visualization.png` — PCA/t-SNE/UMAP side-by-side with DM-cycle overlay and different markers for stationary vs moving clips, (3) `clip_filmstrips.png` — grey-box chronophotography filmstrips for each clip. `batch_incompressibility.py` produces the summary bar and line plots (Figure 3 top row). Use `--use-dm-path` to include DM path extraction alongside cycles.
 
 ---
 

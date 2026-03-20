@@ -1,55 +1,45 @@
+"""
+Stationary Clip Analysis (Appendix: DM-G Identifies Stationary Clips)
+
+Compares clips with DM-G cycles (behaviorally rich) vs clips without cycles
+(stationary/simple topology). Produces Nature-style bar plots and a filmstrip
+grid of representative no-cycle clips.
+
+Usage:
+    python -m demos.property.demo_stationary
+    python -m demos.property.demo_stationary --config configs/demos/property/demo_stationary.yaml
+"""
+
 import os
 
 os.environ["MUJOCO_GL"] = "egl"
 os.environ["PYOPENGL_PLATFORM"] = "egl"
 
 import sys
-import numpy as np
+import math
+import argparse
 import pickle as pkl
-import yaml
-import h5py
-from dataclasses import dataclass
-from tqdm import tqdm
+from dataclasses import dataclass, field
+from pathlib import Path
 
+import numpy as np
+import yaml
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from vnl_tda.utils.load_utils import load_from_h5py, load_rollout_from_source
-from vnl_tda.pipelines.tda.skeletonization.rendering import render_clip_grid
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.resolve()))
+
+from topo_mimic.dmwk.utils.load_utils import load_rollout_from_source
 
 
-@dataclass
-class DistributionConfig:
-    n_cycle_clips: int = 10
-    n_no_cycle_clips: int = 10
-    body_parts: list[str] = None
-    figsize: tuple[int, int] = (14, 8)
-
-    def __post_init__(self):
-        if self.body_parts is None:
-            self.body_parts = [
-                "torso", "pelvis",
-                "upper_leg_L", "lower_leg_L", "foot_L",
-                "upper_leg_R", "lower_leg_R", "foot_R",
-                "skull", "upper_arm_L", "upper_arm_R",
-            ]
-
-
-@dataclass
-class RenderConfig:
-    dm_results_dir: str = ""
-    rodent_rollout_dir: str = "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
-    output_dir: str = "out_no_cycle_clips"
-    num_clips: int = 500
-    grid_cols: int = 5
-    grid_rows: int = 4
-    fps: int = 30
-    target_size: tuple[int, int] = (320, 240)
-    distribution: DistributionConfig = None
-
-    def __post_init__(self):
-        if self.distribution is None:
-            self.distribution = DistributionConfig()
-
+NATURE_RC = {
+    'font.family': 'sans-serif',
+    'font.sans-serif': ['Arial', 'Helvetica', 'DejaVu Sans'],
+    'font.size': 7, 'axes.linewidth': 0.6,
+    'axes.labelsize': 8, 'axes.titlesize': 9,
+    'xtick.labelsize': 7, 'ytick.labelsize': 7,
+}
 
 QPOS_BODY_NAMES = [
     "world", "floor", "walker", "torso", "vertebra_1", "vertebra_2", "vertebra_3",
@@ -68,28 +58,46 @@ QPOS_BODY_NAMES = [
 ]
 
 
-def load_config(config_path: str) -> RenderConfig:
+@dataclass
+class DistributionConfig:
+    n_cycle_clips: int = 50
+    n_no_cycle_clips: int = 50
+    body_parts: list[str] = field(default_factory=lambda: [
+        "torso", "pelvis", "upper_leg_L", "lower_leg_L", "foot_L",
+        "upper_leg_R", "lower_leg_R", "foot_R", "skull",
+        "upper_arm_L", "upper_arm_R",
+    ])
+
+
+@dataclass
+class Config:
+    dm_results_dir: str = "outputs/dm_pipeline_intention"
+    rodent_rollout_dir: str = "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
+    xml_path: str = "topo_mimic/dmwk/xml/rodent.xml"
+    output_dir: str = "outputs/stationary_clips"
+    num_clips: int = 500
+    filmstrip_n_clips: int = 8
+    filmstrip_n_poses: int = 6
+    filmstrip_sample_every: int = 80
+    distribution: DistributionConfig = field(default_factory=DistributionConfig)
+
+
+def load_config(config_path: str) -> Config:
     with open(config_path, "r") as f:
         cfg = yaml.safe_load(f)
 
-    target_size = cfg.get("target_size", [320, 240])
-    if isinstance(target_size, list):
-        target_size = tuple(target_size)
-
     dist_dict = cfg.get("distribution", {})
-    if "figsize" in dist_dict and isinstance(dist_dict["figsize"], list):
-        dist_dict["figsize"] = tuple(dist_dict["figsize"])
     dist_cfg = DistributionConfig(**dist_dict)
 
-    return RenderConfig(
-        dm_results_dir=cfg.get("dm_results_dir", ""),
-        rodent_rollout_dir=cfg.get("rodent_rollout_dir", RenderConfig.rodent_rollout_dir),
-        output_dir=cfg.get("output_dir", RenderConfig.output_dir),
-        num_clips=cfg.get("num_clips", RenderConfig.num_clips),
-        grid_cols=cfg.get("grid_cols", RenderConfig.grid_cols),
-        grid_rows=cfg.get("grid_rows", RenderConfig.grid_rows),
-        fps=cfg.get("fps", RenderConfig.fps),
-        target_size=target_size,
+    return Config(
+        dm_results_dir=cfg.get("dm_results_dir", Config.dm_results_dir),
+        rodent_rollout_dir=cfg.get("rodent_rollout_dir", Config.rodent_rollout_dir),
+        xml_path=cfg.get("xml_path", Config.xml_path),
+        output_dir=cfg.get("output_dir", Config.output_dir),
+        num_clips=cfg.get("num_clips", Config.num_clips),
+        filmstrip_n_clips=cfg.get("filmstrip_n_clips", Config.filmstrip_n_clips),
+        filmstrip_n_poses=cfg.get("filmstrip_n_poses", Config.filmstrip_n_poses),
+        filmstrip_sample_every=cfg.get("filmstrip_sample_every", Config.filmstrip_sample_every),
         distribution=dist_cfg,
     )
 
@@ -117,22 +125,18 @@ def find_cycle_and_no_cycle_clips(
     return cycle_clips, no_cycle_clips
 
 
-def load_qpos(clip_id: int, rodent_rollout_dir: str) -> np.ndarray:
-    roll = load_rollout_from_source(int(clip_id), rodent_rollout_dir)
-    return np.asarray(roll["qpos"])
-
-
 def compute_delta_xyz_stats(
     clip_ids: list[int],
     rodent_rollout_dir: str,
-    max_clips: int = 10,
+    max_clips: int = 50,
 ) -> tuple[np.ndarray, np.ndarray]:
     all_deltas = []
     for i, clip_id in enumerate(clip_ids):
         if i >= max_clips:
             break
         try:
-            qpos = load_qpos(clip_id, rodent_rollout_dir)
+            roll = load_rollout_from_source(int(clip_id), rodent_rollout_dir)
+            qpos = np.asarray(roll["qpos"])
             delta = np.diff(qpos[:, :3], axis=0)
             all_deltas.append(np.abs(delta).mean(axis=0))
         except Exception:
@@ -149,8 +153,8 @@ def compute_body_variance(
     clip_ids: list[int],
     rodent_rollout_dir: str,
     body_parts: list[str],
-    max_clips: int = 10,
-) -> np.ndarray:
+    max_clips: int = 50,
+) -> tuple[np.ndarray, list[str]]:
     body_indices = []
     valid_body_parts = []
     for bp in body_parts:
@@ -164,7 +168,8 @@ def compute_body_variance(
         if i >= max_clips:
             break
         try:
-            qpos = load_qpos(clip_id, rodent_rollout_dir)
+            roll = load_rollout_from_source(int(clip_id), rodent_rollout_dir)
+            qpos = np.asarray(roll["qpos"])
             for bp, body_idx in zip(valid_body_parts, body_indices):
                 if body_idx < qpos.shape[1]:
                     all_qpos_by_body[bp].append(qpos[:, body_idx])
@@ -196,171 +201,258 @@ def plot_cycle_vs_no_cycle_comparison(
     sampled_cycle = np.random.choice(cycle_clips, n_cycle, replace=False).tolist() if len(cycle_clips) >= n_cycle else cycle_clips
     sampled_no_cycle = np.random.choice(no_cycle_clips, n_no_cycle, replace=False).tolist() if len(no_cycle_clips) >= n_no_cycle else no_cycle_clips
 
-    print(f"\nSampled {len(sampled_cycle)} cycle clips: {sampled_cycle}")
-    print(f"Sampled {len(sampled_no_cycle)} no-cycle clips: {sampled_no_cycle}")
+    print(f"\nSampled {len(sampled_cycle)} cycle clips, {len(sampled_no_cycle)} no-cycle clips")
 
-    cycle_delta_mean, cycle_delta_std = compute_delta_xyz_stats(
-        sampled_cycle, rodent_rollout_dir, max_clips=n_cycle
+    cycle_delta_mean, cycle_delta_std = compute_delta_xyz_stats(sampled_cycle, rodent_rollout_dir, n_cycle)
+    no_cycle_delta_mean, no_cycle_delta_std = compute_delta_xyz_stats(sampled_no_cycle, rodent_rollout_dir, n_no_cycle)
+
+    cycle_var, body_parts = compute_body_variance(sampled_cycle, rodent_rollout_dir, dist_cfg.body_parts, n_cycle)
+    no_cycle_var, _ = compute_body_variance(sampled_no_cycle, rodent_rollout_dir, dist_cfg.body_parts, n_no_cycle)
+
+    with plt.rc_context(NATURE_RC):
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(7.2, 2.8),
+                                        gridspec_kw={'width_ratios': [1, 2.2]})
+
+        # Panel A: XYZ motion
+        x = np.arange(3)
+        width = 0.32
+        labels = ["|Δx|", "|Δy|", "|Δz|"]
+
+        ax1.bar(x - width/2, cycle_delta_mean, width, yerr=cycle_delta_std,
+                label=f"With cycles (n={len(sampled_cycle)})",
+                color='#4878CF', capsize=2.5, edgecolor='none',
+                error_kw={'linewidth': 0.7, 'capthick': 0.7})
+        ax1.bar(x + width/2, no_cycle_delta_mean, width, yerr=no_cycle_delta_std,
+                label=f"No cycles (n={len(sampled_no_cycle)})",
+                color='#C44E52', capsize=2.5, edgecolor='none',
+                error_kw={'linewidth': 0.7, 'capthick': 0.7})
+
+        ax1.set_xlabel("Root displacement axis")
+        ax1.set_ylabel("Mean |Δ| per frame")
+        ax1.set_title("Root motion", fontweight='bold')
+        ax1.set_xticks(x)
+        ax1.set_xticklabels(labels)
+        ax1.legend(fontsize=5.5, frameon=True, framealpha=0.9, edgecolor='#cccccc')
+        for spine in ['top', 'right']:
+            ax1.spines[spine].set_visible(False)
+        ax1.tick_params(direction='out', length=2.5, width=0.5)
+
+        # Panel B: Body part variance
+        x2 = np.arange(len(body_parts))
+        body_labels = [bp.replace("_", "\n") for bp in body_parts]
+
+        ax2.bar(x2 - width/2, cycle_var, width,
+                label=f"With cycles", color='#4878CF', edgecolor='none')
+        ax2.bar(x2 + width/2, no_cycle_var, width,
+                label=f"No cycles", color='#C44E52', edgecolor='none')
+
+        ax2.set_xlabel("Body part")
+        ax2.set_ylabel("Variance")
+        ax2.set_title("Body part variance", fontweight='bold')
+        ax2.set_xticks(x2)
+        ax2.set_xticklabels(body_labels, fontsize=5.5, rotation=45, ha="right")
+        ax2.legend(fontsize=5.5, frameon=True, framealpha=0.9, edgecolor='#cccccc')
+        for spine in ['top', 'right']:
+            ax2.spines[spine].set_visible(False)
+        ax2.tick_params(direction='out', length=2.5, width=0.5)
+
+        plt.tight_layout()
+        out_path = os.path.join(output_dir, "stationary_comparison.pdf")
+        plt.savefig(out_path, dpi=300, bbox_inches='tight')
+        plt.savefig(out_path.replace('.pdf', '.png'), dpi=300, bbox_inches='tight')
+        plt.close()
+    print(f"Saved: {out_path}")
+
+
+def render_filmstrip_grid(
+    clip_ids: list[int],
+    rodent_rollout_dir: str,
+    xml_path: str,
+    output_path: str,
+    n_poses: int = 6,
+    sample_every: int = 80,
+    grid_cols: int = 4,
+) -> None:
+    from demos.illustrative.demo_bodies import (
+        _render_poses_individually,
+        _tile_cropped_poses,
     )
-    no_cycle_delta_mean, no_cycle_delta_std = compute_delta_xyz_stats(
-        sampled_no_cycle, rodent_rollout_dir, max_clips=n_no_cycle
-    )
+    from matplotlib.patches import FancyBboxPatch
 
-    cycle_var, body_parts = compute_body_variance(
-        sampled_cycle, rodent_rollout_dir, dist_cfg.body_parts, max_clips=n_cycle
-    )
-    no_cycle_var, _ = compute_body_variance(
-        sampled_no_cycle, rodent_rollout_dir, dist_cfg.body_parts, max_clips=n_no_cycle
-    )
+    project_root = Path(__file__).parent.parent.parent.resolve()
+    if not os.path.isabs(xml_path):
+        xml_path = str(project_root / xml_path)
 
-    fig1, ax1 = plt.subplots(figsize=(8, 6))
-    x = np.arange(3)
-    width = 0.35
-    labels = ["|Δx|", "|Δy|", "|Δz|"]
+    strips = []
+    valid_ids = []
+    for clip_id in clip_ids:
+        try:
+            roll = load_rollout_from_source(int(clip_id), rodent_rollout_dir)
+            qposes = np.asarray(roll["qpos"])
+            n_total = min(500, qposes.shape[0])
+            frame_indices = list(range(0, n_total, sample_every))[:n_poses]
 
-    ax1.bar(x - width/2, cycle_delta_mean, width, yerr=cycle_delta_std,
-            label=f"Cycle clips (n={len(sampled_cycle)})", color="#1f78b4", capsize=4, alpha=0.8)
-    ax1.bar(x + width/2, no_cycle_delta_mean, width, yerr=no_cycle_delta_std,
-            label=f"No-cycle clips (n={len(sampled_no_cycle)})", color="#e31a1c", capsize=4, alpha=0.8)
+            fovy_rad = math.radians(45.0)
+            view_h = 0.35
+            distance = (view_h / 2.0) / math.tan(fovy_rad / 2.0) * 1.3
 
-    ax1.set_xlabel("Axis", fontsize=12)
-    ax1.set_ylabel("Mean |Δ| per frame", fontsize=12)
-    ax1.set_title("XYZ Motion Comparison:\nCycle vs No-Cycle Clips", fontsize=14, fontweight="bold")
-    ax1.set_xticks(x)
-    ax1.set_xticklabels(labels, fontsize=11)
-    ax1.legend(fontsize=10, frameon=False)
-    ax1.spines["top"].set_visible(False)
-    ax1.spines["right"].set_visible(False)
-    ax1.grid(True, axis="y", alpha=0.3)
+            def rodent_lookat(qpos):
+                return [qpos[0], qpos[1], qpos[2] + 0.02]
 
-    plt.tight_layout()
-    xyz_path = os.path.join(output_dir, "xyz_motion_comparison.pdf")
-    plt.savefig(xyz_path, dpi=300, bbox_inches="tight")
-    plt.savefig(xyz_path.replace(".pdf", ".png"), dpi=150, bbox_inches="tight")
-    plt.close()
-    print(f"\nSaved XYZ motion comparison to {xyz_path}")
+            cropped = _render_poses_individually(
+                qposes, frame_indices, xml_path,
+                camera_elevation=-55.0, camera_azimuth=90.0,
+                camera_distance=distance, camera_lookat_fn=rodent_lookat,
+                render_h=720, render_w=720,
+            )
+            strip = _tile_cropped_poses(cropped, gap_fraction=0.25)
+            strips.append(strip)
+            valid_ids.append(clip_id)
+        except Exception as e:
+            print(f"  Skipping clip {clip_id}: {e}")
+            continue
 
-    fig2, ax2 = plt.subplots(figsize=(10, 6))
-    x2 = np.arange(len(body_parts))
-    body_labels = [bp.replace("_", "\n") for bp in body_parts]
+    if not strips:
+        print("No filmstrips rendered")
+        return
 
-    ax2.bar(x2 - width/2, cycle_var, width,
-            label=f"Cycle clips (n={len(sampled_cycle)})", color="#1f78b4", alpha=0.8)
-    ax2.bar(x2 + width/2, no_cycle_var, width,
-            label=f"No-cycle clips (n={len(sampled_no_cycle)})", color="#e31a1c", alpha=0.8)
+    grid_rows = math.ceil(len(strips) / grid_cols)
+    box_color = '#e8e8e8'
+    box_edge = '#b0b0b0'
+    dpi = 300
+    panel_w_in = 2.5
+    bx_pad = 0.03
+    by_pad = 0.03
+    label_h = 0.2
+    gap_x = 0.1
+    gap_y = 0.1
+    target_w = int(panel_w_in * dpi)
 
-    ax2.set_xlabel("Body Part", fontsize=12)
-    ax2.set_ylabel("Variance", fontsize=12)
-    ax2.set_title("Body Part Variance Comparison:\nCycle vs No-Cycle Clips", fontsize=14, fontweight="bold")
-    ax2.set_xticks(x2)
-    ax2.set_xticklabels(body_labels, fontsize=9, rotation=45, ha="right")
-    ax2.legend(fontsize=10, frameon=False)
-    ax2.spines["top"].set_visible(False)
-    ax2.spines["right"].set_visible(False)
-    ax2.grid(True, axis="y", alpha=0.3)
+    from PIL import Image as PILImage
+    resized = []
+    for s in strips:
+        oh, ow = s.shape[:2]
+        scale = target_w / ow
+        nh = int(oh * scale)
+        resized.append(np.array(PILImage.fromarray(s).resize((target_w, nh), PILImage.LANCZOS)))
 
-    plt.tight_layout()
-    variance_path = os.path.join(output_dir, "body_variance_comparison.pdf")
-    plt.savefig(variance_path, dpi=300, bbox_inches="tight")
-    plt.savefig(variance_path.replace(".pdf", ".png"), dpi=150, bbox_inches="tight")
-    plt.close()
-    print(f"Saved body variance comparison to {variance_path}")
+    box_rgb = tuple(int(box_color.lstrip('#')[i:i+2], 16) for i in (0, 2, 4))
+    for i, img in enumerate(resized):
+        white_mask = np.all(img >= 245, axis=-1)
+        img[white_mask] = box_rgb
+        resized[i] = img
 
-    summary_path = os.path.join(output_dir, "distribution_summary.txt")
-    with open(summary_path, "w") as f:
-        f.write("Cycle vs No-Cycle Distribution Summary\n")
-        f.write("=" * 50 + "\n\n")
-        f.write(f"Cycle clips sampled: {sampled_cycle}\n")
-        f.write(f"No-cycle clips sampled: {sampled_no_cycle}\n\n")
-        f.write("XYZ Motion (mean |Δ| per frame):\n")
-        f.write("-" * 30 + "\n")
-        for i, axis in enumerate(["x", "y", "z"]):
-            f.write(f"  Δ{axis}: Cycle={cycle_delta_mean[i]:.4f}±{cycle_delta_std[i]:.4f}, "
-                    f"No-cycle={no_cycle_delta_mean[i]:.4f}±{no_cycle_delta_std[i]:.4f}\n")
-        f.write("\nBody Part Variance:\n")
-        f.write("-" * 30 + "\n")
-        for i, bp in enumerate(body_parts):
-            f.write(f"  {bp}: Cycle={cycle_var[i]:.4f}, No-cycle={no_cycle_var[i]:.4f}\n")
+    max_h_in = max(img.shape[0] for img in resized) / dpi
+    box_w = panel_w_in + 2 * bx_pad
+    box_h = max_h_in + 2 * by_pad + label_h
 
-    print(f"Saved distribution summary to {summary_path}")
+    fig_w = grid_cols * box_w + (grid_cols - 1) * gap_x + 0.1
+    fig_h = grid_rows * box_h + (grid_rows - 1) * gap_y + 0.1
+
+    with plt.rc_context(NATURE_RC):
+        fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=dpi)
+        fig.patch.set_facecolor('white')
+        ax.set_xlim(0, fig_w)
+        ax.set_ylim(0, fig_h)
+        ax.set_axis_off()
+        ax.set_aspect('equal')
+
+        for idx, (clip_id, img) in enumerate(zip(valid_ids, resized)):
+            row = idx // grid_cols
+            col = idx % grid_cols
+
+            iw_in = img.shape[1] / dpi
+            ih_in = img.shape[0] / dpi
+
+            x0 = 0.05 + col * (box_w + gap_x)
+            y0 = fig_h - 0.05 - (row + 1) * box_h - row * gap_y
+
+            rect = FancyBboxPatch(
+                (x0, y0), box_w, box_h,
+                boxstyle='round,pad=0.01,rounding_size=0.04',
+                facecolor=box_color, edgecolor=box_edge, linewidth=0.6, zorder=0,
+            )
+            ax.add_patch(rect)
+
+            img_x = x0 + bx_pad
+            center_y = y0 + by_pad + label_h + max_h_in / 2
+            extent = [img_x, img_x + iw_in, center_y - ih_in / 2, center_y + ih_in / 2]
+            ax.imshow(img, extent=extent, aspect='auto', zorder=1)
+
+            ax.text(x0 + box_w / 2, y0 + by_pad + label_h * 0.45,
+                    f'Clip {clip_id} (no cycles)', ha='center', va='center',
+                    fontsize=5.5, fontweight='bold', color='#333333', zorder=2)
+
+        fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+        plt.savefig(output_path, dpi=dpi, bbox_inches='tight', facecolor='white',
+                    pad_inches=0.02)
+        plt.close()
+    print(f"Saved: {output_path}")
 
 
-def main(config_path: str = "configs/dmwkc_experiment/extract_filled_space.yaml"):
-    cfg = load_config(config_path)
+def main():
+    parser = argparse.ArgumentParser(description="Stationary Clip Analysis (Appendix)")
+    parser.add_argument("--config", type=str, default=None)
+    args = parser.parse_args()
 
-    if not cfg.dm_results_dir:
-        raise ValueError("dm_results_dir must be specified in config")
+    project_root = Path(__file__).parent.parent.parent.resolve()
+    default_config = project_root / "configs" / "demos" / "property" / "demo_stationary.yaml"
+
+    if args.config:
+        cfg = load_config(args.config)
+    elif default_config.exists():
+        print(f"Loading config from {default_config}")
+        cfg = load_config(str(default_config))
+    else:
+        cfg = Config()
+
+    if not os.path.isabs(cfg.dm_results_dir):
+        cfg.dm_results_dir = str(project_root / cfg.dm_results_dir)
+    if not os.path.isabs(cfg.output_dir):
+        cfg.output_dir = str(project_root / cfg.output_dir)
+    if not os.path.isabs(cfg.xml_path):
+        cfg.xml_path = str(project_root / cfg.xml_path)
 
     os.makedirs(cfg.output_dir, exist_ok=True)
 
-    print(f"=== Finding clips with and without cycles ===")
-    print(f"DM results dir: {cfg.dm_results_dir}")
+    print("=" * 60)
+    print("Stationary Clip Analysis (Appendix)")
+    print("=" * 60)
+    print(f"  DM results: {cfg.dm_results_dir}")
+    print(f"  Output: {cfg.output_dir}")
 
+    print("\n=== Finding clips with/without cycles ===")
     cycle_clips, no_cycle_clips = find_cycle_and_no_cycle_clips(cfg.dm_results_dir, cfg.num_clips)
-
-    print(f"Found {len(cycle_clips)} clips WITH cycles")
-    print(f"Found {len(no_cycle_clips)} clips WITHOUT cycles out of {cfg.num_clips}")
-    print(f"No-cycle clip IDs: {no_cycle_clips}")
+    print(f"  {len(cycle_clips)} clips WITH cycles")
+    print(f"  {len(no_cycle_clips)} clips WITHOUT cycles")
 
     with open(os.path.join(cfg.output_dir, "no_cycle_clip_ids.txt"), "w") as f:
-        f.write(f"# Clips with no cycles from {cfg.dm_results_dir}\n")
-        f.write(f"# Total: {len(no_cycle_clips)} / {cfg.num_clips}\n")
         for cid in no_cycle_clips:
             f.write(f"{cid}\n")
 
-    with open(os.path.join(cfg.output_dir, "cycle_clip_ids.txt"), "w") as f:
-        f.write(f"# Clips with cycles from {cfg.dm_results_dir}\n")
-        f.write(f"# Total: {len(cycle_clips)} / {cfg.num_clips}\n")
-        for cid in cycle_clips:
-            f.write(f"{cid}\n")
-
-    print(f"\n=== Computing distribution comparison ===")
+    print("\n=== Distribution comparison ===")
     plot_cycle_vs_no_cycle_comparison(
-        cycle_clips=cycle_clips,
-        no_cycle_clips=no_cycle_clips,
-        rodent_rollout_dir=cfg.rodent_rollout_dir,
-        output_dir=cfg.output_dir,
-        dist_cfg=cfg.distribution,
+        cycle_clips, no_cycle_clips,
+        cfg.rodent_rollout_dir, cfg.output_dir,
+        cfg.distribution,
     )
 
-    if len(no_cycle_clips) == 0:
-        print("\nNo clips without cycles found. Skipping rendering.")
-        return
+    print("\n=== Filmstrip grid of no-cycle clips ===")
+    np.random.seed(42)
+    n_film = min(cfg.filmstrip_n_clips, len(no_cycle_clips))
+    film_clips = np.random.choice(no_cycle_clips, n_film, replace=False).tolist() if len(no_cycle_clips) >= n_film else no_cycle_clips
+    print(f"  Rendering {len(film_clips)} clips: {film_clips}")
 
-    print(f"\n=== Rendering no-cycle clips ===")
+    render_filmstrip_grid(
+        film_clips, cfg.rodent_rollout_dir, cfg.xml_path,
+        os.path.join(cfg.output_dir, "stationary_filmstrip_grid.png"),
+        n_poses=cfg.filmstrip_n_poses,
+        sample_every=cfg.filmstrip_sample_every,
+    )
 
-    clips_per_video = cfg.grid_rows * cfg.grid_cols
-    n_videos = (len(no_cycle_clips) + clips_per_video - 1) // clips_per_video
-
-    for vid_idx in range(n_videos):
-        start_idx = vid_idx * clips_per_video
-        end_idx = min(start_idx + clips_per_video, len(no_cycle_clips))
-        batch_clips = no_cycle_clips[start_idx:end_idx]
-
-        out_path = os.path.join(cfg.output_dir, f"no_cycle_clips_batch_{vid_idx}.mp4")
-
-        print(f"Rendering batch {vid_idx + 1}/{n_videos}: clips {batch_clips}")
-
-        render_clip_grid(
-            rodent_rollout_dir=cfg.rodent_rollout_dir,
-            clip_ids=batch_clips,
-            rows=cfg.grid_rows,
-            cols=cfg.grid_cols,
-            out_path=out_path,
-            fps=cfg.fps,
-            target_size=cfg.target_size,
-            title=f"No-Cycle Clips (batch {vid_idx + 1}/{n_videos})",
-            per_tile_labels=True,
-            label_fmt="clip_{id}",
-        )
-
-        print(f"Saved: {out_path}")
-
-    print(f"\n=== Done ===")
-    print(f"Results saved to: {cfg.output_dir}")
-    print(f"Total no-cycle clips: {len(no_cycle_clips)}")
+    print(f"\nAll outputs saved to: {cfg.output_dir}")
+    print("=" * 60)
 
 
 if __name__ == "__main__":
-    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/demos/demo_stationary.yaml"
-    main(config_path)
+    main()

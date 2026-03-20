@@ -1,4 +1,4 @@
-# Shaped by What’s Missing: Topological Discovery of Behavioral Transitions
+# Shaped by What's Missing: Topological Invariance Simplification Discovers Behavioral Transitions
 
 Behaviors are spatially and topologically meaningful. They can be "decomposed" into different minimas and path along different minimas (an analogy of our design can be how the basis vector can span the entire space through linear combinations). In addition, we revealed that the transitions between behaviors provide richer information than just looking at the behavior attractors themselves.
 

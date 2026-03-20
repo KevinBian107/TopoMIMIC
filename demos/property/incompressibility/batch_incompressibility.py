@@ -807,9 +807,9 @@ def run_stationary_vs_moving_trial(
         moving_frames_list.append(frames)
     moving_frames_total = sum(moving_frames_list)
 
-    labels = [f"Compressible (C{stationary_clip})"]
+    labels = [f"Stationary (C{stationary_clip})"]
     for clip_id in selected_moving:
-        labels.append(f"Incompressible (C{clip_id})")
+        labels.append(f"Moving (C{clip_id})")
 
     plot_trial_intention_with_cycles(
         intention_list,
@@ -855,9 +855,6 @@ def plot_moving_vs_moving_bar(
     results: list[dict],
     output_path: str,
 ) -> None:
-    """
-    Create Nature-style bar graph comparing high-motion vs low-motion clips.
-    """
     high_frames = [r["high_motion_frames"] for r in results]
     low_frames = [r["low_motion_frames"] for r in results]
 
@@ -866,51 +863,50 @@ def plot_moving_vs_moving_bar(
     low_mean = np.mean(low_frames)
     low_sem = np.std(low_frames) / np.sqrt(len(low_frames))
 
-    plt.rcParams.update({
+    with plt.rc_context({
         'font.family': 'sans-serif',
         'font.sans-serif': ['Arial', 'Helvetica', 'DejaVu Sans'],
-        'font.size': 10,
-        'axes.linewidth': 1.0,
-        'axes.labelsize': 11,
-        'axes.titlesize': 12,
-        'xtick.labelsize': 10,
-        'ytick.labelsize': 10,
-        'legend.fontsize': 9,
-        'figure.dpi': 150,
-    })
+        'font.size': 7, 'axes.linewidth': 0.6,
+        'axes.labelsize': 8, 'axes.titlesize': 9,
+        'xtick.labelsize': 7, 'ytick.labelsize': 7,
+    }):
+        fig, ax = plt.subplots(figsize=(3.0, 3.5))
 
-    fig, ax = plt.subplots(figsize=(4, 5))
+        x = np.array([0, 1])
+        colors = ['#4878CF', '#E8A838']
 
-    x = np.array([0, 1])
-    width = 0.6
-    colors = ['#1f77b4', '#ff7f0e']
+        ax.bar(x, [high_mean, low_mean], 0.55,
+               color=colors, edgecolor='none', linewidth=0, zorder=2)
+        ax.errorbar(x, [high_mean, low_mean], yerr=[high_sem, low_sem],
+                    fmt='none', ecolor='black', elinewidth=0.8, capsize=3, capthick=0.8, zorder=3)
 
-    bars = ax.bar(x, [high_mean, low_mean], width, yerr=[high_sem, low_sem],
-                  capsize=4, color=colors, edgecolor='black', linewidth=1,
-                  error_kw={'linewidth': 1.5, 'capthick': 1.5})
+        rng = np.random.default_rng(42)
+        for i, data in enumerate([high_frames, low_frames]):
+            jitter = rng.uniform(-0.1, 0.1, len(data))
+            ax.scatter(np.full(len(data), x[i]) + jitter, data,
+                       c='black', s=10, alpha=0.45, zorder=4, linewidths=0)
 
-    ax.set_ylabel("Frames in Longest DM-Loop", fontsize=11)
-    ax.set_xticks(x)
-    ax.set_xticklabels(["Incompressible\n(High Motion)", "Incompressible\n(Low Motion)"])
-    ax.set_title("Moving vs Moving (k=2)", fontsize=12, fontweight='bold')
+        ax.set_ylabel("Frames in longest DM-loop")
+        ax.set_xticks(x)
+        ax.set_xticklabels(["High motion", "Low motion"])
+        ax.set_title("Moving vs moving (k = 2)", fontweight='bold')
 
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
+        for spine in ['top', 'right']:
+            ax.spines[spine].set_visible(False)
+        ax.tick_params(direction='out', length=3, width=0.6)
 
-    for i, (mean, sem) in enumerate(zip([high_mean, low_mean], [high_sem, low_sem])):
-        ax.annotate(f'{mean:.1f}', xy=(x[i], mean + sem + 2),
-                    ha='center', va='bottom', fontsize=9)
+        for i, (mean, sem) in enumerate(zip([high_mean, low_mean], [high_sem, low_sem])):
+            ax.text(x[i], mean + sem + 1.5, f'{mean:.1f}', ha='center', va='bottom', fontsize=7)
 
-    ax.set_ylim(0, max(high_mean, low_mean) * 1.3)
+        ax.set_ylim(0, max(high_mean, low_mean) * 1.35)
 
-    n_trials = len(results)
-    ax.text(0.95, 0.95, f'n = {n_trials} trials', transform=ax.transAxes,
-            ha='right', va='top', fontsize=9, style='italic')
+        ax.text(0.95, 0.95, f'n = {len(results)} trials', transform=ax.transAxes,
+                ha='right', va='top', fontsize=6.5, fontstyle='italic', color='#555555')
 
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    plt.savefig(output_path.replace('.pdf', '.png'), dpi=300, bbox_inches='tight')
-    plt.close()
+        plt.tight_layout()
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        plt.savefig(output_path.replace('.pdf', '.png'), dpi=300, bbox_inches='tight')
+        plt.close()
     print(f"Saved: {output_path}")
 
 
@@ -918,72 +914,62 @@ def plot_stationary_vs_moving_line(
     results_by_n: dict[int, list[dict]],
     output_path: str,
 ) -> None:
-    """
-    Create Nature-style line plot showing stationary vs moving across n values.
-    """
-    plt.rcParams.update({
+    with plt.rc_context({
         'font.family': 'sans-serif',
         'font.sans-serif': ['Arial', 'Helvetica', 'DejaVu Sans'],
-        'font.size': 10,
-        'axes.linewidth': 1.0,
-        'axes.labelsize': 11,
-        'axes.titlesize': 12,
-        'xtick.labelsize': 10,
-        'ytick.labelsize': 10,
-        'legend.fontsize': 9,
-        'figure.dpi': 150,
-    })
+        'font.size': 7, 'axes.linewidth': 0.6,
+        'axes.labelsize': 8, 'axes.titlesize': 9,
+        'xtick.labelsize': 7, 'ytick.labelsize': 7,
+    }):
+        fig, ax = plt.subplots(figsize=(3.8, 3.5))
 
-    fig, ax = plt.subplots(figsize=(6, 5))
+        n_values = sorted(results_by_n.keys())
 
-    n_values = sorted(results_by_n.keys())
+        stat_m, stat_s, mov_m, mov_s = [], [], [], []
+        for n in n_values:
+            results = results_by_n[n]
+            sf = [r["stationary_frames"] for r in results]
+            mf = [r["moving_frames_total"] for r in results]
+            stat_m.append(np.mean(sf)); stat_s.append(np.std(sf) / np.sqrt(len(sf)))
+            mov_m.append(np.mean(mf)); mov_s.append(np.std(mf) / np.sqrt(len(mf)))
 
-    stationary_means = []
-    stationary_sems = []
-    moving_means = []
-    moving_sems = []
+        stat_m, stat_s = np.array(stat_m), np.array(stat_s)
+        mov_m, mov_s = np.array(mov_m), np.array(mov_s)
 
-    for n in n_values:
-        results = results_by_n[n]
-        stat_frames = [r["stationary_frames"] for r in results]
-        mov_frames = [r["moving_frames_total"] for r in results]
+        ax.fill_between(n_values, mov_m - mov_s, mov_m + mov_s,
+                         color='#4878CF', alpha=0.15, linewidth=0)
+        ax.plot(n_values, mov_m, 's-', color='#4878CF', linewidth=1.2,
+                markersize=5, markeredgecolor='white', markeredgewidth=0.5,
+                label='Moving (sum)', zorder=3)
 
-        stationary_means.append(np.mean(stat_frames))
-        stationary_sems.append(np.std(stat_frames) / np.sqrt(len(stat_frames)))
-        moving_means.append(np.mean(mov_frames))
-        moving_sems.append(np.std(mov_frames) / np.sqrt(len(mov_frames)))
+        ax.fill_between(n_values, stat_m - stat_s, stat_m + stat_s,
+                         color='#C44E52', alpha=0.15, linewidth=0)
+        ax.plot(n_values, stat_m, 'o-', color='#C44E52', linewidth=1.2,
+                markersize=5, markeredgecolor='white', markeredgewidth=0.5,
+                label='Stationary', zorder=3)
 
-    ax.errorbar(n_values, stationary_means, yerr=stationary_sems,
-                fmt='o-', color='#d62728', linewidth=2, markersize=8,
-                capsize=4, capthick=1.5, label='Compressible (Stationary)',
-                markeredgecolor='black', markeredgewidth=1)
+        ax.set_xlabel("Number of trajectories (n)")
+        ax.set_ylabel("Frames in longest DM-loop")
+        ax.set_title("Stationary vs moving", fontweight='bold')
 
-    ax.errorbar(n_values, moving_means, yerr=moving_sems,
-                fmt='s-', color='#1f77b4', linewidth=2, markersize=8,
-                capsize=4, capthick=1.5, label='Incompressible (Moving, sum)',
-                markeredgecolor='black', markeredgewidth=1)
+        for spine in ['top', 'right']:
+            ax.spines[spine].set_visible(False)
+        ax.tick_params(direction='out', length=3, width=0.6)
+        ax.set_xticks(n_values)
 
-    ax.set_xlabel("Number of Trajectories (n)", fontsize=11)
-    ax.set_ylabel("Frames in Longest DM-Loop", fontsize=11)
-    ax.set_title("Stationary vs Moving: Compressibility Test", fontsize=12, fontweight='bold')
+        ax.legend(loc='upper left', frameon=True, framealpha=0.9,
+                  edgecolor='#cccccc', fontsize=6.5, handlelength=1.5)
 
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
+        n_trials = len(results_by_n[n_values[0]])
+        ax.text(0.95, 0.95, f'n = {n_trials} trials per point', transform=ax.transAxes,
+                ha='right', va='top', fontsize=6.5, fontstyle='italic', color='#555555')
 
-    ax.set_xticks(n_values)
+        ax.set_ylim(bottom=0)
 
-    ax.legend(loc='upper left', frameon=True, framealpha=0.9)
-
-    n_trials = len(results_by_n[n_values[0]])
-    ax.text(0.95, 0.95, f'n = {n_trials} trials per point', transform=ax.transAxes,
-            ha='right', va='top', fontsize=9, style='italic')
-
-    ax.set_ylim(bottom=0)
-
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    plt.savefig(output_path.replace('.pdf', '.png'), dpi=300, bbox_inches='tight')
-    plt.close()
+        plt.tight_layout()
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        plt.savefig(output_path.replace('.pdf', '.png'), dpi=300, bbox_inches='tight')
+        plt.close()
     print(f"Saved: {output_path}")
 
 
