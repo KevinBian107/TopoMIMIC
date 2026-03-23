@@ -1,7 +1,7 @@
 # Unified Analysis Configuration
 # Run after experiment.py to analyze results
 
-experiment_dir: "outputs/benchmark_experiment_train"
+experiment_dir: "outputs/benchmark_experiment_transitions"
 output_dir: "outputs/benchmark_analysis"
 
 rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
