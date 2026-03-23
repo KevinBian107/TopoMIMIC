@@ -1,0 +1,15 @@
+experiment_dir: "outputs/benchmark_experiment_transitions"
+method: "w2_dmp_qpos_kmeans"
+seed: 0
+
+data_path: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
+data_key: "qpos_rollout"
+xml_path: "/home/jovyan/vast/kaiwen/TopoVNL/topo_mimic/dmwk/xml/rodent.xml"
+dataset: "rodent"
+
+output_dir: "outputs/cluster_filmstrips"
+
+k_samples: 5
+n_poses: 6
+filmstrip_gap_fraction: 0.25
+dpi: 300
