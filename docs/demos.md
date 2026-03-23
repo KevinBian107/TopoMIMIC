@@ -44,6 +44,14 @@ python -m demos.illustrative.demo_transition_filmstrip --config configs/demos/il
 ```
 Renders filmstrip visualizations of behavioral transitions captured by DM paths and cycles.
 
+### DTW Metric Visualization
+```bash
+python -m demos.illustrative.demo_dtw_metric
+python -m demos.illustrative.demo_dtw_metric --config configs/demos/illustrative/demo_dtw_metric.yaml
+python -m demos.illustrative.demo_dtw_metric --method w2_dmc_int_kmeans --seed 0
+```
+Nature-style per-cluster DTW comparison figures. For each unique transition cluster in a benchmark method, renders a panel with the DTW cost matrix (with warping path) on the left and two chronophotography filmstrips on the right: discovered sequence (blue tint) on top, ground truth (red tint) on bottom. Uses the same DTW computation as the main analysis pipeline. Default method: `w2_dmp_qpos_kmeans`.
+
 ### Bodies (Figure 1E)
 ```bash
 python -m demos.illustrative.demo_bodies
