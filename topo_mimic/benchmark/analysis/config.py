@@ -62,6 +62,7 @@ class AnalysisConfig:
     transition_graph_figsize: tuple[float, float] = (16, 7)
 
 
+
 def load_config(config_path: str | Path) -> AnalysisConfig:
     with open(config_path, "r") as f:
         cfg = yaml.safe_load(f)

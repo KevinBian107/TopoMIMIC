@@ -106,7 +106,7 @@ class ClusteringConfig:
     max_len: int = 500
     target_len: int = 70
     only_max: bool = True
-    skip_clips: tuple[int, ...] = (37, 152, 163, 274, 281)
+    skip_clips: tuple[int, ...] = ()
 
 
 @dataclass
@@ -143,14 +143,15 @@ class ClusterMergingConfig:
     top_k_similar_pairs: int = 5
     render_similar_pairs: bool = True
     samples_per_cluster: int = 3
-    skip_root_dims: int = 7
+    skip_root_dims: int | None = None
 
 
 @dataclass
 class ExperimentConfig:
     dataset: str = "rodent"
     output_dir: str = "outputs/experiment"
-    rodent_rollout_dir: str = "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
+    data_path: str = ""
+    rodent_rollout_dir: str = ""
     split: str = "train"
     n_clips: int | None = None
 
@@ -169,20 +170,37 @@ class ExperimentConfig:
     cluster_merging: ClusterMergingConfig = None
 
     def __post_init__(self):
+        from topo_mimic.dmwk.utils.dataset_config import get_dataset_preset
+
+        preset = get_dataset_preset(self.dataset)
+
+        if not self.data_path and not self.rodent_rollout_dir:
+            self.data_path = preset.default_data_path
+        elif not self.data_path:
+            self.data_path = self.rodent_rollout_dir
+        self.rodent_rollout_dir = self.data_path
+
         if self.data is None:
             self.data = DataConfig()
         if self.dm is None:
             self.dm = DMConfig()
         if self.clustering is None:
             self.clustering = ClusteringConfig()
+        if not self.clustering.skip_clips and preset.skip_clips:
+            self.clustering.skip_clips = preset.skip_clips
         if self.keypoint is None:
-            self.keypoint = KeypointConfig()
+            self.keypoint = KeypointConfig(
+                xml_path=preset.xml_path,
+                stac_data_path=preset.stac_data_path,
+            )
         if self.k_selection is None:
             self.k_selection = KSelectionConfig()
         if self.rendering is None:
             self.rendering = RenderingConfig()
         if self.cluster_merging is None:
             self.cluster_merging = ClusterMergingConfig()
+        if self.cluster_merging.skip_root_dims is None:
+            self.cluster_merging.skip_root_dims = preset.root_strip_dims
         if not self.dm_sources:
             self.dm_sources = {
                 "default": DMSourceConfig(
@@ -254,10 +272,13 @@ def load_config(config_path: str) -> ExperimentConfig:
     cluster_merging_dict = cfg.get("cluster_merging", {})
     cluster_merging_cfg = ClusterMergingConfig(**cluster_merging_dict)
 
+    data_path = cfg.get("data_path", cfg.get("rodent_rollout_dir", ""))
+
     return ExperimentConfig(
         dataset=cfg.get("dataset", "rodent"),
         output_dir=cfg.get("output_dir", ExperimentConfig.output_dir),
-        rodent_rollout_dir=cfg.get("rodent_rollout_dir", ExperimentConfig.rodent_rollout_dir),
+        data_path=data_path,
+        rodent_rollout_dir=data_path,
         split=cfg.get("split", ExperimentConfig.split),
         n_clips=cfg.get("n_clips", None),
         data=data_cfg,
@@ -1571,7 +1592,7 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
     return ExperimentResults(results=all_results, config=config)
 
 
-def main(config_path: str = "configs/benchmark/experiment.yaml"):
+def main(config_path: str = "configs/benchmark/experiment_transitions.yaml"):
     if os.path.exists(config_path):
         cfg = load_config(config_path)
     else:
@@ -1581,5 +1602,5 @@ def main(config_path: str = "configs/benchmark/experiment.yaml"):
 
 
 if __name__ == "__main__":
-    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/benchmark/experiment.yaml"
+    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/benchmark/experiment_transitions.yaml"
     main(config_path)

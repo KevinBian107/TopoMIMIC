@@ -114,7 +114,7 @@ class DemoConfig:
     dataset: str = "walker_long"
     data_path: str = "data/walker_long.h5"
     labels_csv: str = "walker_long_behavior_labels.csv"
-    output_dir: str = "outputs/walker_long_demo"
+    output_dir: str = "outputs/walker_transitions"
     visualization: VisualizationConfig = field(default_factory=VisualizationConfig)
     dm_pipeline: DemoDMConfig = field(default_factory=DemoDMConfig)
     rendering: DemoRenderingConfig = field(default_factory=DemoRenderingConfig)
@@ -156,7 +156,7 @@ def load_demo_config(config_path: str) -> DemoConfig:
         dataset=cfg.get("dataset", "walker_long"),
         data_path=cfg.get("data_path", "data/walker_long.h5"),
         labels_csv=cfg.get("labels_csv", "walker_long_behavior_labels.csv"),
-        output_dir=cfg.get("output_dir", "outputs/walker_long_demo"),
+        output_dir=cfg.get("output_dir", "outputs/walker_transitions"),
         visualization=vis_cfg,
         dm_pipeline=dm_cfg,
         rendering=rend_cfg,
@@ -2633,6 +2633,20 @@ def run_skeleton_analysis(
                 data_clip, skeleton, umap_coords,
                 os.path.join(out_dir, f"clip_{clip_id}_path_geometry.png"),
                 clip_id,
+            )
+
+        if qpos_clip is not None:
+            from demos.transition_demos.skeleton_filmstrip import (
+                plot_skeleton_filmstrip,
+                FilmstripSkeletonConfig,
+            )
+            filmstrip_dir = os.path.join(config.output_dir, "skeleton_analysis_filmstrip")
+            plot_skeleton_filmstrip(
+                data_clip, frame_labels, skeleton,
+                qpos_clip, config.rendering.walker_xml,
+                dataset=config.dataset,
+                output_path=os.path.join(filmstrip_dir, f"clip_{clip_id}_filmstrip.pdf"),
+                clip_id=clip_id,
             )
 
 

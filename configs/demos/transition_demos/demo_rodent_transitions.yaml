@@ -40,3 +40,4 @@ skeleton_analysis:
   minima_frame_radius: 10
   frechet_enabled: true
   target_size: [640, 480]
+  max_clips: 10

@@ -330,7 +330,7 @@ def run_clustering_for_k(
     Returns:
         ClusteringResult or None if clustering fails
     """
-    from topo_mimic.benchmark.experiment import compute_w2_distance_matrix, labels_to_cluster_dict
+    from topo_mimic.benchmark.experiment_transitions import compute_w2_distance_matrix, labels_to_cluster_dict
 
     if len(windows) < n_clusters:
         print(f"    Warning: Not enough windows ({len(windows)}) for {n_clusters} clusters")

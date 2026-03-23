@@ -1,19 +1,15 @@
-# Render clips that have no cycles (simply connected manifolds)
-# These clips represent continuous behavioral dynamics with no discrete modes
+# Stationary Clip Analysis (Appendix: DM-G Identifies Stationary Clips)
 
-dm_results_dir: "/home/jovyan/vast/kaiwen/TopoVNL/outputs/dm_pipeline_ar"
-
+dm_results_dir: "outputs/dm_pipeline_intention"
 rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
-output_dir: "outputs/out_no_cycle_clips"
+xml_path: "topo_mimic/dmwk/xml/rodent.xml"
+output_dir: "outputs/stationary_clips"
 num_clips: 500
 
-grid_rows: 4
-grid_cols: 5
+filmstrip_n_clips: 8
+filmstrip_n_poses: 6
+filmstrip_sample_every: 80
 
-fps: 30
-target_size: [320, 240]
-
-# Distribution comparison settings
 distribution:
   n_cycle_clips: 50
   n_no_cycle_clips: 50
@@ -29,4 +25,3 @@ distribution:
     - "skull"
     - "upper_arm_L"
     - "upper_arm_R"
-  figsize: [14, 8]

@@ -12,6 +12,7 @@ from .behavior_parsing import (
     TurnDirection,
     normalize_behavior_name,
     merge_rear_category,
+    is_forbidden_transition,
 )
 
 
@@ -257,6 +258,9 @@ def find_gt_transition_frames(
             if pair != target_pair:
                 continue
 
+            if is_forbidden_transition(seg_a.behavior, seg_b.behavior):
+                continue
+
             gap = seg_b.start_frame - seg_a.end_frame
             if gap > max_gap:
                 continue
@@ -333,6 +337,9 @@ def find_all_transitions(
             seg_b = merged_segments[i + 1]
 
             if seg_a.behavior == seg_b.behavior:
+                continue
+
+            if is_forbidden_transition(seg_a.behavior, seg_b.behavior):
                 continue
 
             gap = seg_b.start_frame - seg_a.end_frame

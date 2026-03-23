@@ -12,6 +12,9 @@ class DatasetPreset:
     supported_dm_keys: list[str]
     qpos_dims: int
     root_strip_dims: int
+    xml_path: str = ""
+    stac_data_path: str = ""
+    skip_clips: tuple[int, ...] = ()
 
 
 DATASET_PRESETS: dict[str, DatasetPreset] = {
@@ -23,6 +26,9 @@ DATASET_PRESETS: dict[str, DatasetPreset] = {
         supported_dm_keys=["intention", "qpos", "ekp"],
         qpos_dims=74,
         root_strip_dims=7,
+        xml_path="topo_mimic/dmwk/xml/rodent.xml",
+        stac_data_path="data/rodent_reference_clips.h5",
+        skip_clips=(80, 187, 227, 246, 267, 392, 434, 456, 475, 491, 562, 610, 685),
     ),
     "walker_long": DatasetPreset(
         total_clips=10,
@@ -32,6 +38,9 @@ DATASET_PRESETS: dict[str, DatasetPreset] = {
         supported_dm_keys=["intention", "qpos"],
         qpos_dims=9,
         root_strip_dims=0,
+        xml_path="topo_mimic/dmwk/xml/walker.xml",
+        stac_data_path="",
+        skip_clips=(),
     ),
 }
 

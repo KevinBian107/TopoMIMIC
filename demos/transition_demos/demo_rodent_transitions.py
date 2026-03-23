@@ -37,7 +37,7 @@ from topo_mimic.dmwk.utils.dataset_config import get_dataset_preset
 from topo_mimic.dmwk.utils.load_utils import get_aggregate_data, get_clip_indices
 from topo_mimic.dmwk.utils.feature_transforms import get_hdf5_key_for_dm_key
 from topo_mimic.dmwk.skeletonization.postprocess import _uniform_downsample
-from topo_mimic.benchmark.experiment import build_feature_matrix
+from topo_mimic.benchmark.experiment_transitions import build_feature_matrix
 from topo_mimic.benchmark.analysis.ground_truth import (
     find_all_transitions,
     load_behavior_segments_multilabel,
@@ -77,6 +77,7 @@ class SkeletonAnalysisConfig:
     minima_frame_radius: int = 10
     frechet_enabled: bool = True
     target_size: tuple[int, int] = (640, 480)
+    max_clips: int = 10
 
 
 @dataclass
@@ -1133,8 +1134,11 @@ def run_skeleton_analysis(
     out_dir = os.path.join(config.output_dir, "skeleton_analysis")
     os.makedirs(out_dir, exist_ok=True)
     clip_length = data.shape[1]
+    clips_done = 0
 
     for local_idx, G_sm in enumerate(all_G_sm):
+        if clips_done >= sk_cfg.max_clips:
+            break
         clip_id = clip_indices[local_idx]
         clip_dir = os.path.join(dm_output, "clips", f"clip_{local_idx}")
 
@@ -1186,6 +1190,22 @@ def run_skeleton_analysis(
                 os.path.join(out_dir, f"clip_{clip_id}_path_geometry.png"),
                 clip_id,
             )
+
+        if qpos_clip is not None:
+            from demos.transition_demos.skeleton_filmstrip import (
+                plot_skeleton_filmstrip,
+                FilmstripSkeletonConfig,
+            )
+            filmstrip_dir = os.path.join(config.output_dir, "skeleton_analysis_filmstrip")
+            plot_skeleton_filmstrip(
+                data_clip, frame_labels, skeleton,
+                qpos_clip, config.rendering.xml_path,
+                dataset=config.dataset,
+                output_path=os.path.join(filmstrip_dir, f"clip_{clip_id}_filmstrip.pdf"),
+                clip_id=clip_id,
+            )
+
+        clips_done += 1
 
 
 # --- Main demo ---

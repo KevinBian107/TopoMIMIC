@@ -54,6 +54,9 @@ import imageio_ffmpeg
 from tqdm import tqdm
 from scipy.spatial.distance import cdist
 
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
+
 from topo_mimic.dmwk.utils.load_utils import (
     get_aggregate_data,
     get_clip_indices,
@@ -71,6 +74,7 @@ class DataConfig:
     intention_key: str = "intention"
     qpos_key: str = "qpos_rollout"
     skip_clips: list[int] = field(default_factory=list)
+    xml_path: str = "topo_mimic/dmwk/xml/rodent.xml"
 
 
 @dataclass
@@ -902,7 +906,7 @@ def render_with_intention_graph(
         canvas = Image.new("RGB", (W, H), (255, 255, 255))
         draw = ImageDraw.Draw(canvas)
 
-        title = "DM-G Incompressibility: Intention Divergence Analysis"
+        title = "DM-G Topological Simplification: Intention Divergence"
         tw = draw.textlength(title, font=font_title)
         draw.text((W // 2 - tw // 2, 12), title, font=font_title, fill=(0, 0, 0))
 
@@ -1392,6 +1396,267 @@ def plot_sink_analysis(
     print(f"Saved: {output_path}")
 
 
+NATURE_RC = {
+    'font.family': 'sans-serif',
+    'font.sans-serif': ['Arial', 'Helvetica', 'DejaVu Sans'],
+    'font.size': 7, 'axes.linewidth': 0.6,
+    'axes.labelsize': 8, 'axes.titlesize': 9,
+    'xtick.labelsize': 7, 'ytick.labelsize': 7,
+}
+
+
+def plot_static_intention_graph(
+    intention_list: list[np.ndarray],
+    clip_ids: list[int],
+    cycles: list[np.ndarray],
+    clip_ranges: list[tuple[int, int]],
+    dm_config: DMConfig,
+    output_path: str,
+) -> None:
+    if not cycles:
+        return
+
+    longest_cycle = max(cycles, key=len)
+    offset = (dm_config.m - 1) * dm_config.tau
+
+    cycle_frames_by_clip = {}
+    for i, clip_id in enumerate(clip_ids):
+        start, end = clip_ranges[i]
+        frames = set()
+        for global_idx in longest_cycle:
+            if start <= global_idx < end:
+                local_frame = global_idx - start + offset
+                if local_frame < len(intention_list[i]):
+                    frames.add(local_frame)
+        cycle_frames_by_clip[clip_id] = frames
+
+    n_clips = len(clip_ids)
+    palette = plt.cm.tab10(np.linspace(0, 1, max(n_clips, 2)))
+
+    with plt.rc_context(NATURE_RC):
+        fig, axes = plt.subplots(n_clips, 1, figsize=(5.5, 1.6 * n_clips),
+                                 sharex=True, squeeze=False)
+        axes = axes[:, 0]
+
+        for i, (clip_id, intention) in enumerate(zip(clip_ids, intention_list)):
+            ax = axes[i]
+            n_frames = len(intention)
+            t = np.arange(n_frames)
+            mean_int = intention.mean(axis=1)
+
+            ax.plot(t, mean_int, color=palette[i], linewidth=0.8, zorder=1)
+
+            cf = cycle_frames_by_clip[clip_id]
+            mask = np.array([f in cf for f in t])
+            if mask.any():
+                ax.scatter(t[mask], mean_int[mask], c='#C44E52', s=12, marker='^',
+                           linewidths=0.3, edgecolors='black', zorder=3,
+                           label=f'Skeleton frames ({mask.sum()})')
+
+            ax.set_ylabel('Mean intention')
+            ax.set_title(f'Clip {clip_id}', fontsize=8, fontweight='bold', loc='left')
+            ax.legend(loc='upper right', fontsize=6, frameon=True,
+                      framealpha=0.9, edgecolor='#cccccc', handlelength=1)
+            for spine in ['top', 'right']:
+                ax.spines[spine].set_visible(False)
+            ax.tick_params(direction='out', length=2.5, width=0.5)
+
+        axes[-1].set_xlabel('Frame')
+        plt.tight_layout()
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        plt.close()
+    print(f"Saved: {output_path}")
+
+
+def plot_dm_graph_visualization(
+    combined_pts: np.ndarray,
+    clip_ids: list[int],
+    clip_ranges: list[tuple[int, int]],
+    cycles: list[np.ndarray],
+    dm_config: DMConfig,
+    stationary_clip_ids: list[int],
+    output_path: str,
+) -> None:
+    if not cycles:
+        return
+
+    longest_cycle = max(cycles, key=len)
+    cycle_pts_idx = np.array(sorted(longest_cycle))
+    cycle_ordered = np.array(longest_cycle)
+
+    pca = PCA(n_components=2)
+    pts_pca = pca.fit_transform(combined_pts)
+
+    try:
+        tsne = TSNE(n_components=2, perplexity=min(30, len(combined_pts) - 1),
+                     random_state=42)
+        pts_tsne = tsne.fit_transform(combined_pts)
+    except Exception:
+        pts_tsne = pts_pca
+
+    try:
+        import umap
+        reducer = umap.UMAP(n_components=2, random_state=42)
+        pts_umap = reducer.fit_transform(combined_pts)
+    except ImportError:
+        pts_umap = pts_pca
+
+    stat_set = set(stationary_clip_ids)
+    n_clips = len(clip_ids)
+    palette = plt.cm.tab10(np.linspace(0, 1, max(n_clips, 2)))
+
+    embeddings = [('PCA', pts_pca), ('t-SNE', pts_tsne), ('UMAP', pts_umap)]
+
+    with plt.rc_context(NATURE_RC):
+        fig, axes = plt.subplots(1, 3, figsize=(7.2, 2.6))
+
+        for ax, (name, pts_2d) in zip(axes, embeddings):
+            for ci, (clip_id, (start, end)) in enumerate(zip(clip_ids, clip_ranges)):
+                cp = pts_2d[start:end]
+                marker = 's' if clip_id in stat_set else 'o'
+                label = f'C{clip_id} (stat.)' if clip_id in stat_set else f'C{clip_id}'
+                ax.scatter(cp[:, 0], cp[:, 1], c=[palette[ci]], s=6, alpha=0.35,
+                           marker=marker, linewidths=0, label=label)
+
+            if len(cycle_ordered) > 1:
+                valid = cycle_ordered[cycle_ordered < len(pts_2d)]
+                cx = pts_2d[valid, 0]
+                cy = pts_2d[valid, 1]
+                ax.plot(np.append(cx, cx[0]), np.append(cy, cy[0]),
+                        color='#666666', linestyle='--', linewidth=0.7,
+                        alpha=0.7, zorder=5)
+                ax.scatter(cx, cy, c='#666666', s=4, alpha=0.6, zorder=6,
+                           linewidths=0, marker='.')
+
+            ax.set_title(name, fontweight='bold')
+            ax.set_xlabel(f'{name}1' if name == 'PCA' else 'Dim 1')
+            ax.set_ylabel(f'{name}2' if name == 'PCA' else 'Dim 2')
+            for spine in ['top', 'right']:
+                ax.spines[spine].set_visible(False)
+            ax.tick_params(direction='out', length=2.5, width=0.5)
+            ax.legend(loc='best', fontsize=5.5, frameon=True, framealpha=0.9,
+                      edgecolor='#cccccc', markerscale=1.5, handlelength=1)
+
+        plt.tight_layout()
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        plt.close()
+    print(f"Saved: {output_path}")
+
+
+def render_clip_filmstrips(
+    rodent_rollout_dir: str,
+    clip_ids: list[int],
+    xml_path: str,
+    output_path: str,
+    n_poses: int = 6,
+    sample_every: int = 80,
+) -> None:
+    from demos.illustrative.demo_bodies import (
+        _render_poses_individually,
+        _tile_cropped_poses,
+    )
+    from matplotlib.patches import FancyBboxPatch
+    import math
+
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.dirname(os.path.abspath(__file__)))))
+    if not os.path.isabs(xml_path):
+        xml_path = os.path.join(project_root, xml_path)
+
+    strips = []
+    for clip_id in clip_ids:
+        rollout = load_rollout_from_source(clip_id, rodent_rollout_dir)
+        qposes = rollout["qpos"]
+        n_total = min(500, qposes.shape[0])
+        frame_indices = list(range(0, n_total, sample_every))[:n_poses]
+
+        fovy_rad = math.radians(45.0)
+        view_h = 0.35
+        distance = (view_h / 2.0) / math.tan(fovy_rad / 2.0) * 1.3
+
+        def rodent_lookat(qpos):
+            return [qpos[0], qpos[1], qpos[2] + 0.02]
+
+        cropped = _render_poses_individually(
+            qposes, frame_indices, xml_path,
+            camera_elevation=-55.0, camera_azimuth=90.0,
+            camera_distance=distance, camera_lookat_fn=rodent_lookat,
+            render_h=720, render_w=720,
+        )
+        strip = _tile_cropped_poses(cropped, gap_fraction=0.25)
+        strips.append(strip)
+
+    n_clips = len(clip_ids)
+    box_color = '#e8e8e8'
+    box_edge = '#b0b0b0'
+    dpi = 300
+    panel_w_in = 2.8
+    bx_pad = 0.04
+    by_pad = 0.04
+    label_h = 0.22
+    gap_in = 0.15
+    target_w = int(panel_w_in * dpi)
+
+    resized = []
+    for s in strips:
+        oh, ow = s.shape[:2]
+        scale = target_w / ow
+        nh = int(oh * scale)
+        from PIL import Image as PILImage
+        resized.append(np.array(PILImage.fromarray(s).resize((target_w, nh), PILImage.LANCZOS)))
+
+    box_rgb = tuple(int(box_color.lstrip('#')[i:i+2], 16) for i in (0, 2, 4))
+    for i, img in enumerate(resized):
+        white_mask = np.all(img >= 245, axis=-1)
+        img[white_mask] = box_rgb
+        resized[i] = img
+
+    max_h = max(img.shape[0] for img in resized)
+    max_h_in = max_h / dpi
+    box_h = max_h_in + 2 * by_pad + label_h
+    fig_w = n_clips * (panel_w_in + 2 * bx_pad) + (n_clips - 1) * gap_in + 0.1
+    fig_h = box_h + 0.1
+
+    with plt.rc_context(NATURE_RC):
+        fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=dpi)
+        fig.patch.set_facecolor('white')
+        ax.set_xlim(0, fig_w)
+        ax.set_ylim(0, fig_h)
+        ax.set_axis_off()
+        ax.set_aspect('equal')
+
+        x_cursor = 0.05
+        for ci, (clip_id, img) in enumerate(zip(clip_ids, resized)):
+            iw_in = img.shape[1] / dpi
+            ih_in = img.shape[0] / dpi
+            box_w = iw_in + 2 * bx_pad
+            box_y = (fig_h - box_h) / 2
+
+            rect = FancyBboxPatch(
+                (x_cursor, box_y), box_w, box_h,
+                boxstyle='round,pad=0.01,rounding_size=0.04',
+                facecolor=box_color, edgecolor=box_edge, linewidth=0.6, zorder=0,
+            )
+            ax.add_patch(rect)
+
+            img_x = x_cursor + bx_pad
+            center_y = box_y + by_pad + label_h + max_h_in / 2
+            extent = [img_x, img_x + iw_in, center_y - ih_in / 2, center_y + ih_in / 2]
+            ax.imshow(img, extent=extent, aspect='auto', zorder=1)
+
+            ax.text(x_cursor + box_w / 2, box_y + by_pad + label_h * 0.45,
+                    f'Clip {clip_id}', ha='center', va='center',
+                    fontsize=6, fontweight='bold', color='#333333', zorder=2)
+
+            x_cursor += box_w + gap_in
+
+        fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+        plt.savefig(output_path, dpi=dpi, bbox_inches='tight', facecolor='white',
+                    pad_inches=0.02)
+        plt.close()
+    print(f"Saved: {output_path}")
+
+
 def run_experiment(config: IncompressibilityConfig) -> dict:
     os.makedirs(config.output_dir, exist_ok=True)
 
@@ -1506,6 +1771,41 @@ def run_experiment(config: IncompressibilityConfig) -> dict:
         cycles,
         os.path.join(config.output_dir, "sink_analysis.png"),
     )
+
+    print("\n=== Stage 5d: Static intention graph ===")
+    plot_static_intention_graph(
+        intention_list,
+        list(selected_group),
+        cycles,
+        clip_ranges,
+        config.dm,
+        os.path.join(config.output_dir, "static_intention_graph.png"),
+    )
+
+    print("\n=== Stage 5e: DM-graph visualization (PCA/t-SNE/UMAP) ===")
+    stationary_ids = []
+    if config.divergence.moving_vs_stationary:
+        stationary_ids = [list(selected_group)[-1]]
+    plot_dm_graph_visualization(
+        combined_pts,
+        list(selected_group),
+        clip_ranges,
+        cycles,
+        config.dm,
+        stationary_ids,
+        os.path.join(config.output_dir, "dm_graph_visualization.png"),
+    )
+
+    print("\n=== Stage 5f: Filmstrip rendering ===")
+    try:
+        render_clip_filmstrips(
+            config.data.rodent_rollout_dir,
+            list(selected_group),
+            config.data.xml_path,
+            os.path.join(config.output_dir, "clip_filmstrips.png"),
+        )
+    except Exception as e:
+        print(f"  Filmstrip rendering failed: {e}")
 
     print("\n=== Stage 6: Rendering cycles ===")
     render_combined_cycles(

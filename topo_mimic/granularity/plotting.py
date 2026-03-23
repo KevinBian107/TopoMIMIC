@@ -349,7 +349,7 @@ def plot_cycle_lifetime(
 
         fig, ax = plt.subplots(figsize=config.plotting.figsize)
 
-        side_colors = {"_L": "#1f77b4", "_R": "#ff7f0e", "": "#2ca02c"}
+        side_colors = {"_L": "#1f77b4", "_R": "#ff7f0e", "": "#1f77b4"}
 
         all_pers_values = set()
         for joint_name in group_joints:
@@ -410,7 +410,7 @@ def plot_cycle_lifetime(
         ax.set_xticklabels([f"{p:.2f}" for p in pers_values], rotation=45, ha='right')
         ax.set_xlabel("Max Persistence Survived")
         ax.set_ylabel("Variance")
-        ax.set_title(f"{base_name.replace('_', ' ').title()}: Variance vs Cycle Lifetime", fontweight='bold')
+        # Title omitted for paper figures
 
         if len(legend_handles) > 1:
             ax.legend(handles=legend_handles, loc='upper right', frameon=False, fontsize=9)
@@ -649,7 +649,7 @@ def plot_unique_clusters_curve(
 
     ax.set_xlabel("Number of Clusters (k)")
     ax.set_ylabel("Unique Clusters After Merging")
-    ax.set_title(f"Cluster Redundancy Analysis ({method.title()} Threshold)", fontweight='bold')
+    # Title omitted for paper figures
     ax.legend(loc='lower right', frameon=False)
 
     ax.set_xlim(min(config.redundancy.n_clusters_range) - 1, max(config.redundancy.n_clusters_range) + 1)

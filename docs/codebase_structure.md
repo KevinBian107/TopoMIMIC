@@ -136,7 +136,7 @@ topo_mimic/
 │
 └── benchmark/
     ├── __init__.py
-    ├── experiment.py                  # Unified experiment runner
+    ├── experiment_transitions.py      # Unified experiment runner
     ├── methods.py                     # Method registry (W2, GW, KPMS)
     │
     ├── analysis/
@@ -182,7 +182,7 @@ extraction to cluster visualization.
 │                                                                │
 │   skeletonization/postprocess.py                               │
 │   ├── chunk_loops_by_clustered_vpath()                         │
-│   ├── compute_w2_distance_matrix() (via experiment.py)         │
+│   ├── compute_w2_distance_matrix() (via experiment_transitions.py)         │
 │   └── _normalize_dist_matrix()                                 │
 │                                                                │
 │   skeletonization/plotting.py                                  │
@@ -274,7 +274,8 @@ demos/
 │   ├── demo_torus.py
 │   ├── demo_saddle.py
 │   ├── demo_behavior_overlap.py
-│   └── demo_transition_filmstrip.py
+│   ├── demo_transition_filmstrip.py
+│   └── demo_bodies.py              # Fig 1E: walker→rodent complexity
 │
 ├── property/                        # Model/method property demos
 │   ├── demo_cycle_asymmetry.py
@@ -286,7 +287,8 @@ demos/
 │
 └── transition_demos/                # End-to-end transition analysis
     ├── demo_walker_transitions_path.py
-    └── demo_rodent_transitions.py
+    ├── demo_rodent_transitions.py
+    └── skeleton_filmstrip.py        # Fig 2B/C helper (not run directly)
 
 Figure 6: Script and demo organization. Scripts provide standalone
 utilities; demos provide illustrative examples.
@@ -327,8 +329,8 @@ configs/
 │   └── granularity.yaml            # Granularity analysis settings
 │
 ├── benchmark/
-│   ├── experiment.yaml             # Method comparison
-│   ├── analysis.yaml               # Analysis settings
+│   ├── experiment_transitions.yaml  # Method comparison
+│   ├── analysis_transitions.yaml    # Transition analysis settings
 │   └── labeling.yaml               # Labeling settings
 │
 ├── walker_generation/
@@ -354,7 +356,7 @@ Each YAML file defines parameters for its corresponding module.
 - `dm.k_neighbors`: kNN for density weights
 - `dm.use_dm_path`: Enable DM path extraction (H0 paths between density minima)
 
-**experiment.yaml** defines:
+**experiment_transitions.yaml** defines:
 - `dm.results_dir`: Path to DM pipeline output
 - `clustering.target_len`: Uniform sampling length
 - `clustering.only_max`: Whether to keep only longest cycle
@@ -530,7 +532,7 @@ readable (pkl) and human-annotatable (yaml) formats.
 - `dm`: DMConfig with persistence parameters
 - `rendering`: RenderingConfig for video output
 
-**ExperimentConfig** (experiment.py):
+**ExperimentConfig** (experiment_transitions.py):
 - `output_dir`: Output directory path
 - `rodent_rollout_dir`: Data source path
 - `split`: Data split ("train", "test", "all")
@@ -602,9 +604,10 @@ readable (pkl) and human-annotatable (yaml) formats.
 │  └───────┬───────┘                                                      │
 │          │                                                              │
 │          ▼                                                              │
-│  ┌───────────────┐   topo_mimic/benchmark/experiment.py                 │
+│  ┌───────────────┐   topo_mimic/benchmark/experiment_transitions.py                 │
 │  │  Clustering   │   compute_w2_distance_matrix()                       │
 │  │   Methods     │   topo_mimic/benchmark/methods.py                    │
+│  │               │   topo_mimic/benchmark/experiment_transitions.py     │
 │  └───────┬───────┘                                                      │
 │          │                                                              │
 │          ▼                                                              │
@@ -634,19 +637,26 @@ python -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline_ekp.yaml
 
 **Step 2: Run Benchmark Experiments**
 ```bash
-python -m topo_mimic.benchmark.experiment configs/benchmark/experiment.yaml
+python -m topo_mimic.benchmark.experiment_transitions configs/benchmark/experiment_transitions.yaml
 # Or: bash bash_scripts/run_benchmark.sh
 ```
 
 **Step 3: Run Analysis**
 ```bash
-python -m topo_mimic.benchmark.analysis.main configs/benchmark/analysis.yaml
+python -m topo_mimic.benchmark.analysis.main_transitions configs/benchmark/analysis_transitions.yaml
 ```
 
 **Step 4: Run Granularity Analysis** (Optional)
 ```bash
 python -m topo_mimic.granularity.main configs/dmwk/granularity.yaml
 # Or: bash bash_scripts/run_granularity.sh
+```
+
+**Demos**
+```bash
+# Figure 1E: Walker → Rodent complexity arrow
+python demos/illustrative/demo_bodies.py
+python demos/illustrative/demo_bodies.py --config configs/demos/illustrative/demo_bodies.yaml
 ```
 
 ---

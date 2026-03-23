@@ -52,4 +52,4 @@ rendering:
   target_size: [320, 240]
   camera_name: "close_profile"
   # Save intermediate videos for each trial (set to false to speed up)
-  save_videos: true
+  save_videos: false

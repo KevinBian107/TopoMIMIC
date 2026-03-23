@@ -1,4 +1,6 @@
-# Shaped by What’s Missing: Topological Discovery of Behavioral Transitions
+# Shaped by What's Missing: Topological Invariance Simplification Discovers Behavioral Transitions
+
+Behaviors are spatially and topologically meaningful. They can be "decomposed" into different minimas and path along different minimas (an analogy of our design can be how the basis vector can span the entire space through linear combinations). In addition, we revealed that the transitions between behaviors provide richer information than just looking at the behavior attractors themselves.
 
 ## Manifold Learning through Discrete Morse Theory
 
@@ -91,7 +93,7 @@ Run discrete Morse extraction on all clips, then benchmark. Each feature space h
 python -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline_intention.yaml
 python -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline_qpos.yaml
 python -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline_ekp.yaml
-python -m topo_mimic.benchmark.experiment configs/benchmark/experiment.yaml
+python -m topo_mimic.benchmark.experiment_transitions configs/benchmark/experiment_transitions.yaml
 ```
 With `use_dm_path: true` (default in all configs), this extracts both DM cycles (H1) and DM paths (H0: edge-disjoint paths between density minima). The benchmark runs all enabled methods (w2_dmc_*_kmeans, w2_dmp_*_kmeans, gw_dmc_int_kmeans, w2_full_kmeans, kpms_*).
 
@@ -123,7 +125,7 @@ launch_gui: true
 ### Step 4: Analysis
 Generate variance heatmaps, cross-method comparison, and seed stability analysis:
 ```bash
-python -m topo_mimic.benchmark.analysis.main configs/benchmark/analysis.yaml
+python -m topo_mimic.benchmark.analysis.main_transitions configs/benchmark/analysis_transitions.yaml
 python -m topo_mimic.benchmark.generate_results_table
 ```
 
