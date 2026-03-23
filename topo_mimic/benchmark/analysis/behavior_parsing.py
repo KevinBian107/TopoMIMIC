@@ -87,6 +87,15 @@ VALID_BEHAVIORS = PRIMITIVE_BEHAVIORS | COMPOSITIONAL_BEHAVIORS
 
 REAR_BEHAVIORS = {"Supported Rear", "Unsupported Rear"}
 
+FORBIDDEN_ADJACENT_PAIRS = {
+    frozenset({"Grooming", "Orienting"}),
+    frozenset({"Walking", "Step"}),
+}
+
+
+def is_forbidden_transition(behavior_a: str, behavior_b: str) -> bool:
+    return frozenset({behavior_a, behavior_b}) in FORBIDDEN_ADJACENT_PAIRS
+
 
 def normalize_behavior_name(name: str) -> str:
     if name in VALID_BEHAVIORS:
