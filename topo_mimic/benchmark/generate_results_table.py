@@ -507,6 +507,144 @@ def create_consistency_pivot_table(agg_df: pd.DataFrame) -> pd.DataFrame:
     return pivot
 
 
+def create_count_pivot_table(
+    agg_df: pd.DataFrame,
+    include_turn: bool = True,
+) -> pd.DataFrame:
+    """
+    Create pivot table showing cluster example counts as percentages of GT.
+
+    Each cell shows N_Discovered / N_GT as a percentage. A separate "GT (n)"
+    column shows the raw GT count.
+    """
+    df = agg_df.copy()
+
+    if include_turn:
+        df["Transition"] = df["Label"] + " [" + df["Turn"] + "]"
+    else:
+        df["Transition"] = df["Label"]
+
+    gt_counts = df.groupby("Transition")["N_GT"].first()
+
+    pivot_n = df.pivot_table(
+        index="Transition",
+        columns="Method",
+        values="N_Discovered",
+        aggfunc="mean",
+    )
+
+    method_order = []
+    for m in ["w2_dmc_int_kmeans", "w2_dmc_qpos_kmeans", "w2_dmc_ekp_kmeans",
+              "w2_dmp_int_kmeans", "w2_dmp_qpos_kmeans", "w2_dmp_ekp_kmeans",
+              "w2_unif_kmeans", "w2_full_kmeans",
+              "kpms_intention", "kpms_keypoint", "custom_vae", "gw_dmc_int_kmeans"]:
+        if m in pivot_n.columns:
+            method_order.append(m)
+    for m in pivot_n.columns:
+        if m not in method_order:
+            method_order.append(m)
+    pivot_n = pivot_n[method_order]
+
+    pivot_pct = pivot_n.copy()
+    for transition in pivot_pct.index:
+        n_gt = gt_counts.get(transition, np.nan)
+        if pd.notna(n_gt) and n_gt > 0:
+            pivot_pct.loc[transition] = (pivot_n.loc[transition] / n_gt * 100).round(1)
+        else:
+            pivot_pct.loc[transition] = np.nan
+
+    pivot_pct.insert(0, "GT (n)", gt_counts.reindex(pivot_pct.index).astype(int))
+    pivot_pct.columns = ["GT (n)"] + [
+        METHOD_DISPLAY_NAMES.get(c, c) for c in pivot_pct.columns[1:]
+    ]
+
+    return pivot_pct
+
+
+def render_plain_table(
+    df: pd.DataFrame,
+    output_path: str,
+    config: TableConfig,
+    title: str = "",
+    show_mean_row: bool = False,
+) -> None:
+    """Render a table without any color highlighting."""
+    plt.rcParams.update({
+        "font.family": "sans-serif",
+        "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
+        "font.size": config.font_size,
+    })
+
+    display_df = df.copy()
+    if show_mean_row:
+        numeric_cols = display_df.select_dtypes(include=[np.number]).columns
+        mean_row = display_df[numeric_cols].mean()
+        mean_row.name = "Mean"
+        display_df = pd.concat([display_df, mean_row.to_frame().T])
+
+    n_rows = len(display_df) + 1
+    n_cols = len(display_df.columns) + 1
+
+    fig_height = max(config.figsize[1], 0.4 * n_rows + 1.5)
+    fig_width = max(config.figsize[0], 1.8 * n_cols + 3)
+
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+    ax.axis("off")
+
+    cell_text = []
+    for _, row in display_df.iterrows():
+        row_text = []
+        for col in display_df.columns:
+            val = row[col]
+            if pd.isna(val):
+                row_text.append("—")
+            elif isinstance(val, float):
+                if val == int(val):
+                    row_text.append(f"{int(val)}")
+                else:
+                    row_text.append(f"{val:.1f}%")
+            else:
+                row_text.append(str(val))
+        cell_text.append(row_text)
+
+    cell_colors = [["white"] * len(display_df.columns) for _ in range(len(display_df))]
+
+    row_labels = [str(idx) for idx in display_df.index]
+    col_labels = list(display_df.columns)
+
+    table = ax.table(
+        cellText=cell_text,
+        cellColours=cell_colors,
+        rowLabels=row_labels,
+        colLabels=col_labels,
+        loc="center",
+        cellLoc="center",
+    )
+
+    table.auto_set_font_size(False)
+    table.set_fontsize(config.font_size)
+    table.auto_set_column_width(col=list(range(len(col_labels))))
+    table.scale(1.4, 1.5)
+
+    for (row, col), cell in table.get_celld().items():
+        if row == 0:
+            cell.set_text_props(fontweight="bold", fontsize=config.header_font_size)
+            cell.set_facecolor("#e3f2fd")
+            cell.set_width(cell.get_width() * 1.3)
+        if col == -1:
+            cell.set_facecolor("#f5f5f5")
+            cell.set_width(cell.get_width() * 1.5)
+
+    if title:
+        ax.set_title(title, fontsize=config.header_font_size + 2, fontweight="bold", pad=20)
+
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=config.dpi, bbox_inches="tight", facecolor="white")
+    plt.close()
+
+    print(f"Saved table to {output_path}")
+
+
 def generate_all_tables(config: TableConfig) -> None:
     output_dir = Path(config.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -572,6 +710,30 @@ def generate_all_tables(config: TableConfig) -> None:
         config,
         title="DTW Distance by Transition + Direction (↓ lower is better)",
     )
+
+    print("\n=== Cluster Count Table (% of GT) ===")
+    count_pivot_df = create_count_pivot_table(agg_df, include_turn=True)
+    print(count_pivot_df.to_string())
+
+    count_png_path = output_dir / f"{config.table_name}_counts.png"
+    render_plain_table(
+        count_pivot_df,
+        str(count_png_path),
+        config,
+        title="Discovered Examples per Transition (% of GT count)",
+    )
+
+    count_pdf_path = output_dir / f"{config.table_name}_counts.pdf"
+    render_plain_table(
+        count_pivot_df,
+        str(count_pdf_path),
+        config,
+        title="Discovered Examples per Transition (% of GT count)",
+    )
+
+    count_csv_path = output_dir / f"{config.table_name}_counts.csv"
+    count_pivot_df.to_csv(count_csv_path, float_format="%.1f")
+    print(f"Saved count CSV to {count_csv_path}")
 
     csv_path = output_dir / f"{config.table_name}_summary.csv"
     summary_df_export = summary_df.copy()
