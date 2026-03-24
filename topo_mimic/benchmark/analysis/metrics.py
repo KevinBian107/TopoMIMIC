@@ -705,6 +705,281 @@ def run_internal_consistency_analysis(
     return results
 
 
+def compute_dtw_with_warping_stats(
+    seq_a: np.ndarray,
+    seq_b: np.ndarray,
+) -> tuple[float, float, float, float]:
+    """
+    Compute DTW distance and warping path statistics.
+
+    Args:
+        seq_a: (T1, D) first sequence
+        seq_b: (T2, D) second sequence
+
+    Returns:
+        (dtw_distance, non_diagonal_fraction, mean_temporal_deviation, max_run_length)
+        - non_diagonal_fraction: fraction of path steps that are horizontal/vertical (0=perfect, 1=max warp)
+        - mean_temporal_deviation: mean |i/n - j/m| over path (0=diagonal, higher=more warp)
+        - max_run_length: longest consecutive horizontal or vertical stretch
+    """
+    n, m = len(seq_a), len(seq_b)
+    if n == 0 or m == 0:
+        return float('inf'), 1.0, 1.0, 0
+
+    dtw_matrix = np.full((n + 1, m + 1), np.inf)
+    dtw_matrix[0, 0] = 0.0
+
+    for i in range(1, n + 1):
+        for j in range(1, m + 1):
+            cost = np.linalg.norm(seq_a[i - 1] - seq_b[j - 1])
+            dtw_matrix[i, j] = cost + min(
+                dtw_matrix[i - 1, j],
+                dtw_matrix[i, j - 1],
+                dtw_matrix[i - 1, j - 1],
+            )
+
+    path = []
+    i, j = n, m
+    while i > 0 and j > 0:
+        path.append((i - 1, j - 1))
+        candidates = [
+            (dtw_matrix[i - 1, j - 1], i - 1, j - 1),
+            (dtw_matrix[i - 1, j], i - 1, j),
+            (dtw_matrix[i, j - 1], i, j - 1),
+        ]
+        _, i, j = min(candidates, key=lambda x: x[0])
+    path.reverse()
+
+    normalized_dist = dtw_matrix[n, m] / (n + m)
+
+    n_diag = 0
+    deviations = []
+    for idx in range(len(path)):
+        pi, pj = path[idx]
+        deviations.append(abs(pi / max(n - 1, 1) - pj / max(m - 1, 1)))
+        if idx > 0:
+            di = pi - path[idx - 1][0]
+            dj = pj - path[idx - 1][1]
+            if di == 1 and dj == 1:
+                n_diag += 1
+
+    n_steps = len(path) - 1
+    non_diag_frac = 1.0 - (n_diag / max(n_steps, 1))
+    mean_dev = float(np.mean(deviations)) if deviations else 0.0
+
+    max_run = 0
+    current_run = 0
+    current_dir = None
+    for idx in range(1, len(path)):
+        di = path[idx][0] - path[idx - 1][0]
+        dj = path[idx][1] - path[idx - 1][1]
+        step_dir = (di, dj)
+        if step_dir != (1, 1):
+            if step_dir == current_dir:
+                current_run += 1
+            else:
+                current_dir = step_dir
+                current_run = 1
+            max_run = max(max_run, current_run)
+        else:
+            current_dir = None
+            current_run = 0
+
+    return normalized_dist, non_diag_frac, mean_dev, max_run
+
+
+def compute_frame_sync_distance(
+    seq_a: np.ndarray,
+    seq_b: np.ndarray,
+) -> float:
+    """
+    Compute frame-synchronous distance (no warping).
+
+    Linearly resamples both sequences to the same length, then computes
+    mean per-frame L2 distance. This is what you'd get if DTW were not
+    allowed to rearrange time.
+    """
+    n, m = len(seq_a), len(seq_b)
+    if n == 0 or m == 0:
+        return float('inf')
+
+    L = max(n, m)
+    idx_a = np.round(np.linspace(0, n - 1, L)).astype(int)
+    idx_b = np.round(np.linspace(0, m - 1, L)).astype(int)
+    resampled_a = seq_a[idx_a]
+    resampled_b = seq_b[idx_b]
+
+    dists = np.linalg.norm(resampled_a - resampled_b, axis=1)
+    return float(np.mean(dists))
+
+
+def compute_dtw_sync_ratio(
+    seq_a: np.ndarray,
+    seq_b: np.ndarray,
+) -> tuple[float, float, float]:
+    """
+    Compute DTW distance, frame-sync distance, and their ratio.
+
+    Returns:
+        (dtw_dist, sync_dist, ratio) where ratio = dtw / sync.
+        ratio < 1 means DTW improves over frame-sync (warping helps).
+        Lower ratio = more temporal rearrangement needed.
+    """
+    n, m = len(seq_a), len(seq_b)
+    if n == 0 or m == 0:
+        return float('inf'), float('inf'), 1.0
+
+    dtw_matrix = np.full((n + 1, m + 1), np.inf)
+    dtw_matrix[0, 0] = 0.0
+    for i in range(1, n + 1):
+        for j in range(1, m + 1):
+            cost = np.linalg.norm(seq_a[i - 1] - seq_b[j - 1])
+            dtw_matrix[i, j] = cost + min(
+                dtw_matrix[i - 1, j],
+                dtw_matrix[i, j - 1],
+                dtw_matrix[i - 1, j - 1],
+            )
+    dtw_dist = dtw_matrix[n, m] / (n + m)
+    sync_dist = compute_frame_sync_distance(seq_a, seq_b)
+
+    if sync_dist == 0 or not np.isfinite(sync_dist):
+        ratio = 1.0
+    else:
+        ratio = dtw_dist / sync_dist
+
+    return dtw_dist, sync_dist, ratio
+
+
+@dataclass
+class WarpingResult:
+    label: str
+    turn_direction: str | None
+    mean_dtw: float
+    mean_non_diag_frac: float
+    mean_temporal_dev: float
+    mean_max_run: float
+    mean_sync_dist: float
+    mean_dtw_sync_ratio: float
+    n_comparisons: int
+
+
+def run_warping_analysis(
+    cluster_dict: dict,
+    cluster_labels: dict[int, str],
+    turn_directions: dict[int, str] | None,
+    behavior_labels_csv: str,
+    data: np.ndarray,
+    method_name: str = "",
+    max_samples: int = 20,
+    max_comparisons: int = 50,
+    short_threshold: int = 10,
+    merge_rear: bool = True,
+    skip_root_dims: int = 7,
+    min_seq_length: int = 3,
+) -> list[WarpingResult]:
+    """
+    Compute DTW warping statistics for each (label, turn) group vs GT.
+
+    Returns list of WarpingResult with warping heaviness metrics.
+    """
+    if turn_directions is None:
+        turn_directions = {}
+
+    if skip_root_dims > 0:
+        data = data[..., skip_root_dims:]
+
+    all_transitions = find_all_transitions(
+        behavior_labels_csv,
+        short_threshold=short_threshold,
+        merge_rear=merge_rear,
+    )
+
+    grouped_clusters = defaultdict(list)
+    for cluster_id, label in cluster_labels.items():
+        if not label or label.startswith("C"):
+            continue
+        parsed = parse_cluster_label(label, merge_rear=merge_rear)
+        if parsed is None or parsed.comparison_type != "transition":
+            continue
+        if len(parsed.primitives) < 2:
+            continue
+        target_behaviors = tuple(sorted(parsed.primitives[:2]))
+        turn_dir_str = turn_directions.get(cluster_id)
+        key = (target_behaviors, turn_dir_str)
+        grouped_clusters[key].append(cluster_id)
+
+    results = []
+    for (target_behaviors, turn_dir_str), cluster_ids in grouped_clusters.items():
+        turn_dir = parse_turn_direction(turn_dir_str)
+
+        combined_seqs = []
+        for cid in cluster_ids:
+            entries = cluster_dict.get(cid, [])
+            seqs = extract_sequences_from_cluster(entries, data, min_seq_length)
+            combined_seqs.extend(seqs)
+
+        if not combined_seqs:
+            continue
+
+        if len(combined_seqs) > max_samples:
+            np.random.seed(42)
+            indices = np.random.choice(len(combined_seqs), max_samples, replace=False)
+            combined_seqs = [combined_seqs[i] for i in indices]
+
+        gt_seqs = extract_sequences_for_gt_label(
+            all_transitions, data, target_behaviors,
+            turn_direction=turn_dir, min_seq_length=min_seq_length,
+            max_seqs=max_samples,
+        )
+
+        if not gt_seqs:
+            continue
+
+        n_a, n_b = len(combined_seqs), len(gt_seqs)
+        total_pairs = n_a * n_b
+        if total_pairs <= max_comparisons:
+            pairs = [(i, j) for i in range(n_a) for j in range(n_b)]
+        else:
+            np.random.seed(42)
+            pairs = [(np.random.randint(n_a), np.random.randint(n_b))
+                     for _ in range(max_comparisons)]
+
+        dtw_vals, ndf_vals, dev_vals, run_vals = [], [], [], []
+        sync_vals, ratio_vals = [], []
+        for i, j in pairs:
+            dtw_d, ndf, dev, mr = compute_dtw_with_warping_stats(
+                combined_seqs[i], gt_seqs[j]
+            )
+            _, sync_d, ratio = compute_dtw_sync_ratio(
+                combined_seqs[i], gt_seqs[j]
+            )
+            if np.isfinite(dtw_d):
+                dtw_vals.append(dtw_d)
+                ndf_vals.append(ndf)
+                dev_vals.append(dev)
+                run_vals.append(mr)
+                sync_vals.append(sync_d)
+                ratio_vals.append(ratio)
+
+        if not dtw_vals:
+            continue
+
+        label_str = f"{target_behaviors[0]}↔{target_behaviors[1]}"
+        results.append(WarpingResult(
+            label=label_str,
+            turn_direction=turn_dir_str,
+            mean_dtw=float(np.mean(dtw_vals)),
+            mean_non_diag_frac=float(np.mean(ndf_vals)),
+            mean_temporal_dev=float(np.mean(dev_vals)),
+            mean_max_run=float(np.mean(run_vals)),
+            mean_sync_dist=float(np.mean(sync_vals)),
+            mean_dtw_sync_ratio=float(np.mean(ratio_vals)),
+            n_comparisons=len(dtw_vals),
+        ))
+
+    return results
+
+
 def plot_dtw_bar_chart(
     results: list[DTWResult],
     output_dir: str,
