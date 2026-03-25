@@ -1,5 +1,5 @@
 data_source: "data/rodent_ar_latest.h5"
-labels_path: "behavior_labels.csv"
+labels_path: "behavior_labels/rodent.csv"
 output_path: "outputs/behavior_clusters.png"
 
 n_clips: 100

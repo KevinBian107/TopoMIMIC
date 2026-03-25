@@ -1,4 +1,4 @@
-behavior_labels_csv: "behavior_labels.csv"
+behavior_labels_csv: "behavior_labels/rodent.csv"
 n_immobility_frames: 20
 n_walk_frames: 30
 backup: true

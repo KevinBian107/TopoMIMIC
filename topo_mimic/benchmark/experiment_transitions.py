@@ -154,6 +154,7 @@ class ExperimentConfig:
     rodent_rollout_dir: str = ""
     split: str = "train"
     n_clips: int | None = None
+    behavior_labels_csv: str = ""
 
     data: DataConfig = None
     dm: DMConfig = None
@@ -281,6 +282,7 @@ def load_config(config_path: str) -> ExperimentConfig:
         rodent_rollout_dir=data_path,
         split=cfg.get("split", ExperimentConfig.split),
         n_clips=cfg.get("n_clips", None),
+        behavior_labels_csv=cfg.get("behavior_labels_csv", ""),
         data=data_cfg,
         dm=dm_cfg,
         dm_sources=dm_sources,
@@ -1353,13 +1355,25 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
 
             for seed in config.seeds:
                 result_n_clusters = method_results[seed].get("n_clusters", config.k_selection.n_clusters)
-                generate_labels_yaml(
-                    method_name=method_entry.name,
-                    n_clusters=result_n_clusters,
-                    seed=seed,
-                    output_dir=method_output_dir,
-                    experiment_id=experiment_id,
-                )
+                if config.behavior_labels_csv and Path(config.behavior_labels_csv).exists():
+                    from topo_mimic.benchmark.auto_label import generate_auto_labels_yaml
+                    generate_auto_labels_yaml(
+                        method_name=method_entry.name,
+                        n_clusters=result_n_clusters,
+                        seed=seed,
+                        output_dir=method_output_dir,
+                        cluster_dict=method_results[seed]["cluster_dict"],
+                        behavior_labels_csv=config.behavior_labels_csv,
+                        experiment_id=experiment_id,
+                    )
+                else:
+                    generate_labels_yaml(
+                        method_name=method_entry.name,
+                        n_clusters=result_n_clusters,
+                        seed=seed,
+                        output_dir=method_output_dir,
+                        experiment_id=experiment_id,
+                    )
 
             with open(os.path.join(method_output_dir, "results.pkl"), "wb") as f:
                 pkl.dump(method_results, f)
@@ -1453,13 +1467,25 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
 
         for seed in config.seeds:
             result_n_clusters = method_results[seed].get("n_clusters", config.k_selection.n_clusters)
-            generate_labels_yaml(
-                method_name=method_entry.name,
-                n_clusters=result_n_clusters,
-                seed=seed,
-                output_dir=method_output_dir,
-                experiment_id=experiment_id,
-            )
+            if config.behavior_labels_csv and Path(config.behavior_labels_csv).exists():
+                from topo_mimic.benchmark.auto_label import generate_auto_labels_yaml
+                generate_auto_labels_yaml(
+                    method_name=method_entry.name,
+                    n_clusters=result_n_clusters,
+                    seed=seed,
+                    output_dir=method_output_dir,
+                    cluster_dict=method_results[seed]["cluster_dict"],
+                    behavior_labels_csv=config.behavior_labels_csv,
+                    experiment_id=experiment_id,
+                )
+            else:
+                generate_labels_yaml(
+                    method_name=method_entry.name,
+                    n_clusters=result_n_clusters,
+                    seed=seed,
+                    output_dir=method_output_dir,
+                    experiment_id=experiment_id,
+                )
 
         with open(os.path.join(method_output_dir, "results.pkl"), "wb") as f:
             pkl.dump(method_results, f)

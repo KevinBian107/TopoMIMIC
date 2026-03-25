@@ -1,0 +1,33 @@
+output_dir: "outputs/dm_pipeline_walker_short_qpos"
+
+data:
+  dataset: "walker_short"
+  dm_key: "qpos"
+  rodent_rollout_dir: "data/walker_short.h5"
+  split: "all"
+  pca_dims: 6
+  xml_path: "topo_mimic/dmwk/xml/walker.xml"
+
+takens:
+  auto_estimate: true
+  m: 3
+  tau: 6
+  max_tau: 200
+  bins: 64
+  m_max: 15
+  R_tol: 15.0
+  A_tol: 2.0
+  fnn_thr: 0.05
+  theiler: "auto"
+  max_points: 20000
+
+dm:
+  pers_delta: 0.3
+  k_neighbors: 6
+  epsilon: 0.99
+  use_dm_path: true
+  segment_gap_limit: 10
+  min_segment_len: 10
+
+rendering:
+  enabled: false

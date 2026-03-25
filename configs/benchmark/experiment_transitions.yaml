@@ -1,7 +1,7 @@
 # Unified Benchmark Experiment Configuration
 # Single entry point for all clustering methods
 
-dataset: "rodent"  # "rodent" or "walker_long"
+dataset: "rodent"
 output_dir: "outputs/benchmark_experiment_transitions"
 data_path: "data/rodent_ar.h5"
 split: "train"
@@ -37,7 +37,7 @@ keypoint:
 clustering:
   min_len: 0
   max_len: 500
-  target_len: 100
+  target_len: 100 # 50 for walker_long, 100 for rodent
   only_max: true
   skip_clips: [80, 187, 227, 246, 267, 392, 434, 456, 475, 491, 562, 610, 685]
 

@@ -1,6 +1,6 @@
 dataset: rodent
 data_path: data/rodent_ar.h5
-labels_csv: behavior_labels.csv
+labels_csv: behavior_labels/rodent.csv
 dm_key: intention
 output_dir: outputs/rodent_transitions
 
