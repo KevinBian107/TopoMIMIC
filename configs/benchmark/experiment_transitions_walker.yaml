@@ -29,14 +29,14 @@ keypoint:
   stac_data_path: ""
 
 clustering:
-  min_len: 0
-  max_len: 500
-  target_len: 50
+  min_len: 30
+  max_len: 250
+  target_len: 100
   only_max: true
   skip_clips: []
 
 k_selection:
-  n_clusters: 15
+  n_clusters: 25
 
 seeds: [0, 12, 123, 1234, 12345]
 aggregate_seeds: true
@@ -73,7 +73,7 @@ methods:
   - name: "w2_unif_kmeans"
     type: "clustering"
     dm_source: "intention"
-    enabled: false
+    enabled: true
     params:
       mds_components: 3
 

@@ -26,8 +26,8 @@ dm:
   k_neighbors: 6
   epsilon: 0.99
   use_dm_path: true
-  segment_gap_limit: 10
-  min_segment_len: 10
+  segment_gap_limit: 30
+  min_segment_len: 30
 
 rendering:
   enabled: false

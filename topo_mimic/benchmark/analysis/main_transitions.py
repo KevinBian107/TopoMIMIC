@@ -422,6 +422,27 @@ def run_analysis(config: AnalysisConfig) -> None:
         print("\n=== Generating Consistency Comparison Table ===")
         create_consistency_comparison_table(all_consistency_results, config.output_dir)
 
+    analyzed_methods = [m for m in all_results if not config.methods or m in config.methods]
+    analyzed_seeds = config.seeds or [0]
+    has_sample_labels = any(
+        os.path.exists(os.path.join(config.experiment_dir, m, f"sample_labels_seed_{analyzed_seeds[0]}.yaml"))
+        for m in analyzed_methods
+    )
+    if has_sample_labels:
+        print("\n=== Cluster Classification Metrics (GT labels available) ===")
+        from .cluster_classification import run_cluster_classification_analysis
+        try:
+            run_cluster_classification_analysis(
+                experiment_dir=config.experiment_dir,
+                methods=analyzed_methods,
+                seeds=analyzed_seeds,
+                output_dir=os.path.join(config.output_dir, "classification"),
+            )
+        except Exception as e:
+            print(f"  Classification analysis failed: {e}")
+            import traceback
+            traceback.print_exc()
+
     print("\n" + "=" * 60)
     print("Analysis Complete!")
     print("=" * 60)

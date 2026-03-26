@@ -1,5 +1,5 @@
 # Walker Analysis Configuration
-# Run after experiment_transitions_walker to analyze results
+# Classification metrics only (GT labels available)
 
 experiment_dir: "outputs/benchmark_experiment_transitions_walker"
 output_dir: "outputs/benchmark_analysis_walker"
@@ -7,46 +7,18 @@ output_dir: "outputs/benchmark_analysis_walker"
 rodent_rollout_dir: "data/walker_short.h5"
 behavior_labels_csv: "behavior_labels/walker_short.csv"
 
-methods: ["w2_dmc_int_kmeans", "w2_dmc_qpos_kmeans", "w2_dmp_int_kmeans", "w2_dmp_qpos_kmeans"]
+methods: ["w2_dmc_int_kmeans", "w2_dmc_qpos_kmeans", "w2_dmp_int_kmeans", "w2_dmp_qpos_kmeans", "w2_unif_kmeans"]
 seeds: [0]
 
-short_behavior_threshold: 50
 merge_rear: false
+short_behavior_threshold: 50
 max_gap_between_segments: 10
 
 run_gt_sanity_check: false
-gt_sanity_top_k: 5
-gt_sanity_data_key: "qpos_rollout"
-gt_sanity_figsize: [12, 10]
-gt_sanity_skip_root_dims: 0
-
 run_mds_analysis: false
-mds_k_cycles: 50
-mds_s_top: 10
-mds_figsize: [10, 9]
-mds_behaviors: null
-
-render_gt_transitions: false
-gt_render_max_samples: 5
-gt_render_framerate: 30
-gt_render_target_size: [320, 240]
-
-run_transition_comparison: true
-run_transition_ranking: true
-max_transition_points: 500
-
-run_transition_graph: true
-transition_graph_k: 3
-transition_graph_gt_top_k: 10
-transition_graph_layout: "spring"
-transition_graph_figsize: [16, 7]
-
-run_dtw_metrics: true
-dtw_data_key: "qpos_rollout"
-dtw_max_seqs: 50
-dtw_max_comparisons: 100
-dtw_min_seq_length: 3
-dtw_skip_root_dims: 0
-consistency_n_samples: 5
-
+run_transition_comparison: false
+run_transition_ranking: false
+run_transition_graph: false
+run_dtw_metrics: false
 run_dtw_visualization: false
+render_gt_transitions: false
