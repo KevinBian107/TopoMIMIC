@@ -1055,12 +1055,15 @@ def load_keypoint_data(
     split: str,
     n_clips: int | None,
     keypoint_cfg: KeypointConfig,
+    total_clips: int = 842,
+    test_size: int = 200,
 ) -> tuple[np.ndarray, list[str]]:
     """Load qpos data and convert to keypoints using MuJoCo model."""
     if not HAS_KP_LOADER:
         raise ImportError("Keypoint loader not available. Install jax and mujoco.")
 
-    qpos_data, clip_indices = load_data("qpos", rodent_rollout_dir, split, n_clips)
+    qpos_data, clip_indices = load_data("qpos", rodent_rollout_dir, split, n_clips,
+                                        total_clips=total_clips, test_size=test_size)
 
     print("Setting up MuJoCo model for keypoint conversion...")
     mjx_model, mjx_data, site_ids, kp_names = setup_stac_reference(
@@ -1388,7 +1391,10 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
 
         if dm_data_for_ss is None:
             hdf5_key = get_hdf5_key_for_dm_key(config.data.dm_key)
-            dm_data_for_ss, _ = load_data(hdf5_key, config.rodent_rollout_dir, config.split, config.n_clips)
+            dm_data_for_ss, _ = load_data(
+                hdf5_key, config.rodent_rollout_dir, config.split, config.n_clips,
+                total_clips=preset.total_clips, test_size=preset.test_size,
+            )
             min_frames = min(dm_data_for_ss.shape[1], eval_data.shape[1])
             dm_data_for_ss = dm_data_for_ss[:, :min_frames, :]
 
@@ -1407,7 +1413,8 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
         if is_keypoint_method:
             print(f"  Loading keypoint data for {method_entry.name}...")
             kp_data, kp_names = load_keypoint_data(
-                config.rodent_rollout_dir, config.split, config.n_clips, config.keypoint
+                config.rodent_rollout_dir, config.split, config.n_clips, config.keypoint,
+                total_clips=preset.total_clips, test_size=preset.test_size,
             )
             kp_data_filtered = kp_data[keep_indices]
             print(f"  Filtered {kp_data.shape[0]} -> {kp_data_filtered.shape[0]} clips")
