@@ -688,7 +688,9 @@ def extract_skeleton_for_clip(
     config: SkeletonAnalysisConfig,
     n_takens: int,
     n_minima_override: int | None = None,
+    takens_offset: int = 0,
 ) -> SkeletonResult | None:
+    from collections import Counter
     from topo_mimic.dmwk.skeletonization.remap import (
         parse_swr_remap,
         remap_cycle_to_original,
@@ -704,14 +706,22 @@ def extract_skeleton_for_clip(
     if len(candidate_pool) < 2:
         return None
 
+    vote_radius = config.minima_frame_radius
     candidate_orig = []
     candidate_behaviors = []
     for m in candidate_pool:
         orig_frames = remap_cycle_to_original([m], remap, n_takens)
-        orig_idx = orig_frames[0] if orig_frames else 0
+        orig_idx = (orig_frames[0] if orig_frames else 0) + takens_offset
         orig_idx = min(orig_idx, len(frame_labels) - 1)
         candidate_orig.append(orig_idx)
-        candidate_behaviors.append(str(frame_labels[orig_idx]))
+        lo = max(0, orig_idx - vote_radius)
+        hi = min(len(frame_labels), orig_idx + vote_radius + 1)
+        window = frame_labels[lo:hi]
+        non_transition = [str(l) for l in window if str(l) != "transition"]
+        if non_transition:
+            candidate_behaviors.append(Counter(non_transition).most_common(1)[0][0])
+        else:
+            candidate_behaviors.append(str(frame_labels[orig_idx]))
 
     seen_behaviors: set[str] = set()
     selected_indices: list[int] = []
@@ -742,7 +752,7 @@ def extract_skeleton_for_clip(
             continue
 
         for k, p in enumerate(raw_paths[:config.k_paths]):
-            remapped = remap_cycle_to_original(p, remap, n_takens)
+            remapped = remap_cycle_to_original(p, remap, n_takens) + takens_offset
             if len(remapped) >= 3:
                 paths.append(np.array(remapped, dtype=int))
                 path_pair_labels.append((i, j))
@@ -1126,6 +1136,7 @@ def run_skeleton_analysis(
     clip_behaviors: dict[int, dict[int, set[str]]],
     all_G_sm: list,
     config: Config,
+    takens_offset: int = 0,
 ) -> None:
     import networkx as nx
 
@@ -1159,6 +1170,7 @@ def run_skeleton_analysis(
         skeleton = extract_skeleton_for_clip(
             G_sm, clip_dir, data_clip, frame_labels, sk_cfg, n_takens,
             n_minima_override=n_behaviors,
+            takens_offset=takens_offset,
         )
         if skeleton is None:
             print(f"  Clip {clip_id}: insufficient minima, skipping")
@@ -1373,10 +1385,11 @@ def run_demo(config: Config) -> None:
         print("\n=== Skeleton Analysis ===")
         try:
             clip_behaviors_skel = load_behavior_segments_multilabel(
-                config.labels_csv, merge_rear=False,
+                config.labels_csv, merge_rear=True,
             )
             run_skeleton_analysis(
                 data, test_indices, clip_behaviors_skel, all_G_sm, config,
+                takens_offset=takens_offset,
             )
         except Exception as e:
             print(f"WARNING: Skeleton analysis failed: {e}")
