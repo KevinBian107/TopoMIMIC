@@ -16,8 +16,7 @@ walker/
 # output figures
 outputs/
 outputs_archive/
-paper.md
-tables
+paper/
 
 # labeling framework
 .gradio

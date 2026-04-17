@@ -178,7 +178,7 @@ def _tile_cropped_poses(
 
 
 def _get_camera_params(dataset: str):
-    if dataset in ("walker", "walker_long"):
+    if dataset in ("walker", "walker_long", "walker_short"):
         fovy_rad = math.radians(45.0)
         view_h = 2.4
         dist = (view_h / 2.0) / math.tan(fovy_rad / 2.0) * 1.15
