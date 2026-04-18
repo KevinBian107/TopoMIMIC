@@ -33,5 +33,5 @@ rollout:
 
 output:
   h5_path: data/walker_long.h5
-  csv_path: walker_long_behavior_labels.csv
+  csv_path: behavior_labels/walker_long.csv
   demo_clip_video: outputs/walker_long_demo/demo_clip.mp4

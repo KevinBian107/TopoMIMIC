@@ -83,8 +83,11 @@ def load_behavior_segments(
         if start_frame == end_frame == 0:
             continue
 
-        video = str(row["Video"])
-        clip_id = int(video.replace("clip_", "").replace(".mp4", ""))
+        if "Clip" in df.columns:
+            clip_id = int(row["Clip"])
+        else:
+            video = str(row["Video"])
+            clip_id = int(video.replace("clip_", "").replace(".mp4", ""))
         behavior = normalize_behavior_name(str(row["Behavior"]))
 
         if behavior in COMPOSITIONAL_BEHAVIORS:
@@ -389,14 +392,17 @@ def load_behavior_segments_multilabel(
         if start_frame == end_frame == 0:
             continue
 
-        video = str(row["Video"])
-        clip_id = int(video.replace("clip_", "").replace(".mp4", ""))
+        if "Clip" in df.columns:
+            clip_id = int(row["Clip"])
+        else:
+            video = str(row["Video"])
+            clip_id = int(video.replace("clip_", "").replace(".mp4", ""))
         behavior = normalize_behavior_name(str(row["Behavior"]))
 
         if merge_rear:
             behavior = merge_rear_category(behavior)
 
-        for frame in range(start_frame, min(end_frame + 1, 500)):
+        for frame in range(start_frame, end_frame):
             clip_behaviors[clip_id][frame].add(behavior)
 
     return {k: dict(v) for k, v in clip_behaviors.items()}

@@ -1,0 +1,67 @@
+dataset: walker_short
+data_path: data/walker_short.h5
+labels_csv: behavior_labels/walker_short.csv
+xml_path: topo_mimic/dmwk/xml/walker.xml
+
+output_dir: outputs/global_manifold/walker
+cache_dir: outputs/global_manifold/walker/cache
+
+transition_types:
+  - [tiptoe, walk_slow]
+  - [hop, walk_slow]
+
+feature_spaces:
+  - dm_key: intention
+    pca_dims: null
+    pers_delta: 0.75
+    subsample_n: 10
+    takens:
+      auto_estimate: true
+      m: 3
+      tau: 6
+  - dm_key: qpos
+    pca_dims: 8
+    pers_delta: 1.0
+    subsample_n: 20
+    takens:
+      auto_estimate: true
+      m: 3
+      tau: 6
+
+dm:
+  k_neighbors: 6
+  epsilon: 0.99
+
+minima_selection:
+  primitives: [tiptoe, walk_slow, hop]
+  neighbor_votes: 15
+  candidate_pool: 50
+
+path_sampling:
+  k_per_pair: 5
+  simple_path_cap: 200
+  gap_limit: 50
+  min_segment_len: 20
+  rng_seed: 0
+
+projection:
+  methods: [pca, tsne, umap]
+  tsne_perplexity: 30
+  umap_n_neighbors: 15
+  umap_min_dist: 0.1
+  max_points: 20000
+  rng_seed: 0
+
+visualization:
+  dpi: 300
+  background_alpha: 0.25
+  background_size: 4
+  overlay_linewidth: 1.4
+  minima_marker_size: 140
+  filmstrip_n_poses: 6
+  behavior_colors:
+    tiptoe:    "#E64B35"
+    walk_slow: "#4DBBD5"
+    hop:       "#00A087"
+  turn_shapes:
+    straight: o

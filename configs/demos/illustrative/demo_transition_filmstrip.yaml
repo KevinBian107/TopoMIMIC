@@ -1,6 +1,6 @@
 dataset: rodent
 output_dir: "outputs/transition_filmstrip"
-behavior_labels_csv: "behavior_labels.csv"
+behavior_labels_csv: "behavior_labels/rodent.csv"
 output_format: pdf
 data:
   rollout_path: "data/rodent_ar.h5"

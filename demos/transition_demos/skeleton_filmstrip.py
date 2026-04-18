@@ -178,7 +178,7 @@ def _tile_cropped_poses(
 
 
 def _get_camera_params(dataset: str):
-    if dataset in ("walker", "walker_long"):
+    if dataset in ("walker", "walker_long", "walker_short"):
         fovy_rad = math.radians(45.0)
         view_h = 2.4
         dist = (view_h / 2.0) / math.tan(fovy_rad / 2.0) * 1.15
@@ -367,7 +367,7 @@ def plot_skeleton_filmstrip(
     for k, (orig_idx, beh) in enumerate(
         zip(skeleton.minima_orig, skeleton.minima_behaviors)
     ):
-        radius = n_poses * 5
+        radius = n_poses * 20
         start = max(0, orig_idx - radius)
         end = min(qpos_clip.shape[0], orig_idx + radius + 1)
         frames = list(range(start, end))
@@ -393,7 +393,7 @@ def plot_skeleton_filmstrip(
         ts, te = _transition_tints(src_color, dst_color)
         strip = render_filmstrip_for_frames(
             qpos_clip, valid, xml_path, dataset,
-            n_poses=n_poses, gap_fraction=filmstrip_cfg.gap_fraction,
+            n_poses=n_poses * 2, gap_fraction=filmstrip_cfg.gap_fraction,
             tint_start=ts, tint_end=te,
         )
         path_strips.append((strip, f"M{pi}\u2192M{pj}", f"{src_beh}\u2192{dst_beh}"))

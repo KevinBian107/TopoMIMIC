@@ -52,13 +52,6 @@ python -m demos.illustrative.demo_dtw_metric --method w2_dmc_int_kmeans --seed 0
 ```
 Nature-style per-cluster DTW comparison figures. For each unique transition cluster in a benchmark method, renders a panel with the DTW cost matrix (with warping path) on the left and two chronophotography filmstrips on the right: discovered sequence (blue tint) on top, ground truth (red tint) on bottom. Uses the same DTW computation as the main analysis pipeline. Default method: `w2_dmp_qpos_kmeans`.
 
-### Bodies (Figure 1E)
-```bash
-python -m demos.illustrative.demo_bodies
-python -m demos.illustrative.demo_bodies --config configs/demos/illustrative/demo_bodies.yaml
-```
-Produces a side-by-side chronophotography figure showing increasing morphological complexity: a generated, labeled multi-transition walker (left) with an arrow pointing to an imitated, unlabeled multi-transition rodent (right). Each panel is enclosed in a rounded grey box with a text label.
-
 ---
 
 ## Property Demos
@@ -127,6 +120,39 @@ python -m demos.transition_demos.demo_rodent_transitions
 python -m demos.transition_demos.demo_rodent_transitions --config configs/demos/transition_demos/demo_rodent_transitions.yaml
 ```
 Visualizes rodent behavioral transitions using PCA/UMAP/t-SNE with up to 3 rows per embedding plot: GT transitions, DM cycles, and DM paths. With `skeleton_analysis.enabled: true`, also produces skeleton filmstrip figures (Figure 2C) in `{output_dir}/skeleton_analysis_filmstrip/`.
+
+---
+
+## Global-Manifold Demos
+
+Pool clips that share configured ground-truth transition types into a single point cloud, run DM on the *pooled* cloud per feature space, and visualize the global manifold structure. Entry points live in `demos/global_manifold/` with configs in `configs/demos/global_manifold/`. Two PDFs are produced per run:
+
+1. `projection_grid.pdf` — per feature space × (DM-cycles, DM-paths) × (PCA, t-SNE, UMAP). Background points coloured by GT primitive behaviour (shape = turn direction for rodent). DM minima marked with gold stars, sampled paths/cycles overlaid with colour gradients.
+2. `filmstrip_grid.pdf` — one box per configured transition pair, `k_per_pair` rows of cross-clip stitched filmstrips. Each pose is annotated with its source clip id so the cross-clip nature of a global path is visible.
+
+### Rodent (3 feature spaces)
+```bash
+python -m demos.global_manifold.demo_rodent_global
+python -m demos.global_manifold.demo_rodent_global --config configs/demos/global_manifold/rodent.yaml
+python -m demos.global_manifold.demo_rodent_global --only-feature-space intention --skip-filmstrip
+```
+Defaults: dataset `rodent`, three transitions (`Rear↔Walking`, `Orienting↔Walking`, `Immobility↔Walking`), four primitives for label-minima selection (`Rear, Walking, Orienting, Immobility`), and feature spaces `intention / qpos / ekp`.
+
+### Walker (2 feature spaces — walker_short)
+```bash
+python -m demos.global_manifold.demo_walker_global
+python -m demos.global_manifold.demo_walker_global --config configs/demos/global_manifold/walker.yaml
+python -m demos.global_manifold.demo_walker_global --only-feature-space intention --skip-filmstrip
+```
+Defaults: dataset `walker_short` (1 transition per clip, ~600 clips total), two transitions (`tiptoe↔walk_slow`, `hop↔walk_slow`), three primitives (`tiptoe, walk_slow, hop`), feature spaces `intention / qpos`. The walker dataset preset does not include `ekp`, so the walker figure has 4 rows (2 spaces × 2 primitives) vs 6 rows for rodent.
+
+### Config knobs
+- `transition_types`: list of `[A, B]` primitive pairs to select clips by and to sample paths for.
+- `feature_spaces[].subsample_n`: stride-N subsample on the Takens pool before DM (default 3). Smaller = denser but slower DM.
+- `feature_spaces[].pca_dims`: set for qpos/ekp to strip residual drift; leave `null` for intention.
+- `minima_selection.primitives`: behaviours to assign density minima to (one minimum per behaviour via kNN plurality vote over the pooled Takens cloud).
+- `path_sampling.k_per_pair`: paths sampled per `(A, B)` pair; edge-disjoint paths first, then shortest-simple-path fill.
+- Caches: `{cache_dir}/{feature_space}/{pool.npz, dm_output/, dm_bundle.pkl, projections.pkl}` — re-runs skip the expensive DM step.
 
 ---
 

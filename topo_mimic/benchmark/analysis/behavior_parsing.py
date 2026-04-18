@@ -72,11 +72,21 @@ BEHAVIOR_NAME_MAP = {
     "right_turn": "Right Turn",
     "rightturn": "Right Turn",
     "rturn": "Right Turn",
+    "walk_slow": "walk_slow",
+    "walk_fast": "walk_fast",
+    "walk_backward": "walk_backward",
+    "run": "run",
+    "hop": "hop",
+    "tiptoe": "tiptoe",
+    "stand": "stand",
+    "knee_down": "knee_down",
 }
 
 PRIMITIVE_BEHAVIORS = {
     "Walking", "Immobility", "Orienting", "Grooming",
     "Supported Rear", "Unsupported Rear", "Rear", "Step",
+    "walk_slow", "walk_fast", "walk_backward", "run",
+    "hop", "tiptoe", "stand", "knee_down",
 }
 
 COMPOSITIONAL_BEHAVIORS = {

@@ -83,8 +83,9 @@ Refer to the [documentation folder](/docs/) for more detailed information on the
 ### Quick Start (Bash Scripts)
 Automation scripts run the main pipelines end-to-end across all feature spaces (intention, qpos, ekp):
 ```bash
-bash bash_scripts/run_dm_pipeline.sh      # DM extraction + benchmark (all feature spaces)
-bash bash_scripts/run_granularity.sh      # Granularity analysis (all feature spaces)
+bash bash_scripts/run_dm_pipeline.sh      # Rodent: DM extraction + benchmark (all feature spaces)
+bash bash_scripts/run_granularity.sh      # Rodent: Granularity analysis (all feature spaces)
+bash bash_scripts/run_walker_basecase.sh  # Walker: DM extraction + benchmark + GT classification analysis
 ```
 
 ### Step 1: Extract DM Graphs + Paths + Benchmark
