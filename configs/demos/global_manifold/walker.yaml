@@ -22,7 +22,7 @@ feature_spaces:
   - dm_key: qpos
     pca_dims: 8
     pers_delta: 1.0
-    subsample_n: 10
+    subsample_n: 20
     takens:
       auto_estimate: true
       m: 3
@@ -41,7 +41,7 @@ path_sampling:
   k_per_pair: 5
   simple_path_cap: 200
   gap_limit: 50
-  min_segment_len: 10
+  min_segment_len: 20
   rng_seed: 0
 
 projection:

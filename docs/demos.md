@@ -52,13 +52,6 @@ python -m demos.illustrative.demo_dtw_metric --method w2_dmc_int_kmeans --seed 0
 ```
 Nature-style per-cluster DTW comparison figures. For each unique transition cluster in a benchmark method, renders a panel with the DTW cost matrix (with warping path) on the left and two chronophotography filmstrips on the right: discovered sequence (blue tint) on top, ground truth (red tint) on bottom. Uses the same DTW computation as the main analysis pipeline. Default method: `w2_dmp_qpos_kmeans`.
 
-### Bodies (Figure 1E)
-```bash
-python -m demos.illustrative.demo_bodies
-python -m demos.illustrative.demo_bodies --config configs/demos/illustrative/demo_bodies.yaml
-```
-Produces a side-by-side chronophotography figure showing increasing morphological complexity: a generated, labeled multi-transition walker (left) with an arrow pointing to an imitated, unlabeled multi-transition rodent (right). Each panel is enclosed in a rounded grey box with a text label.
-
 ---
 
 ## Property Demos

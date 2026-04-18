@@ -23,7 +23,7 @@ feature_spaces:
       tau: 6
   - dm_key: qpos
     pca_dims: 16
-    pers_delta: 1.0
+    pers_delta: 0.75
     subsample_n: 10
     takens:
       auto_estimate: true
@@ -31,7 +31,7 @@ feature_spaces:
       tau: 6
   - dm_key: ekp
     pca_dims: 16
-    pers_delta: 1.0
+    pers_delta: 0.75
     subsample_n: 10
     takens:
       auto_estimate: true
@@ -39,7 +39,7 @@ feature_spaces:
       tau: 8
 
 dm:
-  k_neighbors: 6
+  k_neighbors: 4
   epsilon: 0.99
 
 minima_selection:
