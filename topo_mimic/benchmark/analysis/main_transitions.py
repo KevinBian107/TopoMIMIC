@@ -7,6 +7,20 @@ import h5py
 import numpy as np
 import pandas as pd
 
+
+def _should_skip_analysis(path: str) -> bool:
+    """Skip rule for per-(method, seed, analysis) outputs.
+
+    Returns True if ``path`` exists and has at least one file or subdirectory.
+    Override by `rm -rf` of the output folder.
+    """
+    if not os.path.isdir(path):
+        return False
+    try:
+        return any(True for _ in os.scandir(path))
+    except OSError:
+        return False
+
 from .config import AnalysisConfig, load_config
 from .data_loading import (
     load_experiment_results,
@@ -264,13 +278,15 @@ def run_analysis(config: AnalysisConfig) -> None:
             print(f"  Seed {seed}:")
 
             if config.run_mds_analysis:
-                if os.path.exists(config.behavior_labels_csv):
+                mds_dir = os.path.join(seed_output_dir, "mds")
+                if _should_skip_analysis(mds_dir):
+                    print(f"    [skip] MDS already exists at {mds_dir}")
+                elif os.path.exists(config.behavior_labels_csv):
                     print(f"    Running MDS analysis...")
                     try:
                         from topo_mimic.dmwk.skeletonization.plotting import (
                             plot_cluster_subspace_mds_separate,
                         )
-                        mds_dir = os.path.join(seed_output_dir, "mds")
                         os.makedirs(mds_dir, exist_ok=True)
                         target_clusters = list(cluster_dict.keys())
                         mds_save_path = os.path.join(mds_dir, f"{method_name}_seed{seed}_mds_separate.pdf")
@@ -335,10 +351,12 @@ def run_analysis(config: AnalysisConfig) -> None:
                         print(f"    Transition graph analysis failed: {e}")
 
             if config.run_dtw_metrics and dtw_data is not None:
-                if os.path.exists(config.behavior_labels_csv):
+                dtw_dir = os.path.join(seed_output_dir, "dtw_metrics")
+                if _should_skip_analysis(dtw_dir):
+                    print(f"    [skip] DTW metrics already exist at {dtw_dir}")
+                elif os.path.exists(config.behavior_labels_csv):
                     print(f"    Running DTW analysis (sequence-based comparison)...")
                     try:
-                        dtw_dir = os.path.join(seed_output_dir, "dtw_metrics")
                         dtw_results = run_dtw_analysis(
                             cluster_dict=cluster_dict,
                             cluster_labels=cluster_labels,
@@ -364,34 +382,39 @@ def run_analysis(config: AnalysisConfig) -> None:
                         import traceback
                         traceback.print_exc()
 
-                    print(f"    Running internal consistency analysis...")
-                    try:
-                        consistency_dir = os.path.join(seed_output_dir, "consistency")
-                        consistency_results = run_internal_consistency_analysis(
-                            cluster_dict=cluster_dict,
-                            cluster_labels=cluster_labels,
-                            turn_directions=turn_directions,
-                            data=dtw_data,
-                            output_dir=consistency_dir,
-                            method_name=method_name,
-                            seed=seed,
-                            skip_root_dims=config.dtw_skip_root_dims,
-                            min_seq_length=config.dtw_min_seq_length,
-                            merge_rear=config.merge_rear,
-                            n_samples=config.consistency_n_samples,
-                        )
-                        method_key = f"{method_name}_seed{seed}"
-                        all_consistency_results[method_key] = consistency_results
-                    except Exception as e:
-                        print(f"    Internal consistency analysis failed: {e}")
-                        import traceback
-                        traceback.print_exc()
+                    consistency_dir = os.path.join(seed_output_dir, "consistency")
+                    if _should_skip_analysis(consistency_dir):
+                        print(f"    [skip] Consistency already exists at {consistency_dir}")
+                    else:
+                        print(f"    Running internal consistency analysis...")
+                        try:
+                            consistency_results = run_internal_consistency_analysis(
+                                cluster_dict=cluster_dict,
+                                cluster_labels=cluster_labels,
+                                turn_directions=turn_directions,
+                                data=dtw_data,
+                                output_dir=consistency_dir,
+                                method_name=method_name,
+                                seed=seed,
+                                skip_root_dims=config.dtw_skip_root_dims,
+                                min_seq_length=config.dtw_min_seq_length,
+                                merge_rear=config.merge_rear,
+                                n_samples=config.consistency_n_samples,
+                            )
+                            method_key = f"{method_name}_seed{seed}"
+                            all_consistency_results[method_key] = consistency_results
+                        except Exception as e:
+                            print(f"    Internal consistency analysis failed: {e}")
+                            import traceback
+                            traceback.print_exc()
 
             if config.run_dtw_visualization and dtw_data is not None:
-                if os.path.exists(config.behavior_labels_csv):
+                dtw_viz_dir = os.path.join(seed_output_dir, "dtw_visualization")
+                if _should_skip_analysis(dtw_viz_dir):
+                    print(f"    [skip] DTW visualization already exists at {dtw_viz_dir}")
+                elif os.path.exists(config.behavior_labels_csv):
                     print(f"    Running DTW visualization...")
                     try:
-                        dtw_viz_dir = os.path.join(seed_output_dir, "dtw_visualization")
                         run_dtw_visualization(
                             cluster_dict=cluster_dict,
                             cluster_labels=cluster_labels,
@@ -411,6 +434,31 @@ def run_analysis(config: AnalysisConfig) -> None:
                         )
                     except Exception as e:
                         print(f"    DTW visualization failed: {e}")
+                        import traceback
+                        traceback.print_exc()
+
+            if config.run_kid_analysis:
+                kid_dir = os.path.join(seed_output_dir, "kid")
+                if _should_skip_analysis(kid_dir):
+                    print(f"    [skip] KID already exists at {kid_dir}")
+                else:
+                    try:
+                        from topo_mimic.benchmark.analysis.run_kid import (
+                            run_kid_for_method_seed,
+                        )
+                        print(f"    Running KID analysis...")
+                        run_kid_for_method_seed(
+                            cluster_dict=cluster_dict,
+                            method_dir=method_dir,
+                            seed=seed,
+                            behavior_labels_csv=config.behavior_labels_csv,
+                            raw_h5_path=config.kid_raw_h5_path,
+                            output_dir=kid_dir,
+                            vae_cache_dir=config.kid_vae_cache_dir,
+                            kid_seed=config.kid_seed,
+                        )
+                    except Exception as e:
+                        print(f"    KID analysis failed: {e}")
                         import traceback
                         traceback.print_exc()
 

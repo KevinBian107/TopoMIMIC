@@ -1,0 +1,264 @@
+"""
+Mapper baseline for the benchmark: each node on the Mapper graph is its own cluster.
+
+Mapper is a topological-clustering tool that operates on a point cloud with a
+"lens" (filter function). It partitions the lens range into overlapping
+intervals, applies inner clustering within each interval, and emits nodes
+(lens-interval, inner-cluster) pairs connected by overlap edges.
+
+This implementation:
+  - Takens-embeds per-clip trajectories with the same (m, tau) used by DM-G.
+  - Uses the inverse-density score rho(v) = RMS k-NN distance as the 1D lens,
+    matching the DM-G density weighting for apples-to-apples comparison.
+  - Runs tda-mapper (`tdamapper.learn.MapperAlgorithm`) with CubicalCover and
+    DBSCAN inner clustering.
+  - Assigns each frame to at most one node via a deepest-bin rule: the node
+    whose lens-bin centre is closest to the frame's lens value, among nodes
+    that contain the frame. Ties broken by smallest node id.
+  - Emits the standard {cluster_id -> [(clip_id, frame_indices), ...]}
+    cluster_dict contract used by KPMS/VAE methods.
+
+Each MapperMethod variant is parameterized by a DM-key ("intention", "qpos",
+"ekp"); the preprocessing (root strip, PCA, Takens params) mirrors the DM
+pipeline config for that feature space.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+
+import numpy as np
+
+from topo_mimic.benchmark.methods import (
+    BaseMethod,
+    KPMSResult,
+    MethodType,
+    extract_each_syllable_as_cluster,
+    print_transition_stats,
+)
+
+
+def _takens_embedding(X: np.ndarray, m: int, tau: int) -> np.ndarray:
+    """Takens delay embedding, same convention as dm_pipeline.takens_embedding."""
+    n_frames, D = X.shape
+    start = (m - 1) * tau
+    idxs = np.arange(start, n_frames)
+    pts = np.stack(
+        [X[[j - a * tau for a in range(m)]].reshape(-1) for j in idxs],
+        axis=0,
+    )
+    return pts, idxs  # idxs[i] gives the original-trajectory frame that pts[i] corresponds to
+
+
+def _knn_inverse_density(points: np.ndarray, k: int) -> np.ndarray:
+    """RMS k-NN distance per point; matches `rho(v_i)` from DM-G."""
+    from sklearn.neighbors import NearestNeighbors
+    nn = NearestNeighbors(n_neighbors=min(k + 1, len(points)))
+    nn.fit(points)
+    distances, _ = nn.kneighbors(points)
+    neigh_dist = distances[:, 1:]
+    return np.sqrt(np.mean(neigh_dist ** 2, axis=1))
+
+
+def _assign_frame_to_single_node(
+    graph: Any,
+    lens_values: np.ndarray,
+    n_points: int,
+) -> np.ndarray:
+    """
+    Deterministic frame-to-node partition for an overlapping Mapper graph.
+
+    Rule: each point is assigned to the smallest-id node it belongs to, among
+    all nodes that include it in their `ids`. Points in no node get -1.
+
+    Args:
+        graph: networkx graph produced by tda-mapper. Each node has an `ids`
+            attribute listing the indices of the input points inside it.
+        lens_values: (n_points,) lens values; reserved for future bin-distance
+            tie-breaking. Unused in the current smallest-id rule but kept on
+            the signature for forward-compatibility.
+        n_points: total number of input points.
+
+    Returns:
+        assignments: (n_points,) int array; -1 means unassigned (noise).
+    """
+    del lens_values
+    assignments = np.full(n_points, -1, dtype=np.int64)
+    for node_id in sorted(graph.nodes):
+        ids = graph.nodes[node_id].get("ids", [])
+        for pt_id in ids:
+            if assignments[pt_id] == -1:
+                assignments[pt_id] = int(node_id)
+    return assignments
+
+
+class MapperMethod(BaseMethod):
+    """
+    Mapper-based benchmark baseline. Each node on the Mapper graph becomes its
+    own cluster; frames are partitioned across nodes by a deepest-bin rule.
+
+    Parameters (via self.params):
+        takens_m, takens_tau (int): Takens delay embedding. Defaults match the
+            DM pipeline for each feature space.
+        knn_k (int): neighbors for the inverse-density lens (default 3, matches DM-G).
+        n_intervals (int): Mapper cover intervals (default 10).
+        overlap_frac (float): Mapper cover overlap fraction (default 0.5).
+        dbscan_eps (float): DBSCAN eps for inner clustering (default "auto",
+            set to median pairwise distance in each bin).
+        dbscan_min_samples (int): DBSCAN min_samples (default 5).
+        min_total_frames (int): drop mapper nodes whose total frames across
+            clips is below this threshold (default 0).
+    """
+
+    def __init__(self, name: str, dm_key: str, params: dict | None = None):
+        super().__init__(name, params)
+        self.dm_key = dm_key
+        self.takens_m = int(self.params.get("takens_m", 3))
+        self.takens_tau = int(self.params.get("takens_tau", 6))
+        self.knn_k = int(self.params.get("knn_k", 3))
+        self.n_intervals = int(self.params.get("n_intervals", 10))
+        self.overlap_frac = float(self.params.get("overlap_frac", 0.5))
+        self.dbscan_eps = self.params.get("dbscan_eps", "auto")
+        self.dbscan_min_samples = int(self.params.get("dbscan_min_samples", 5))
+        self.min_total_frames = int(self.params.get("min_total_frames", 0))
+
+    @property
+    def method_type(self) -> MethodType:
+        return MethodType.STATE_SPACE
+
+    def fit_predict(self, X: np.ndarray, n_clusters: int, seed: int = 0) -> np.ndarray:
+        raise NotImplementedError("Use fit() for Mapper methods.")
+
+    def fit(
+        self,
+        data: np.ndarray,
+        n_states: int,
+        project_dir: str,
+        seed: int = 0,
+    ) -> KPMSResult:
+        """
+        Build Mapper graph over all clips' Takens-embedded points and partition
+        frames into nodes-as-clusters.
+
+        Args:
+            data: (n_clips, n_frames, n_dim) after DM-key transform (root strip +
+                PCA applied upstream by the caller).
+            n_states: ignored; Mapper chooses node count via hyperparameters.
+            project_dir: unused, accepted for KPMS-signature parity.
+            seed: DBSCAN random_state.
+
+        Returns:
+            KPMSResult with:
+                labels: list of (n_frames,) int arrays, per-frame node id
+                    (-1 for noise) per clip, in original-frame indexing.
+                transition_cluster_dict: {cluster_id -> [(clip_id, frame_indices)]}
+                transition_stats: summary from extract_each_syllable_as_cluster.
+        """
+        from tdamapper.learn import MapperAlgorithm
+        from tdamapper.cover import CubicalCover
+        from sklearn.cluster import DBSCAN
+
+        del project_dir  # unused
+
+        n_clips = data.shape[0]
+        pts_list = []
+        idxs_list = []
+        clip_start_offsets = [0]
+        for clip_id in range(n_clips):
+            clip = data[clip_id]
+            pts, idxs = _takens_embedding(clip, m=self.takens_m, tau=self.takens_tau)
+            pts_list.append(pts)
+            idxs_list.append(idxs)
+            clip_start_offsets.append(clip_start_offsets[-1] + len(pts))
+
+        all_pts = np.concatenate(pts_list, axis=0)
+        print(f"[Mapper/{self.dm_key}] embedded points: {all_pts.shape}")
+
+        lens = _knn_inverse_density(all_pts, k=self.knn_k)
+        print(f"[Mapper/{self.dm_key}] lens range: [{lens.min():.4f}, {lens.max():.4f}]")
+
+        cover = CubicalCover(n_intervals=self.n_intervals, overlap_frac=self.overlap_frac)
+        eps = self.dbscan_eps
+        if eps == "auto":
+            rng = np.random.default_rng(seed)
+            sub_n = min(1000, len(all_pts))
+            sub = all_pts[rng.choice(len(all_pts), size=sub_n, replace=False)]
+            from sklearn.metrics import pairwise_distances
+            d = pairwise_distances(sub)
+            eps = float(np.median(d[d > 0]))
+            print(f"[Mapper/{self.dm_key}] auto dbscan_eps = {eps:.4f}")
+
+        inner = DBSCAN(eps=float(eps), min_samples=self.dbscan_min_samples)
+        mapper = MapperAlgorithm(cover=cover, clustering=inner)
+        graph = mapper.fit_transform(all_pts, lens)
+        print(f"[Mapper/{self.dm_key}] mapper graph: {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges")
+
+        assignments = _assign_frame_to_single_node(graph, lens, n_points=len(all_pts))
+        n_noise = int(np.sum(assignments == -1))
+        print(f"[Mapper/{self.dm_key}] noise frames (unassigned): {n_noise}/{len(assignments)}")
+
+        labels_list: list[np.ndarray] = []
+        for clip_id in range(n_clips):
+            n_frames_clip = data.shape[1]
+            per_clip_labels = np.full(n_frames_clip, -1, dtype=np.int64)
+            start = clip_start_offsets[clip_id]
+            end = clip_start_offsets[clip_id + 1]
+            per_clip_point_node = assignments[start:end]
+            per_clip_orig_frames = idxs_list[clip_id]
+            per_clip_labels[per_clip_orig_frames] = per_clip_point_node
+            labels_list.append(per_clip_labels)
+
+        cluster_dict, stats = extract_each_syllable_as_cluster(
+            labels_list,
+            min_total_frames=self.min_total_frames,
+        )
+        if -1 in stats.get("syllable_totals_original", {}):
+            noise_total = stats["syllable_totals_original"].get(-1, 0)
+            stats["n_noise_frames"] = int(noise_total)
+            cluster_dict = {
+                cid: members for cid, members in cluster_dict.items()
+                if stats["syllable_id_map"].get(cid) != -1
+            }
+            stats["syllable_id_map"] = {
+                cid: orig for cid, orig in stats["syllable_id_map"].items() if orig != -1
+            }
+            stats["n_clusters"] = len(cluster_dict)
+        stats["mapper_n_nodes"] = int(graph.number_of_nodes())
+        stats["mapper_n_edges"] = int(graph.number_of_edges())
+        stats["mapper_dbscan_eps"] = float(eps)
+        stats["dm_key"] = self.dm_key
+
+        print_transition_stats(stats)
+
+        return KPMSResult(
+            labels=labels_list,
+            n_states=len(cluster_dict),
+            method_name=self.name,
+            transition_cluster_dict=cluster_dict,
+            transition_stats=stats,
+        )
+
+
+class MapperIntMethod(MapperMethod):
+    def __init__(self, params: dict | None = None):
+        p = dict(params or {})
+        p.setdefault("takens_m", 3)
+        p.setdefault("takens_tau", 6)
+        super().__init__(name="mapper_int", dm_key="intention", params=p)
+
+
+class MapperQposMethod(MapperMethod):
+    def __init__(self, params: dict | None = None):
+        p = dict(params or {})
+        p.setdefault("takens_m", 3)
+        p.setdefault("takens_tau", 9)
+        super().__init__(name="mapper_qpos", dm_key="qpos", params=p)
+
+
+class MapperEKPMethod(MapperMethod):
+    def __init__(self, params: dict | None = None):
+        p = dict(params or {})
+        p.setdefault("takens_m", 3)
+        p.setdefault("takens_tau", 8)
+        super().__init__(name="mapper_ekp", dm_key="ekp", params=p)

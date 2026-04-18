@@ -167,6 +167,44 @@ methods:
       top_k_transitions: 10
       min_instances: 1
 
+  # Mapper baseline: each node on the Mapper graph becomes a cluster.
+  # Inverse-density lens + CubicalCover + DBSCAN inner clustering.
+  - name: "mapper_int"
+    type: "state_space"
+    enabled: true
+    params:
+      takens_m: 3
+      takens_tau: 6
+      knn_k: 3
+      n_intervals: 10
+      overlap_frac: 0.5
+      dbscan_min_samples: 5
+      min_total_frames: 0
+
+  - name: "mapper_qpos"
+    type: "state_space"
+    enabled: false  # disable by default; enable in a qpos-specific experiment
+    params:
+      takens_m: 3
+      takens_tau: 9
+      knn_k: 3
+      n_intervals: 10
+      overlap_frac: 0.5
+      dbscan_min_samples: 5
+      min_total_frames: 0
+
+  - name: "mapper_ekp"
+    type: "state_space"
+    enabled: false  # disable by default; enable in an ekp-specific experiment
+    params:
+      takens_m: 3
+      takens_tau: 8
+      knn_k: 3
+      n_intervals: 10
+      overlap_frac: 0.5
+      dbscan_min_samples: 5
+      min_total_frames: 0
+
 # Video rendering settings
 rendering:
   enabled: true

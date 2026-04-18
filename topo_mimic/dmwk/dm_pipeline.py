@@ -268,16 +268,48 @@ def run_dm_extraction(
     if use_dm_path:
         from topo_mimic.dmwk.skeletonization.dm_path import extract_dm_paths
 
-    all_cycle_dm = []
-    all_path_dm = [] if use_dm_path else None
-    all_G_sm = []
+    n_total = len(data)
 
-    for clip_id in tqdm(range(len(data)), desc="DM extraction"):
+    cycle_pkl = os.path.join(config.output_dir, "all_cycle_dm.pkl")
+    g_pkl = os.path.join(config.output_dir, "all_G_sm.pkl")
+    path_pkl = os.path.join(config.output_dir, "all_path_dm.pkl")
+
+    def _load_existing(path):
+        if os.path.exists(path):
+            with open(path, "rb") as f:
+                return pkl.load(f)
+        return None
+
+    existing_cycle = _load_existing(cycle_pkl)
+    existing_G = _load_existing(g_pkl)
+    existing_path = _load_existing(path_pkl) if use_dm_path else None
+
+    all_cycle_dm: list = list(existing_cycle) if existing_cycle is not None else []
+    all_G_sm: list = list(existing_G) if existing_G is not None else []
+    all_path_dm: list | None = list(existing_path) if (existing_path is not None) else ([] if use_dm_path else None)
+
+    sentinel = object()
+    while len(all_cycle_dm) < n_total:
+        all_cycle_dm.append(sentinel)
+    while len(all_G_sm) < n_total:
+        all_G_sm.append(sentinel)
+    if use_dm_path:
+        while len(all_path_dm) < n_total:
+            all_path_dm.append(sentinel)
+
+    n_cached = sum(1 for x in all_cycle_dm[:n_total] if x is not sentinel)
+    print(f"[run_dm_extraction] Found {n_cached}/{n_total} clip results already in aggregate pkls; will skip those clips.")
+
+    for clip_id in tqdm(range(n_total), desc="DM extraction"):
+        clip_output_dir = os.path.join(config.output_dir, "clips", f"clip_{clip_id}")
+
+        if all_cycle_dm[clip_id] is not sentinel and all_G_sm[clip_id] is not sentinel and (not use_dm_path or all_path_dm[clip_id] is not sentinel):
+            if os.path.isdir(clip_output_dir):
+                continue
+
+        os.makedirs(clip_output_dir, exist_ok=True)
         clip = data[clip_id]
         pts = takens_embedding(clip, m=config.takens.m, tau=config.takens.tau)
-
-        clip_output_dir = os.path.join(config.output_dir, "clips", f"clip_{clip_id}")
-        os.makedirs(clip_output_dir, exist_ok=True)
 
         cycle_inds, G_sm = extract_skeleton_pcd_dm(
             pts,
@@ -289,20 +321,20 @@ def run_dm_extraction(
         )
 
         cycle_inds = [np.array(inds, dtype=int) for inds in cycle_inds]
-        all_G_sm.append(G_sm)
+        all_G_sm[clip_id] = G_sm
 
         remap = parse_swr_remap(clip_output_dir)
         n_takens = len(pts)
 
         if not cycle_inds:
-            all_cycle_dm.append([])
+            all_cycle_dm[clip_id] = []
             if use_dm_path:
                 path_result = extract_dm_paths(
                     G_sm, clip_output_dir, remap, n_takens,
                     gap_limit=config.dm.segment_gap_limit,
                     min_segment_len=config.dm.min_segment_len,
                 )
-                all_path_dm.append(path_result.paths_remapped)
+                all_path_dm[clip_id] = path_result.paths_remapped
                 print(f"Clip {clip_id}: 0 cycles, {len(path_result.paths_remapped)} paths, {G_sm.number_of_edges()} edges")
             else:
                 print(f"Clip {clip_id}: 0 cycles, {G_sm.number_of_edges()} edges")
@@ -318,7 +350,7 @@ def run_dm_extraction(
         segments = split_cycle_into_segments(longest, gap_limit=config.dm.segment_gap_limit)
         segments = [seg for seg in segments if len(seg) >= config.dm.min_segment_len]
 
-        all_cycle_dm.append(segments)
+        all_cycle_dm[clip_id] = segments
 
         if use_dm_path:
             path_result = extract_dm_paths(
@@ -326,18 +358,27 @@ def run_dm_extraction(
                 gap_limit=config.dm.segment_gap_limit,
                 min_segment_len=config.dm.min_segment_len,
             )
-            all_path_dm.append(path_result.paths_remapped)
+            all_path_dm[clip_id] = path_result.paths_remapped
             print(f"Clip {clip_id}: {len(cycle_inds)} cycles -> {len(segments)} segments, {len(path_result.paths_remapped)} paths, {G_sm.number_of_edges()} edges")
         else:
             print(f"Clip {clip_id}: {len(cycle_inds)} cycles -> {len(segments)} segments, {G_sm.number_of_edges()} edges")
 
-    with open(os.path.join(config.output_dir, "all_G_sm.pkl"), "wb") as f:
+    all_cycle_dm = [x for x in all_cycle_dm[:n_total] if x is not sentinel]
+    all_G_sm = [x for x in all_G_sm[:n_total] if x is not sentinel]
+    if use_dm_path:
+        all_path_dm = [x for x in all_path_dm[:n_total] if x is not sentinel]
+
+    assert len(all_cycle_dm) == n_total, f"aggregate cycle list has {len(all_cycle_dm)} entries, expected {n_total}"
+    assert len(all_G_sm) == n_total, f"aggregate G_sm list has {len(all_G_sm)} entries, expected {n_total}"
+
+    with open(g_pkl, "wb") as f:
         pkl.dump(all_G_sm, f)
-    with open(os.path.join(config.output_dir, "all_cycle_dm.pkl"), "wb") as f:
+    with open(cycle_pkl, "wb") as f:
         pkl.dump(all_cycle_dm, f)
 
     if use_dm_path:
-        with open(os.path.join(config.output_dir, "all_path_dm.pkl"), "wb") as f:
+        assert len(all_path_dm) == n_total, f"aggregate path list has {len(all_path_dm)} entries, expected {n_total}"
+        with open(path_pkl, "wb") as f:
             pkl.dump(all_path_dm, f)
 
     print(f"\nSaved DM results to {config.output_dir}")

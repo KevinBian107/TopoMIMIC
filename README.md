@@ -117,7 +117,7 @@ After running the benchmark experiment, label the clusters using the automatic l
 python -m topo_mimic.benchmark.labeling.main configs/benchmark/labeling.yaml
 ```
 
-This computes W2 distances between cluster cycles and ground truth transition windows, then generates label recommendations. To launch the interactive GUI for manual labeling:
+Labels are auto-assigned from ground-truth overlap in `behavior_labels/rodent.csv`: each cluster member is labeled by a majority of its top-2 GT behaviors (`behav_a <-> behav_b`), with a grooming-as-singleton override, and each cluster gets the majority label across its members. No Wasserstein distance is computed. See [docs/autoassign.md](docs/autoassign.md) for the full algorithm and config knobs (dominance threshold, grooming override label). To launch the interactive GUI for manual overrides on top of the auto-assignments:
 ```yaml
 # In configs/benchmark/labeling.yaml
 launch_gui: true

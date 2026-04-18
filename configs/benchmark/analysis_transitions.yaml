@@ -35,7 +35,7 @@ gt_sanity_skip_root_dims: 7  # Skip first N dims of qpos (root pos + quat)
 # =============================================================================
 # MDS settings
 # =============================================================================
-run_mds_analysis: false
+run_mds_analysis: true
 mds_k_cycles: 50
 mds_s_top: 10
 mds_figsize: [10, 9]  # [width, height]

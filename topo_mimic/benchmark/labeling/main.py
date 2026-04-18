@@ -1,205 +1,160 @@
-"""CLI entry point for automatic label assignment."""
+"""CLI entry point for automatic label assignment.
+
+2026-04-18 rewrite: the labeling pipeline now uses GT majority voting
+(``topo_mimic/benchmark/auto_label.py``) instead of Wasserstein distance.
+Legacy W2 config sections (``distance``, ``gt_extraction``) are accepted but
+ignored; only ``recommendations.top_k`` and the ``dominance_threshold`` knob
+influence the new algorithm.
+"""
+
+from __future__ import annotations
 
 import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
-import h5py
-import numpy as np
 import yaml
 
+from topo_mimic.benchmark.auto_label import (
+    DEFAULT_DOMINANCE_THRESHOLD,
+    GROOMING_LABEL,
+    auto_label_clusters,
+    generate_auto_labels_yaml,
+    load_behavior_segments,
+)
 from topo_mimic.benchmark.labeling.core import (
-    extract_gt_transition_windows,
-    compute_cluster_to_gt_distances,
-    generate_label_recommendations,
-    print_gt_statistics,
+    build_recommendations,
     print_recommendations,
     save_recommendations_csv,
-    save_gt_statistics_csv,
+    write_minimal_stats_csv,
 )
-from topo_mimic.benchmark.analysis.data_loading import (
-    load_method_results,
-    load_cluster_dict,
-)
+from topo_mimic.benchmark.analysis.data_loading import load_cluster_dict
 
 
 @dataclass
-class GTExtractionConfig:
-    target_len: int = 100
-    short_threshold: int = 10
-    max_gap: int = 10
-    merge_rear: bool = True
-    include_non_transitions: list[str] = None
-    non_transition_min_length: int = 30
-
-    def __post_init__(self):
-        if self.include_non_transitions is None:
-            self.include_non_transitions = []
-
-
-@dataclass
-class DistanceConfig:
-    max_cycles_per_cluster: int = 20
-    max_gt_samples: int = 10
-
-
-@dataclass
-class RecommendationsConfig:
-    top_k: int = 5
+class AutoLabelConfig:
+    dominance_threshold: float = DEFAULT_DOMINANCE_THRESHOLD
+    grooming_label: str = GROOMING_LABEL
 
 
 @dataclass
 class LabelingConfig:
-    experiment_dir: str = "outputs/benchmark_experiment"
-    rodent_rollout_dir: str = "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
-    behavior_labels_csv: str = "/home/jovyan/vast/kaiwen/TopoVNL/behavior_labels.csv"
-
-    method: str = "w2_kmeans"
+    experiment_dir: str = "outputs/benchmark_experiment_transitions"
+    behavior_labels_csv: str = "behavior_labels/rodent.csv"
+    method: str = "w2_dmp_qpos_kmeans"
     seed: int = 0
-
-    gt_extraction: GTExtractionConfig = None
-    distance: DistanceConfig = None
-    recommendations: RecommendationsConfig = None
-
+    auto_label: AutoLabelConfig = field(default_factory=AutoLabelConfig)
     save_csv: bool = True
     launch_gui: bool = False
     gui_port: int = 7860
     gui_share: bool = False
 
-    def __post_init__(self):
-        if self.gt_extraction is None:
-            self.gt_extraction = GTExtractionConfig()
-        if self.distance is None:
-            self.distance = DistanceConfig()
-        if self.recommendations is None:
-            self.recommendations = RecommendationsConfig()
-
 
 def load_config(config_path: str) -> LabelingConfig:
-    """Load configuration from YAML file."""
     with open(config_path, "r") as f:
-        cfg = yaml.safe_load(f)
+        cfg = yaml.safe_load(f) or {}
 
-    gt_extraction_data = cfg.get("gt_extraction", {})
-    if "include_non_transitions" in gt_extraction_data and gt_extraction_data["include_non_transitions"] is None:
-        gt_extraction_data["include_non_transitions"] = []
-    gt_cfg = GTExtractionConfig(**gt_extraction_data)
-    dist_cfg = DistanceConfig(**cfg.get("distance", {}))
-    rec_cfg = RecommendationsConfig(**cfg.get("recommendations", {}))
+    auto_cfg_data: dict[str, Any] = cfg.get("auto_label", {}) or {}
+    if "dominance_threshold" not in auto_cfg_data and "gt_extraction" in cfg:
+        pass
+    auto_cfg = AutoLabelConfig(
+        dominance_threshold=float(auto_cfg_data.get("dominance_threshold", DEFAULT_DOMINANCE_THRESHOLD)),
+        grooming_label=str(auto_cfg_data.get("grooming_label", GROOMING_LABEL)),
+    )
 
-    gui_cfg = cfg.get("gui", {})
-
+    gui_cfg = cfg.get("gui", {}) or {}
     return LabelingConfig(
         experiment_dir=cfg.get("experiment_dir", LabelingConfig.experiment_dir),
-        rodent_rollout_dir=cfg.get("rodent_rollout_dir", LabelingConfig.rodent_rollout_dir),
         behavior_labels_csv=cfg.get("behavior_labels_csv", LabelingConfig.behavior_labels_csv),
         method=cfg.get("method", LabelingConfig.method),
-        seed=cfg.get("seed", LabelingConfig.seed),
-        gt_extraction=gt_cfg,
-        distance=dist_cfg,
-        recommendations=rec_cfg,
-        save_csv=cfg.get("save_csv", True),
-        launch_gui=cfg.get("launch_gui", False),
-        gui_port=gui_cfg.get("port", 7860),
-        gui_share=gui_cfg.get("share", False),
+        seed=int(cfg.get("seed", LabelingConfig.seed)),
+        auto_label=auto_cfg,
+        save_csv=bool(cfg.get("save_csv", True)),
+        launch_gui=bool(cfg.get("launch_gui", False)),
+        gui_port=int(gui_cfg.get("port", 7860)),
+        gui_share=bool(gui_cfg.get("share", False)),
     )
 
 
-def load_intention_data(rodent_rollout_dir: str) -> np.ndarray:
-    """Load intention data from h5 file."""
-    if rodent_rollout_dir.endswith('.h5'):
-        with h5py.File(rodent_rollout_dir, 'r') as f:
-            return np.array(f['intention'])
-    else:
-        raise ValueError("Expected .h5 file for rodent_rollout_dir")
-
-
 def run_labeling(config: LabelingConfig) -> dict:
-    """
-    Run the full labeling pipeline.
-
-    Returns:
-        Dictionary with recommendations and statistics
-    """
     print("=" * 60)
-    print("Automatic Label Assignment Pipeline")
+    print("Automatic Label Assignment Pipeline (GT majority vote)")
     print("=" * 60)
     print(f"Experiment dir: {config.experiment_dir}")
     print(f"Method: {config.method}")
     print(f"Seed: {config.seed}")
+    print(f"Dominance threshold: {config.auto_label.dominance_threshold}")
+    print(f"Grooming override label: {config.auto_label.grooming_label}")
 
     method_dir = os.path.join(config.experiment_dir, config.method)
     if not os.path.exists(method_dir):
         raise FileNotFoundError(f"Method directory not found: {method_dir}")
 
     print("\n=== Stage 1: Loading data ===")
-    intention_data = load_intention_data(config.rodent_rollout_dir)
-    print(f"Loaded intention data: {intention_data.shape}")
-
     cluster_dict = load_cluster_dict(method_dir, config.seed)
     if not cluster_dict:
         raise ValueError(f"No cluster_dict found for {config.method} seed {config.seed}")
-    print(f"Loaded {len(cluster_dict)} clusters")
+    print(f"Loaded {len(cluster_dict)} clusters from {method_dir}")
 
-    print("\n=== Stage 2: Extracting GT transitions ===")
-    gt_library = extract_gt_transition_windows(
-        behavior_labels_csv=config.behavior_labels_csv,
-        intention_data=intention_data,
-        target_len=config.gt_extraction.target_len,
-        short_threshold=config.gt_extraction.short_threshold,
-        max_gap=config.gt_extraction.max_gap,
-        merge_rear=config.gt_extraction.merge_rear,
-        include_non_transitions=config.gt_extraction.include_non_transitions,
-        non_transition_min_length=config.gt_extraction.non_transition_min_length,
-    )
-    print_gt_statistics(gt_library)
+    print("\n=== Stage 2: Loading GT behavior segments ===")
+    segments = load_behavior_segments(config.behavior_labels_csv)
+    print(f"Loaded GT segments for {len(segments)} clips from {config.behavior_labels_csv}")
+    if not segments:
+        print("WARNING: no GT segments found; auto-labels will be empty.")
 
-    print("\n=== Stage 3: Computing W2 distances ===")
-    distances, gt_type_names, cluster_ids = compute_cluster_to_gt_distances(
-        cluster_dict=cluster_dict,
-        gt_library=gt_library,
-        intention_data=intention_data,
-        max_cycles_per_cluster=config.distance.max_cycles_per_cluster,
-        max_gt_samples=config.distance.max_gt_samples,
-        seed=config.seed,
+    print("\n=== Stage 3: GT majority-vote labeling ===")
+    cluster_labels = auto_label_clusters(
+        cluster_dict,
+        segments,
+        dominance_threshold=config.auto_label.dominance_threshold,
+        grooming_label=config.auto_label.grooming_label,
     )
 
-    print("\n=== Stage 4: Generating recommendations ===")
-    recommendations = generate_label_recommendations(
-        distances=distances,
-        gt_type_names=gt_type_names,
-        cluster_ids=cluster_ids,
-        top_k=config.recommendations.top_k,
-    )
+    print("\n=== Stage 4: Building recommendations ===")
+    recommendations = build_recommendations(cluster_labels)
     print_recommendations(recommendations, config.method, config.seed)
 
+    labels_yaml_path = None
     if config.save_csv:
-        print("\n=== Stage 5: Saving results ===")
+        print("\n=== Stage 5: Saving outputs ===")
         labeling_dir = os.path.join(method_dir, "labeling")
         os.makedirs(labeling_dir, exist_ok=True)
 
         rec_path = os.path.join(labeling_dir, f"recommendations_seed_{config.seed}.csv")
         save_recommendations_csv(recommendations, rec_path)
+        print(f"  recommendations -> {rec_path}")
 
-        gt_stats_path = os.path.join(labeling_dir, "gt_statistics.csv")
-        save_gt_statistics_csv(gt_library, gt_stats_path)
+        stats_path = os.path.join(labeling_dir, f"cluster_votes_seed_{config.seed}.csv")
+        write_minimal_stats_csv(cluster_labels, stats_path)
+        print(f"  vote stats -> {stats_path}")
+
+        n_clusters = max(cluster_dict.keys()) + 1 if cluster_dict else 0
+        labels_yaml_path = generate_auto_labels_yaml(
+            method_name=config.method,
+            n_clusters=n_clusters,
+            seed=config.seed,
+            output_dir=method_dir,
+            cluster_dict=cluster_dict,
+            behavior_labels_csv=config.behavior_labels_csv,
+            dominance_threshold=config.auto_label.dominance_threshold,
+            grooming_label=config.auto_label.grooming_label,
+        )
+        print(f"  labels yaml -> {labels_yaml_path}")
 
     print("\n" + "=" * 60)
     print("Pipeline Complete!")
     print("=" * 60)
 
     return {
+        "cluster_labels": cluster_labels,
         "recommendations": recommendations,
-        "gt_library": gt_library,
-        "distances": distances,
-        "gt_type_names": gt_type_names,
-        "cluster_ids": cluster_ids,
+        "labels_yaml_path": labels_yaml_path,
     }
 
 
 def main(config_path: str = "configs/benchmark/labeling.yaml"):
-    """CLI entry point."""
     if os.path.exists(config_path):
         config = load_config(config_path)
     else:

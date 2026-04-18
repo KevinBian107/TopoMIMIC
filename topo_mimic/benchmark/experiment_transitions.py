@@ -1455,9 +1455,14 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
                 "reconstruction_mse": kpms_result.reconstruction_mse,
             }
 
-            print(f"  Seed {seed}: {stats['n_sustained_segments']} sustained segments, "
-                  f"{stats['n_transition_types']} transition types, "
-                  f"{len(cluster_dict)} clusters")
+            if "n_clusters" in stats and "syllable_id_map" in stats:
+                print(f"  Seed {seed}: {stats['n_clusters']} syllable-as-cluster groups, "
+                      f"{stats.get('total_frames', 0)} total frames, "
+                      f"{len(cluster_dict)} clusters retained")
+            else:
+                print(f"  Seed {seed}: {stats.get('n_sustained_segments', '?')} sustained segments, "
+                      f"{stats.get('n_transition_types', '?')} transition types, "
+                      f"{len(cluster_dict)} clusters")
             if kpms_result.reconstruction_mse is not None:
                 print(f"  Seed {seed}: Reconstruction MSE = {kpms_result.reconstruction_mse:.6f}")
 
