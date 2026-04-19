@@ -15,31 +15,46 @@ transition_types:
 feature_spaces:
   - dm_key: intention
     pca_dims: null
-    pers_delta: 0.75
-    subsample_n: 10
+    pers_delta: 0.1
+    subsample:
+      method: dbscan
+      dense_downsample_frac: 0.99
+      noise_downsample_frac: 0.9
+      dbscan_eps: null
+      dbscan_min_samples: 10
     takens:
       auto_estimate: true
       m: 3
       tau: 6
   - dm_key: qpos
-    pca_dims: 16
-    pers_delta: 0.75
-    subsample_n: 10
+    pca_dims: 10
+    pers_delta: 0.03
+    subsample:
+      method: dbscan
+      dense_downsample_frac: 0.99
+      noise_downsample_frac: 0.9
+      dbscan_eps: null
+      dbscan_min_samples: 10
     takens:
       auto_estimate: true
       m: 3
-      tau: 6
+      tau: 9
   - dm_key: ekp
-    pca_dims: 16
-    pers_delta: 0.75
-    subsample_n: 10
+    pca_dims: 10
+    pers_delta: 0.02
+    subsample:
+      method: dbscan
+      dense_downsample_frac: 0.99
+      noise_downsample_frac: 0.9
+      dbscan_eps: null
+      dbscan_min_samples: 10
     takens:
       auto_estimate: true
       m: 3
       tau: 8
 
 dm:
-  k_neighbors: 4
+  k_neighbors: 12
   epsilon: 0.99
 
 minima_selection:
@@ -51,7 +66,7 @@ path_sampling:
   k_per_pair: 5
   simple_path_cap: 200
   gap_limit: 50
-  min_segment_len: 10
+  min_segment_len: 2
   rng_seed: 0
 
 projection:
@@ -64,11 +79,11 @@ projection:
 
 visualization:
   dpi: 300
-  background_alpha: 0.25
+  background_alpha: 0.12
   background_size: 4
   overlay_linewidth: 1.4
   minima_marker_size: 140
-  filmstrip_n_poses: 6
+  filmstrip_n_poses: 5
   behavior_colors:
     Rear:       "#E64B35"
     Walking:    "#4DBBD5"

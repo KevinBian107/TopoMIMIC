@@ -174,6 +174,8 @@ def extract_sustained_transitions(
         total_sustained_segments += len(segments)
 
         for seg in segments:
+            if int(seg.syllable_id) < 0:
+                continue
             segments_per_syllable[seg.syllable_id] = segments_per_syllable.get(seg.syllable_id, 0) + 1
             durations.append(seg.duration)
             sustained_frames += seg.duration
@@ -183,6 +185,11 @@ def extract_sustained_transitions(
             seg_b = segments[i + 1]
 
             if seg_a.syllable_id == seg_b.syllable_id:
+                continue
+            # Skip transitions involving the noise / unassigned label (Mapper outputs -1
+            # for Takens-warmup and DBSCAN-noise frames; KPMS labels are always >= 0 so
+            # this is a no-op for HMM-based methods).
+            if int(seg_a.syllable_id) < 0 or int(seg_b.syllable_id) < 0:
                 continue
 
             frame_indices = np.arange(seg_a.start_frame, seg_b.end_frame)
@@ -665,9 +672,11 @@ class KPMSIntentionMethod(BaseMethod):
         rec_names = sorted(results.keys())
         labels_list = [results[rn]['syllable'] for rn in rec_names]
 
-        cluster_dict, stats = extract_each_syllable_as_cluster(
+        cluster_dict, stats = extract_sustained_transitions(
             labels_list,
-            min_total_frames=self.params.get("min_syllable_total_frames", 0),
+            min_duration=int(self.params.get("min_sustained_duration", 50)),
+            top_k=int(self.params.get("top_k_transitions", 10)),
+            min_instances=int(self.params.get("min_transition_instances", 3)),
         )
 
         print_transition_stats(stats)
@@ -858,9 +867,11 @@ class KPMSKeypointMethod(BaseMethod):
         rec_names = sorted(results.keys())
         labels_list = [results[rn]['syllable'] for rn in rec_names]
 
-        cluster_dict, stats = extract_each_syllable_as_cluster(
+        cluster_dict, stats = extract_sustained_transitions(
             labels_list,
-            min_total_frames=self.params.get("min_syllable_total_frames", 0),
+            min_duration=int(self.params.get("min_sustained_duration", 50)),
+            top_k=int(self.params.get("top_k_transitions", 10)),
+            min_instances=int(self.params.get("min_transition_instances", 3)),
         )
 
         print_transition_stats(stats)
@@ -1028,9 +1039,11 @@ class CustomVAEMethod(BaseMethod):
         labels_list = seg_result.labels_list
         print(f"Segmentation complete: {n_states} clusters using {self.segmentation_algo}")
 
-        cluster_dict, stats = extract_each_syllable_as_cluster(
+        cluster_dict, stats = extract_sustained_transitions(
             labels_list,
-            min_total_frames=self.params.get("min_syllable_total_frames", 0),
+            min_duration=int(self.params.get("min_sustained_duration", 50)),
+            top_k=int(self.params.get("top_k_transitions", 10)),
+            min_instances=int(self.params.get("min_transition_instances", 3)),
         )
 
         print_transition_stats(stats)

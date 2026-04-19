@@ -34,7 +34,7 @@ from topo_mimic.benchmark.methods import (
     BaseMethod,
     KPMSResult,
     MethodType,
-    extract_each_syllable_as_cluster,
+    extract_sustained_transitions,
     print_transition_stats,
 )
 
@@ -153,7 +153,7 @@ class MapperMethod(BaseMethod):
                 labels: list of (n_frames,) int arrays, per-frame node id
                     (-1 for noise) per clip, in original-frame indexing.
                 transition_cluster_dict: {cluster_id -> [(clip_id, frame_indices)]}
-                transition_stats: summary from extract_each_syllable_as_cluster.
+                transition_stats: summary from extract_sustained_transitions.
         """
         from tdamapper.learn import MapperAlgorithm
         from tdamapper.cover import CubicalCover
@@ -209,21 +209,17 @@ class MapperMethod(BaseMethod):
             per_clip_labels[per_clip_orig_frames] = per_clip_point_node
             labels_list.append(per_clip_labels)
 
-        cluster_dict, stats = extract_each_syllable_as_cluster(
+        # Reverted to transition-based clustering: each cluster is a (from_node ->
+        # to_node) sustained transition pair, not a single Mapper node. The -1 noise
+        # label is handled inside extract_sustained_transitions (transitions
+        # involving -1 are dropped).
+        cluster_dict, stats = extract_sustained_transitions(
             labels_list,
-            min_total_frames=self.min_total_frames,
+            min_duration=int(self.params.get("min_sustained_duration", 50)),
+            top_k=int(self.params.get("top_k_transitions", 10)),
+            min_instances=int(self.params.get("min_transition_instances", 3)),
         )
-        if -1 in stats.get("syllable_totals_original", {}):
-            noise_total = stats["syllable_totals_original"].get(-1, 0)
-            stats["n_noise_frames"] = int(noise_total)
-            cluster_dict = {
-                cid: members for cid, members in cluster_dict.items()
-                if stats["syllable_id_map"].get(cid) != -1
-            }
-            stats["syllable_id_map"] = {
-                cid: orig for cid, orig in stats["syllable_id_map"].items() if orig != -1
-            }
-            stats["n_clusters"] = len(cluster_dict)
+        stats["n_noise_frames"] = int(n_noise)
         stats["mapper_n_nodes"] = int(graph.number_of_nodes())
         stats["mapper_n_edges"] = int(graph.number_of_edges())
         stats["mapper_dbscan_eps"] = float(eps)

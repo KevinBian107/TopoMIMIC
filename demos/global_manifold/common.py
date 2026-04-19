@@ -71,11 +71,23 @@ class TakensConfig:
 
 
 @dataclass
+class SubsampleConfig:
+    method: str = "stride"                  # "stride" | "dbscan"
+    n: int = 20                             # stride step (stride method)
+    dense_downsample_frac: float = 0.9      # dbscan: fraction of cluster points to DROP
+    noise_downsample_frac: float = 0.0      # dbscan: fraction of noise points to DROP (0 = keep all)
+    dbscan_eps: float | None = None         # dbscan: None → median k-th neighbor distance
+    dbscan_min_samples: int = 10
+    rng_seed: int = 0
+
+
+@dataclass
 class FeatureSpaceConfig:
     dm_key: str
     pca_dims: int | None = None
     pers_delta: float = 0.75
     subsample_n: int = 3
+    subsample: SubsampleConfig = field(default_factory=SubsampleConfig)
     takens: TakensConfig = field(default_factory=TakensConfig)
 
 
@@ -147,11 +159,26 @@ def load_config(path: str) -> GlobalManifoldConfig:
 
     def _mk_fs(d: dict) -> FeatureSpaceConfig:
         t = d.get("takens", {})
+        legacy_n = d.get("subsample_n", 3)
+        sub_raw = d.get("subsample")
+        if sub_raw is None:
+            subsample = SubsampleConfig(method="stride", n=legacy_n)
+        else:
+            subsample = SubsampleConfig(
+                method=sub_raw.get("method", "stride"),
+                n=sub_raw.get("n", legacy_n),
+                dense_downsample_frac=sub_raw.get("dense_downsample_frac", 0.9),
+                noise_downsample_frac=sub_raw.get("noise_downsample_frac", 0.0),
+                dbscan_eps=sub_raw.get("dbscan_eps"),
+                dbscan_min_samples=sub_raw.get("dbscan_min_samples", 10),
+                rng_seed=sub_raw.get("rng_seed", 0),
+            )
         return FeatureSpaceConfig(
             dm_key=d["dm_key"],
             pca_dims=d.get("pca_dims"),
             pers_delta=d.get("pers_delta", 0.75),
-            subsample_n=d.get("subsample_n", 3),
+            subsample_n=legacy_n,
+            subsample=subsample,
             takens=TakensConfig(**t) if isinstance(t, dict) else TakensConfig(),
         )
 
@@ -360,6 +387,69 @@ def _takens_one_clip(X: np.ndarray, m: int, tau: int) -> tuple[np.ndarray, np.nd
     return pts.astype(np.float32), anchor_idxs
 
 
+def _dbscan_density_subsample(
+    X: np.ndarray,
+    clip_ids: np.ndarray,
+    frame_idxs: np.ndarray,
+    eps: float | None,
+    min_samples: int,
+    dense_downsample_frac: float,
+    noise_downsample_frac: float,
+    rng_seed: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Detect dense regions with DBSCAN; thin clusters + (optionally) noise."""
+    from sklearn.cluster import DBSCAN
+    from sklearn.neighbors import NearestNeighbors
+
+    if X.shape[0] == 0:
+        return X, clip_ids, frame_idxs
+
+    if eps is None:
+        k = max(min_samples, 2)
+        nn = NearestNeighbors(n_neighbors=min(k, X.shape[0] - 1)).fit(X)
+        dists, _ = nn.kneighbors(X)
+        eps = float(np.median(dists[:, -1]))
+
+    labels = DBSCAN(eps=eps, min_samples=min_samples, n_jobs=-1).fit_predict(X)
+
+    rng = np.random.default_rng(rng_seed)
+    keep_mask = np.zeros(len(X), dtype=bool)
+
+    noise_idxs = np.where(labels == -1)[0]
+    if noise_downsample_frac <= 0.0:
+        keep_mask[noise_idxs] = True
+        n_kept_noise = len(noise_idxs)
+    else:
+        n_keep_noise = max(1, int(round(len(noise_idxs) * (1.0 - noise_downsample_frac)))) if len(noise_idxs) > 0 else 0
+        if n_keep_noise > 0:
+            chosen = rng.choice(noise_idxs, size=min(n_keep_noise, len(noise_idxs)), replace=False)
+            keep_mask[chosen] = True
+        n_kept_noise = int(keep_mask[noise_idxs].sum())
+
+    n_clusters = 0
+    n_cluster_pts = 0
+    n_kept_cluster = 0
+    for cl in np.unique(labels):
+        if cl == -1:
+            continue
+        n_clusters += 1
+        idxs = np.where(labels == cl)[0]
+        n_cluster_pts += len(idxs)
+        n_keep = max(1, int(round(len(idxs) * (1.0 - dense_downsample_frac))))
+        chosen = rng.choice(idxs, size=min(n_keep, len(idxs)), replace=False)
+        keep_mask[chosen] = True
+        n_kept_cluster += len(chosen)
+
+    n_noise = len(noise_idxs)
+    n_kept = int(keep_mask.sum())
+    print(
+        f"    [dbscan] eps={eps:.4f} min_samples={min_samples} "
+        f"clusters={n_clusters} cluster_pts={n_cluster_pts} (kept {n_kept_cluster}) "
+        f"noise={n_noise} (kept {n_kept_noise}) → kept {n_kept}/{len(X)}"
+    )
+    return X[keep_mask], clip_ids[keep_mask], frame_idxs[keep_mask]
+
+
 def build_takens_pool(
     pooled: PooledData,
     clip_ids_sorted: list[int],
@@ -370,6 +460,8 @@ def build_takens_pool(
         m, tau = auto_params
     else:
         m, tau = fs.takens.m, fs.takens.tau
+
+    method = fs.subsample.method
 
     all_pts: list[np.ndarray] = []
     all_cid: list[np.ndarray] = []
@@ -382,17 +474,31 @@ def build_takens_pool(
         if len(pts) == 0:
             continue
 
-        sub = slice(0, len(pts), fs.subsample_n)
-        pts = pts[sub]
-        anchors_sub = anchors[sub]
+        if method == "stride":
+            step = slice(0, len(pts), fs.subsample.n)
+            pts = pts[step]
+            anchors = anchors[step]
 
         all_pts.append(pts)
         all_cid.append(np.full(len(pts), cid, dtype=np.int32))
-        all_fr.append(anchors_sub.astype(np.int32))
+        all_fr.append(anchors.astype(np.int32))
 
     X_takens = np.concatenate(all_pts, axis=0) if all_pts else np.empty((0, 0))
     clip_ids = np.concatenate(all_cid) if all_cid else np.empty((0,), dtype=np.int32)
     frame_idxs = np.concatenate(all_fr) if all_fr else np.empty((0,), dtype=np.int32)
+
+    if method == "dbscan":
+        X_takens, clip_ids, frame_idxs = _dbscan_density_subsample(
+            X_takens, clip_ids, frame_idxs,
+            eps=fs.subsample.dbscan_eps,
+            min_samples=fs.subsample.dbscan_min_samples,
+            dense_downsample_frac=fs.subsample.dense_downsample_frac,
+            noise_downsample_frac=fs.subsample.noise_downsample_frac,
+            rng_seed=fs.subsample.rng_seed,
+        )
+    elif method != "stride":
+        raise ValueError(f"unknown subsample method: {method!r}")
+
     return TakensPool(X_takens=X_takens, clip_ids=clip_ids, frame_idxs=frame_idxs, m=m, tau=tau)
 
 
@@ -519,17 +625,30 @@ def find_minima_per_label(
 ) -> LabelMinima:
     pairs = _parse_persistence_pairs(bundle.dm_output_dir)
     weights = _parse_sorted_weights(bundle.dm_output_dir)
-    minima_remapped = _find_persistent_minima(pairs, weights, top_k=sel.candidate_pool)
 
-    # Convert to original (Takens) indices and keep those that lie in the Takens pool
+    ccs = sorted(nx.connected_components(bundle.G_dm), key=len, reverse=True)
+    giant: set[int] = set(ccs[0]) if ccs else set()
+
+    top_k = sel.candidate_pool
     candidates_orig: list[int] = []
     candidates_remapped: list[int] = []
-    for rm in minima_remapped:
-        if rm in bundle.remap_to_orig:
+    while True:
+        minima_remapped = _find_persistent_minima(pairs, weights, top_k=top_k)
+        candidates_orig.clear()
+        candidates_remapped.clear()
+        for rm in minima_remapped:
+            if rm not in bundle.remap_to_orig:
+                continue
+            if giant and rm not in giant:
+                continue
             orig = bundle.remap_to_orig[rm]
             if 0 <= orig < bundle.n_takens:
                 candidates_orig.append(int(orig))
                 candidates_remapped.append(int(rm))
+        if len(candidates_orig) >= len(sel.primitives) or top_k >= len(pairs) or top_k >= 5000:
+            break
+        top_k = min(top_k * 2, len(pairs), 5000)
+    print(f"    [minima-pool] giant_cc={len(giant)} top_k={top_k} in-cc={len(candidates_orig)}")
 
     if not candidates_orig:
         return LabelMinima(by_label={}, by_label_remapped={}, all_candidates=[])
@@ -923,17 +1042,20 @@ def render_projection_grid(
     results: list[SpaceResult],
     frame_labels: FrameLabels,
     output_pdf: str,
+    overlay_type: str = "dmp",
 ) -> None:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import matplotlib.lines as mlines
 
+    if overlay_type not in {"dmc", "dmp"}:
+        raise ValueError(f"overlay_type must be 'dmc' or 'dmp', got {overlay_type!r}")
+
     color_map = _build_color_map(cfg.minima_selection.primitives, cfg.visualization.behavior_colors)
     turn_shapes = cfg.visualization.turn_shapes
 
-    n_spaces = len(results)
-    n_rows = 2 * n_spaces   # dmc + dmp per space
+    n_rows = len(results)
     n_cols = len(cfg.projection.methods)
 
     with plt.rc_context(_NATURE_RC):
@@ -950,35 +1072,32 @@ def render_projection_grid(
                 [_frame_turn(i, pooled, frame_labels) for i in range(len(pooled.X_full))]
             )
 
-            for row_type_idx, row_type in enumerate(["dmc", "dmp"]):
-                grid_row = 2 * ri + row_type_idx
-
-                for ci, proj in enumerate(res.projections):
-                    ax = axes[grid_row][ci]
-                    _draw_projection_panel(
-                        ax=ax,
-                        coords=proj.coords,
-                        labels_full=labels_full,
-                        turns_full=turns_full,
-                        color_map=color_map,
-                        turn_shapes=turn_shapes,
-                        primitives=cfg.minima_selection.primitives,
-                        vis_cfg=cfg.visualization,
-                    )
-                    _overlay_dm_primitives(
-                        ax=ax,
-                        coords=proj.coords,
-                        res=res,
-                        row_type=row_type,
-                        color_map=color_map,
-                        vis_cfg=cfg.visualization,
-                    )
-                    title = f"{res.fs.dm_key} / {row_type.upper()} — {proj.method.upper()}"
-                    ax.set_title(title, fontweight="bold", pad=3)
-                    ax.set_xlabel(proj.axis_labels[0])
-                    ax.set_ylabel(proj.axis_labels[1])
-                    ax.set_xticks([])
-                    ax.set_yticks([])
+            for ci, proj in enumerate(res.projections):
+                ax = axes[ri][ci]
+                _draw_projection_panel(
+                    ax=ax,
+                    coords=proj.coords,
+                    labels_full=labels_full,
+                    turns_full=turns_full,
+                    color_map=color_map,
+                    turn_shapes=turn_shapes,
+                    primitives=cfg.minima_selection.primitives,
+                    vis_cfg=cfg.visualization,
+                )
+                _overlay_dm_primitives(
+                    ax=ax,
+                    coords=proj.coords,
+                    res=res,
+                    row_type=overlay_type,
+                    color_map=color_map,
+                    vis_cfg=cfg.visualization,
+                )
+                title = f"{res.fs.dm_key} / {overlay_type.upper()} — {proj.method.upper()}"
+                ax.set_title(title, fontweight="bold", pad=3)
+                ax.set_xlabel(proj.axis_labels[0])
+                ax.set_ylabel(proj.axis_labels[1])
+                ax.set_xticks([])
+                ax.set_yticks([])
 
         handles = []
         for p in cfg.minima_selection.primitives:
@@ -1062,26 +1181,20 @@ def _overlay_dm_primitives(
     for (a, b), paths in paths_by_pair.items():
         if not paths:
             continue
-        pair_color = color_map.get(a, "#888888")
-        edge_color = color_map.get(b, "#555555")
-        for p in paths:
+        for p in paths[:1]:
             if len(p.takens_idxs) < 2:
                 continue
             full_idxs = takens_idxs_to_full_idxs(res.takens, res.pooled, p.takens_idxs)
             xy = coords[full_idxs]
-            from matplotlib.colors import LinearSegmentedColormap
-            cmap = LinearSegmentedColormap.from_list(
-                f"g_{a}_{b}", [pair_color, edge_color], N=max(len(xy), 2),
+            ax.plot(
+                xy[:, 0], xy[:, 1],
+                color="#555555",
+                linestyle=(0, (1.5, 1.5)),
+                linewidth=vis_cfg.overlay_linewidth,
+                alpha=0.85,
+                solid_capstyle="round",
+                zorder=5,
             )
-            t = np.linspace(0, 1, len(xy))
-            for i in range(len(xy) - 1):
-                ax.plot(
-                    xy[i : i + 2, 0], xy[i : i + 2, 1],
-                    color=cmap(t[i]),
-                    linewidth=vis_cfg.overlay_linewidth,
-                    alpha=0.85,
-                    solid_capstyle="round",
-                )
 
     for label, takens_idx in res.label_minima.by_label.items():
         if takens_idx >= res.bundle.n_takens:

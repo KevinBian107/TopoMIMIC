@@ -130,6 +130,26 @@ python -m topo_mimic.benchmark.analysis.main_transitions configs/benchmark/analy
 python -m topo_mimic.benchmark.generate_results_table
 ```
 
+### Step 5: Baseline Scale Sweep (Fairness Check)
+Sweep KPMS κ × num_states (keypoint only, EML-selected best num_states per κ) and Mapper lens × n_intervals × feature_space, then check which real canonical transitions each variant discovers under explicit thresholds (frame purity, member-clip count, total frames). Produces a long-format CSV that pivots into a paper appendix table; addresses "baseline under-tuned" reviewer objections.
+```bash
+python3 -m topo_mimic.benchmark.scale_sweep configs/benchmark/scale_sweep.yaml
+```
+Outputs land under `outputs/scale_sweep/v1/cfg_{hash}/`:
+- `discovery_long.csv` — primary artifact (one row per (transition, variant), 18 columns including frame_purity, cluster_count_passing, hyperparameters)
+- `discovery_binary_wide.csv` / `discovery_counts_wide.csv` — pivoted views
+- `transition_metadata.csv` + `variant_metadata.yaml` — provenance
+- `discovery_eyeball.png` — dev-only at-a-glance heatmap
+
+CLI flags: `--phases 0,1,2,3,4,5` to run a subset, `--max-fits N` to cap KPMS fits, `--force` to ignore skip-if-exists. Default clip range is `[642, 742)` matching current rodent.csv coverage; bump to `[642, 842)` once labeling completes. The data loader auto-skips clips with no labels (with a warning) and clips in the dataset preset's `skip_clips` tuple.
+
+By default, the entrypoint sets `XLA_PYTHON_CLIENT_PREALLOCATE=false` and `XLA_PYTHON_CLIENT_MEM_FRACTION=0.5` so KPMS GPU fits work even when other processes hold part of the device's memory (without these, JAX preallocates 75% at import and triggers a cuSolver internal error). Override with your own values if needed:
+```bash
+XLA_PYTHON_CLIENT_MEM_FRACTION=0.3 python3 -m topo_mimic.benchmark.scale_sweep configs/benchmark/scale_sweep.yaml
+JAX_PLATFORMS=cpu python3 -m topo_mimic.benchmark.scale_sweep configs/benchmark/scale_sweep.yaml   # CPU fallback
+```
+Mapper phase is unaffected (CPU only).
+
 ## Walker Generation Pipeline
 To generate walker transition clips, you need the [track-mjx](https://github.com/talmolab/track-mjx) environment with the walker branch of [vnl-playground](https://github.com/talmolab/vnl-playground). Clone track-mjx, create the environment, install the walker-enabled vnl-playground, then run from the TopoVNL root:
 

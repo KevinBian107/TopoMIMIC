@@ -148,7 +148,10 @@ Defaults: dataset `walker_short` (1 transition per clip, ~600 clips total), two 
 
 ### Config knobs
 - `transition_types`: list of `[A, B]` primitive pairs to select clips by and to sample paths for.
-- `feature_spaces[].subsample_n`: stride-N subsample on the Takens pool before DM (default 3). Smaller = denser but slower DM.
+- `feature_spaces[].subsample_n`: legacy shortcut — stride-N subsample on the Takens pool before DM (default 3). Smaller = denser but slower DM. Equivalent to `subsample: {method: stride, n: N}`.
+- `feature_spaces[].subsample`: explicit subsample spec.
+  - `method: stride` (default) — take every `n`-th Takens point per clip.
+  - `method: dbscan` — run global DBSCAN, keep all noise (sparse) points, thin each cluster by `dense_downsample_frac` (0.9 → drop 90% of dense-region points). `dbscan_eps` defaults to the median k-th-neighbor distance; `dbscan_min_samples` defaults to 10.
 - `feature_spaces[].pca_dims`: set for qpos/ekp to strip residual drift; leave `null` for intention.
 - `minima_selection.primitives`: behaviours to assign density minima to (one minimum per behaviour via kNN plurality vote over the pooled Takens cloud).
 - `path_sampling.k_per_pair`: paths sampled per `(A, B)` pair; edge-disjoint paths first, then shortest-simple-path fill.
