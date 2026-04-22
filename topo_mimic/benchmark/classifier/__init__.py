@@ -1,30 +1,34 @@
-"""Transition classifier: 8-class MLP over canonical directional transitions.
+"""Transition classifier: N-class MLP over canonical directional transitions.
 
-Replaces the KID pipeline. Provides:
-  - `preprocessing`: qpos → yaw-stripped 6D rotation + z-scored joints (same as KID)
-  - `labels`: TOP_8_TRANSITIONS + frame-resampling to a fixed window
-  - `model`: Flax MLP
-  - `data`: window extraction from GT + resampled clip windows
-  - `train`: 5-fold CV trainer with confusion-matrix reporting
-  - `cluster_eval`: per-cluster match rate / per-cluster confusion against the
-    classifier, run as an analysis stage after the benchmark.
+Replaces the KID pipeline. Vocabulary is the full set of directed transitions
+observed in `rodent_labels.csv` across {Immobile, Turn, Rear, Walk} (4 behaviors
+-> 12 directed pairs). Sorted here by decreasing GT instance count so minority
+classes are the rightmost columns in the confusion matrix.
 """
 
-TOP_8_TRANSITIONS = [
-    "Turn -> Immobile",
-    "Immobile -> Turn",
-    "Immobile -> Rear",
-    "Rear -> Immobile",
-    "Rear -> Turn",
-    "Turn -> Walk",
-    "Walk -> Turn",
-    "Walk -> Immobile",
+TRANSITION_LABELS = [
+    "Turn -> Immobile",    # 669
+    "Immobile -> Turn",    # 605
+    "Immobile -> Rear",    # 155
+    "Rear -> Immobile",    # 153
+    "Rear -> Turn",        # 151
+    "Turn -> Walk",        # 113
+    "Walk -> Turn",        # 100
+    "Walk -> Immobile",    # 64
+    "Turn -> Rear",        # 46
+    "Immobile -> Walk",    # 44
+    "Rear -> Walk",        # 12
+    "Walk -> Rear",        # 5
 ]
 
-LABEL_TO_IDX: dict[str, int] = {t: i for i, t in enumerate(TOP_8_TRANSITIONS)}
-IDX_TO_LABEL: dict[int, str] = {i: t for i, t in enumerate(TOP_8_TRANSITIONS)}
+# Backwards-compat alias — older call sites used TOP_8_TRANSITIONS.
+TOP_8_TRANSITIONS = TRANSITION_LABELS
+
+LABEL_TO_IDX: dict[str, int] = {t: i for i, t in enumerate(TRANSITION_LABELS)}
+IDX_TO_LABEL: dict[int, str] = {i: t for i, t in enumerate(TRANSITION_LABELS)}
 
 __all__ = [
+    "TRANSITION_LABELS",
     "TOP_8_TRANSITIONS",
     "LABEL_TO_IDX",
     "IDX_TO_LABEL",

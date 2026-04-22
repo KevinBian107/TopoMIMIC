@@ -172,7 +172,7 @@ methods:
   # Inverse-density lens + CubicalCover + DBSCAN inner clustering.
   - name: "mapper_int"
     type: "state_space"
-    enabled: true
+    enabled: true  # point-cap subsample added 2026-04-22, safe on 842 clips
     params:
       takens_m: 3
       takens_tau: 6
@@ -184,7 +184,7 @@ methods:
 
   - name: "mapper_qpos"
     type: "state_space"
-    enabled: true
+    enabled: true  # point-cap subsample added 2026-04-22, safe on 842 clips
     params:
       takens_m: 3
       takens_tau: 9
@@ -196,7 +196,7 @@ methods:
 
   - name: "mapper_ekp"
     type: "state_space"
-    enabled: true
+    enabled: true  # point-cap subsample added 2026-04-22, safe on 842 clips
     params:
       takens_m: 3
       takens_tau: 8

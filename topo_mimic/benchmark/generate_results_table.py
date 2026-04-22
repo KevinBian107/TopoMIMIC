@@ -12,7 +12,7 @@ import pandas as pd
 @dataclass
 class TableConfig:
     analysis_dir: str = "outputs/benchmark_analysis"
-    output_dir: str = "outputs/tables"
+    output_dir: str = "outputs/benchmark_analysis/tables"
     table_name: str = "dtw_results_table"
     dpi: int = 300
     font_size: int = 10
@@ -33,6 +33,9 @@ METHOD_DISPLAY_NAMES = {
     "kpms_intention": "KPMS-Int",
     "kpms_keypoint": "KPMS-KP",
     "custom_vae": "VAE",
+    "mapper_int": "Mapper-Int",
+    "mapper_qpos": "Mapper-qpos",
+    "mapper_ekp": "Mapper-EKP",
 }
 
 
@@ -794,7 +797,7 @@ def main():
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="outputs/tables",
+        default="outputs/benchmark_analysis/tables",
         help="Directory to save output tables",
     )
     parser.add_argument(

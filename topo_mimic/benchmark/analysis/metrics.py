@@ -134,6 +134,7 @@ def extract_sequences_for_gt_label(
     turn_direction: TurnDirection | None = None,
     min_seq_length: int = 3,
     max_seqs: int = 50,
+    directed: bool = True,
 ) -> list[np.ndarray]:
     """
     Extract sequences for a specific GT transition type with optional turn filtering.
@@ -141,11 +142,15 @@ def extract_sequences_for_gt_label(
     Args:
         transitions: List of TransitionSegment
         data: (num_clips, num_frames, dim) feature array
-        target_behaviors: Sorted tuple of two behaviors (e.g., ("Immobility", "Walking"))
+        target_behaviors: (from, to) tuple — e.g. ("Immobile", "Walk").
+            When ``directed=True``, matches only that direction in GT.
+            When ``directed=False``, matches either order (undirected).
         turn_direction: If LEFT/RIGHT, filter to matching turns. If STRAIGHT or
                         NON_DETERMINISTIC or None, include all GT sequences.
         min_seq_length: Minimum sequence length
         max_seqs: Maximum sequences to return
+        directed: When True, match GT direction exactly; when False, fall back
+                  to the undirected (sorted) key.
 
     Returns:
         List of (T, D) sequences matching the criteria
@@ -157,8 +162,14 @@ def extract_sequences_for_gt_label(
         and turn_direction not in (TurnDirection.STRAIGHT, TurnDirection.NON_DETERMINISTIC)
     )
 
+    if directed:
+        target_key = tuple(target_behaviors)
+    else:
+        target_key = tuple(sorted(target_behaviors))
+
     for t in transitions:
-        if t.transition_key != target_behaviors:
+        t_key = t.directed_key if directed else t.transition_key
+        if t_key != target_key:
             continue
 
         if filter_by_turn:
@@ -363,13 +374,16 @@ def run_dtw_analysis(
         if len(parsed.primitives) < 2:
             continue
 
-        target_behaviors = tuple(sorted(parsed.primitives[:2]))
+        # Directional grouping: preserve (from, to) order from the parsed
+        # cluster label so "Immobile -> Walk" and "Walk -> Immobile" stay
+        # distinct DTW rows.
+        target_behaviors = tuple(parsed.primitives[:2])
         turn_dir_str = turn_directions.get(cluster_id)
 
         key = (target_behaviors, turn_dir_str)
         grouped_clusters[key].append(cluster_id)
 
-    print(f"    Found {len(grouped_clusters)} unique (label, turn) groups")
+    print(f"    Found {len(grouped_clusters)} unique (directed label, turn) groups")
 
     results = []
     skipped = []
@@ -388,7 +402,7 @@ def run_dtw_analysis(
             combined_seqs.extend(seqs)
 
         if not combined_seqs:
-            label_str = f"{target_behaviors[0]}↔{target_behaviors[1]}"
+            label_str = f"{target_behaviors[0]} -> {target_behaviors[1]}"
             skipped.append((cluster_ids, label_str, "no valid sequences"))
             continue
 
@@ -404,9 +418,10 @@ def run_dtw_analysis(
             turn_direction=turn_dir,
             min_seq_length=min_seq_length,
             max_seqs=max_samples,
+            directed=True,
         )
 
-        label_str = f"{target_behaviors[0]}↔{target_behaviors[1]}"
+        label_str = f"{target_behaviors[0]} -> {target_behaviors[1]}"
         if not gt_seqs:
             turn_info = f" (turn={turn_dir_str})" if turn_dir_str else ""
             skipped.append((cluster_ids, label_str, f"no GT sequences{turn_info}"))
@@ -619,9 +634,8 @@ def run_internal_consistency_analysis(
             continue
 
         if parsed.comparison_type == "transition" and len(parsed.primitives) >= 2:
-            label_str = f"{parsed.primitives[0]}↔{parsed.primitives[1]}"
-            target = tuple(sorted(parsed.primitives[:2]))
-            label_str = f"{target[0]}↔{target[1]}"
+            # Directional: preserve (from, to) order from the parsed label.
+            label_str = f"{parsed.primitives[0]} -> {parsed.primitives[1]}"
         elif parsed.comparison_type == "single":
             behavior = parsed.primitives[0] if parsed.primitives else parsed.compositional[0]
             label_str = behavior
@@ -903,7 +917,7 @@ def run_warping_analysis(
             continue
         if len(parsed.primitives) < 2:
             continue
-        target_behaviors = tuple(sorted(parsed.primitives[:2]))
+        target_behaviors = tuple(parsed.primitives[:2])
         turn_dir_str = turn_directions.get(cluster_id)
         key = (target_behaviors, turn_dir_str)
         grouped_clusters[key].append(cluster_id)
@@ -930,6 +944,7 @@ def run_warping_analysis(
             all_transitions, data, target_behaviors,
             turn_direction=turn_dir, min_seq_length=min_seq_length,
             max_seqs=max_samples,
+            directed=True,
         )
 
         if not gt_seqs:
@@ -964,7 +979,7 @@ def run_warping_analysis(
         if not dtw_vals:
             continue
 
-        label_str = f"{target_behaviors[0]}↔{target_behaviors[1]}"
+        label_str = f"{target_behaviors[0]} -> {target_behaviors[1]}"
         results.append(WarpingResult(
             label=label_str,
             turn_direction=turn_dir_str,

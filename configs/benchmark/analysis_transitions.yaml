@@ -10,8 +10,8 @@ behavior_labels_csv: "behavior_labels/rodent_labels.csv"
 # Filter to specific methods and seeds (null = all)
 # Example: methods: ["gw_kmeans", "w2_kmeans"]
 # Example: seeds: [0, 123]
-methods: ["w2_dmc_int_kmeans", "w2_dmc_ekp_kmeans", "w2_dmc_qpos_kmeans", "w2_dmp_int_kmeans", "w2_dmp_qpos_kmeans", "w2_dmp_ekp_kmeans", "kpms_intention", "kpms_keypoint", "custom_vae"] #w2_full_kmeans, w2_unif_kmeans
-seeds: [0]
+methods: ["w2_dmc_int_kmeans", "w2_dmc_ekp_kmeans", "w2_dmc_qpos_kmeans", "w2_dmp_int_kmeans", "w2_dmp_qpos_kmeans", "w2_dmp_ekp_kmeans", "w2_unif_kmeans", "kpms_intention", "kpms_keypoint", "custom_vae", "mapper_int", "mapper_qpos", "mapper_ekp"]
+seeds: [0, 1, 2]
 
 # =============================================================================
 # Global settings (used across multiple analyses)
@@ -35,7 +35,7 @@ gt_sanity_skip_root_dims: 7  # Skip first N dims of qpos (root pos + quat)
 # =============================================================================
 # MDS settings
 # =============================================================================
-run_mds_analysis: true
+run_mds_analysis: false  # MDS already computed and unchanged by directional fix
 mds_k_cycles: 50
 mds_s_top: 10
 mds_figsize: [10, 9]  # [width, height]
@@ -54,14 +54,14 @@ gt_render_target_size: [320, 240]  # Target tile size for GT rendering
 # =============================================================================
 # Transition comparison settings
 # =============================================================================
-run_transition_comparison: true  # Side-by-side discovered vs ground truth transitions
-run_transition_ranking: true  # Generate transition variant rankings (with turn directions)
+run_transition_comparison: false  # already computed and unchanged by directional fix
+run_transition_ranking: false     # already computed
 max_transition_points: 500  # Max points to display per cluster
 
 # =============================================================================
 # Transition graph settings
 # =============================================================================
-run_transition_graph: true  # k-NN graph of transition clusters based on W2 distance
+run_transition_graph: false  # disabled for classifier-only rerun
 transition_graph_k: 3  # k for k-NN graph
 transition_graph_gt_top_k: 10  # Number of top GT transition types to include (by frequency)
 transition_graph_layout: "spring"  # Layout algorithm: spring, kamada_kawai, spectral
@@ -74,7 +74,7 @@ transition_graph_figsize: [16, 7]  # [width, height]
 # Each discovered cluster is compared to its corresponding GT transition type
 # Turn direction (left/right) is used to filter GT sequences
 # Lower DTW = more similar transition dynamics (how joints move over time)
-run_dtw_metrics: true
+run_dtw_metrics: true  # re-enabled after directional-DTW fix 2026-04-22
 dtw_data_key: "qpos_rollout"  # Data to use: "qpos_rollout" or "intention"
 dtw_max_seqs: 50  # Max sequences per cluster
 dtw_max_comparisons: 100  # Max pairwise DTW comparisons per cluster pair

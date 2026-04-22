@@ -52,6 +52,12 @@ class TransitionSegment:
         return tuple(sorted([self.from_behavior, self.to_behavior]))
 
     @property
+    def directed_key(self) -> tuple[str, str]:
+        """Direction-preserving (from, to) tuple. Use this when you need to
+        distinguish "Walk -> Immobile" from "Immobile -> Walk"."""
+        return (self.from_behavior, self.to_behavior)
+
+    @property
     def transition_key_with_turns(self) -> tuple:
         key = self.transition_key
         if key[0] == self.from_behavior:

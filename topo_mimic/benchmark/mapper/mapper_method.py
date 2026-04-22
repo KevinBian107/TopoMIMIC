@@ -122,6 +122,12 @@ class MapperMethod(BaseMethod):
         self.dbscan_eps = self.params.get("dbscan_eps", "auto")
         self.dbscan_min_samples = int(self.params.get("dbscan_min_samples", 5))
         self.min_total_frames = int(self.params.get("min_total_frames", 0))
+        # When the concatenated Takens-embedded point cloud has more points
+        # than this cap, build the Mapper graph on a random subsample of size
+        # `max_points` and propagate node assignments to the rest via 1-NN in
+        # the subsample. Without this, tdamapper's fit_transform hangs for
+        # >~300k points.
+        self.max_points = int(self.params.get("max_points", 100000))
 
     @property
     def method_type(self) -> MethodType:
@@ -178,12 +184,26 @@ class MapperMethod(BaseMethod):
         lens = _knn_inverse_density(all_pts, k=self.knn_k)
         print(f"[Mapper/{self.dm_key}] lens range: [{lens.min():.4f}, {lens.max():.4f}]")
 
+        # Subsample for graph fit if the full point cloud is too large for
+        # tdamapper. Assignments for non-subsample points are propagated via
+        # 1-NN in the subsample at the end.
+        if len(all_pts) > self.max_points:
+            rng_sub = np.random.default_rng(seed + 991)
+            sub_idx = rng_sub.choice(len(all_pts), size=self.max_points, replace=False)
+            sub_pts = all_pts[sub_idx]
+            sub_lens = lens[sub_idx]
+            print(f"[Mapper/{self.dm_key}] subsampling {len(all_pts)} -> {self.max_points} points for graph fit")
+        else:
+            sub_idx = np.arange(len(all_pts))
+            sub_pts = all_pts
+            sub_lens = lens
+
         cover = CubicalCover(n_intervals=self.n_intervals, overlap_frac=self.overlap_frac)
         eps = self.dbscan_eps
         if eps == "auto":
             rng = np.random.default_rng(seed)
-            sub_n = min(1000, len(all_pts))
-            sub = all_pts[rng.choice(len(all_pts), size=sub_n, replace=False)]
+            sub_n = min(1000, len(sub_pts))
+            sub = sub_pts[rng.choice(len(sub_pts), size=sub_n, replace=False)]
             from sklearn.metrics import pairwise_distances
             d = pairwise_distances(sub)
             eps = float(np.median(d[d > 0]))
@@ -191,10 +211,20 @@ class MapperMethod(BaseMethod):
 
         inner = DBSCAN(eps=float(eps), min_samples=self.dbscan_min_samples)
         mapper = MapperAlgorithm(cover=cover, clustering=inner)
-        graph = mapper.fit_transform(all_pts, lens)
+        graph = mapper.fit_transform(sub_pts, sub_lens)
         print(f"[Mapper/{self.dm_key}] mapper graph: {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges")
 
-        assignments = _assign_frame_to_single_node(graph, lens, n_points=len(all_pts))
+        # Sub-assignment on the subsample (graph ids reference sub_pts indices).
+        sub_assign = _assign_frame_to_single_node(graph, sub_lens, n_points=len(sub_pts))
+
+        if len(sub_pts) < len(all_pts):
+            from sklearn.neighbors import NearestNeighbors
+            nn = NearestNeighbors(n_neighbors=1).fit(sub_pts)
+            _, nearest = nn.kneighbors(all_pts)
+            assignments = sub_assign[nearest[:, 0]]
+            print(f"[Mapper/{self.dm_key}] propagated {len(all_pts) - len(sub_pts)} non-subsample points via 1-NN")
+        else:
+            assignments = sub_assign
         n_noise = int(np.sum(assignments == -1))
         print(f"[Mapper/{self.dm_key}] noise frames (unassigned): {n_noise}/{len(assignments)}")
 
