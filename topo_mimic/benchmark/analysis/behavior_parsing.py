@@ -50,10 +50,11 @@ def parse_turn_direction(value: str | None) -> TurnDirection:
 
 
 BEHAVIOR_NAME_MAP = {
-    "walking": "Walking",
-    "walk": "Walking",
-    "immobility": "Immobility",
-    "immobile": "Immobility",
+    "walk": "Walk",
+    "walking": "Walk",
+    "immobile": "Immobile",
+    "immobility": "Immobile",
+    "turn": "Turn",
     "orienting": "Orienting",
     "orient": "Orienting",
     "grooming": "Grooming",
@@ -66,12 +67,15 @@ BEHAVIOR_NAME_MAP = {
     "urear": "Unsupported Rear",
     "rear": "Rear",
     "step": "Step",
-    "left_turn": "Left Turn",
-    "leftturn": "Left Turn",
-    "lturn": "Left Turn",
-    "right_turn": "Right Turn",
-    "rightturn": "Right Turn",
-    "rturn": "Right Turn",
+    "left": "Left",
+    "right": "Right",
+    "straight": "Straight",
+    "left_turn": "Left",
+    "leftturn": "Left",
+    "lturn": "Left",
+    "right_turn": "Right",
+    "rightturn": "Right",
+    "rturn": "Right",
     "walk_slow": "walk_slow",
     "walk_fast": "walk_fast",
     "walk_backward": "walk_backward",
@@ -83,13 +87,15 @@ BEHAVIOR_NAME_MAP = {
 }
 
 PRIMITIVE_BEHAVIORS = {
+    "Immobile", "Turn", "Walk", "Rear",
     "Walking", "Immobility", "Orienting", "Grooming",
-    "Supported Rear", "Unsupported Rear", "Rear", "Step",
+    "Supported Rear", "Unsupported Rear", "Step",
     "walk_slow", "walk_fast", "walk_backward", "run",
     "hop", "tiptoe", "stand", "knee_down",
 }
 
 COMPOSITIONAL_BEHAVIORS = {
+    "Left", "Right", "Straight",
     "Left Turn", "Right Turn",
 }
 
@@ -192,10 +198,12 @@ def parse_cluster_label(label: str, merge_rear: bool = True) -> ParsedLabel | No
     from_turn = TurnDirection.STRAIGHT
     to_turn = TurnDirection.STRAIGHT
     if compositional:
-        if "Left Turn" in compositional:
+        left_tokens = {"Left", "Left Turn"}
+        right_tokens = {"Right", "Right Turn"}
+        if any(t in compositional for t in left_tokens):
             from_turn = TurnDirection.LEFT
             to_turn = TurnDirection.LEFT
-        elif "Right Turn" in compositional:
+        elif any(t in compositional for t in right_tokens):
             from_turn = TurnDirection.RIGHT
             to_turn = TurnDirection.RIGHT
 

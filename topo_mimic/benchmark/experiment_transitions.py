@@ -1383,25 +1383,34 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
 
             all_results[method_entry.name] = method_results
 
-    dm_data_for_ss = None
+    dm_data_cache: dict[str, np.ndarray] = {}
+
+    def _load_dm_data_for_ss(dm_key: str) -> np.ndarray:
+        if dm_key in dm_data_cache:
+            return dm_data_cache[dm_key]
+        hdf5_key = get_hdf5_key_for_dm_key(dm_key)
+        data, _ = load_data(
+            hdf5_key, config.rodent_rollout_dir, config.split, config.n_clips,
+            total_clips=preset.total_clips, test_size=preset.test_size,
+        )
+        min_frames = min(data.shape[1], eval_data.shape[1])
+        data = data[:, :min_frames, :]
+        dm_data_cache[dm_key] = data
+        return data
+
     for method_entry in state_space_methods:
         print(f"\n{'='*60}")
         print(f"Method: {method_entry.name} (state-space)")
         print(f"{'='*60}")
 
-        if dm_data_for_ss is None:
-            hdf5_key = get_hdf5_key_for_dm_key(config.data.dm_key)
-            dm_data_for_ss, _ = load_data(
-                hdf5_key, config.rodent_rollout_dir, config.split, config.n_clips,
-                total_clips=preset.total_clips, test_size=preset.test_size,
-            )
-            min_frames = min(dm_data_for_ss.shape[1], eval_data.shape[1])
-            dm_data_for_ss = dm_data_for_ss[:, :min_frames, :]
+        method = get_method(method_entry.name, method_entry.params)
+        method_dm_key = getattr(method, "dm_key", config.data.dm_key)
+        dm_data_for_ss = _load_dm_data_for_ss(method_dm_key)
+        print(f"  Using dm_key={method_dm_key}, shape={dm_data_for_ss.shape}")
 
         method_output_dir = os.path.join(config.output_dir, method_entry.name)
         os.makedirs(method_output_dir, exist_ok=True)
 
-        method = get_method(method_entry.name, method_entry.params)
         method_results = {}
 
         n_clusters_to_use = config.k_selection.n_clusters
@@ -1630,15 +1639,85 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
     return ExperimentResults(results=all_results, config=config)
 
 
-def main(config_path: str = "configs/benchmark/experiment_transitions.yaml"):
+def regenerate_labels(config: ExperimentConfig) -> None:
+    """Re-run ONLY the auto-labeling step on cached results.pkl files.
+
+    For each enabled method, loads the cluster_dicts from
+    ``{output_dir}/{method_name}/results.pkl`` and rewrites
+    ``labels_seed_{seed}.yaml`` + ``sample_labels_seed_{seed}.yaml`` via
+    the current ``generate_auto_labels_yaml`` implementation. No fitting,
+    no rendering, no cluster-merging analysis.
+    """
+    from topo_mimic.benchmark.auto_label import generate_auto_labels_yaml
+    from datetime import datetime
+
+    experiment_id = f"experiment_relabel_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}"
+    enabled = [m for m in config.methods if m.enabled]
+    print(f"[only-relabel] regenerating labels for {len(enabled)} method(s) "
+          f"× {len(config.seeds)} seed(s); csv={config.behavior_labels_csv}")
+    if not config.behavior_labels_csv or not Path(config.behavior_labels_csv).exists():
+        raise FileNotFoundError(
+            f"behavior_labels_csv not found: {config.behavior_labels_csv!r}. "
+            "Set it in the experiment config."
+        )
+
+    rewritten = 0
+    for m in enabled:
+        method_dir = os.path.join(config.output_dir, m.name)
+        results_path = os.path.join(method_dir, "results.pkl")
+        if not os.path.exists(results_path):
+            print(f"  [skip] {m.name}: no results.pkl at {results_path}")
+            continue
+        with open(results_path, "rb") as f:
+            method_results = pkl.load(f)
+        for seed in config.seeds:
+            if seed not in method_results:
+                print(f"  [skip] {m.name} seed={seed}: missing from results.pkl")
+                continue
+            r = method_results[seed]
+            cluster_dict = r.get("cluster_dict")
+            if not cluster_dict:
+                print(f"  [skip] {m.name} seed={seed}: no cluster_dict in results")
+                continue
+            n_clusters = r.get("n_clusters", config.k_selection.n_clusters)
+            generate_auto_labels_yaml(
+                method_name=m.name,
+                n_clusters=n_clusters,
+                seed=seed,
+                output_dir=method_dir,
+                cluster_dict=cluster_dict,
+                behavior_labels_csv=config.behavior_labels_csv,
+                experiment_id=experiment_id,
+            )
+            rewritten += 1
+            print(f"  [ok]   {m.name} seed={seed}: labels_seed_{seed}.yaml rewritten")
+    print(f"[only-relabel] done ({rewritten} labels YAMLs rewritten).")
+
+
+def main(config_path: str = "configs/benchmark/experiment_transitions.yaml",
+         only_relabel: bool = False):
     if os.path.exists(config_path):
         cfg = load_config(config_path)
     else:
         cfg = ExperimentConfig()
 
-    run_experiment(cfg)
+    if only_relabel:
+        regenerate_labels(cfg)
+    else:
+        run_experiment(cfg)
 
 
 if __name__ == "__main__":
-    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/benchmark/experiment_transitions.yaml"
-    main(config_path)
+    import argparse
+    parser = argparse.ArgumentParser(description="Unified benchmark runner.")
+    parser.add_argument(
+        "config", nargs="?",
+        default="configs/benchmark/experiment_transitions.yaml",
+        help="Path to experiment YAML.",
+    )
+    parser.add_argument(
+        "--only-relabel", action="store_true",
+        help="Skip all fitting; rewrite labels_seed_*.yaml for every method from cached results.pkl.",
+    )
+    args = parser.parse_args()
+    main(args.config, only_relabel=args.only_relabel)

@@ -19,9 +19,9 @@ import yaml
 class DataCfg:
     dataset: str = "rodent"
     rodent_rollout_dir: str = "data/rodent_ar.h5"
-    behavior_labels_csv: str = "behavior_labels/rodent.csv"
-    start_clip: int = 642
-    end_clip: int = 742  # current rodent.csv coverage; bump to 842 when labeling completes
+    behavior_labels_csv: str = "behavior_labels/rodent_labels.csv"
+    start_clip: int = 0
+    end_clip: int = 842  # full rodent_labels.csv coverage (clips 0..841)
     xml_path: str = "topo_mimic/dmwk/xml/rodent.xml"
     stac_data_path: str = "data/rodent_reference_clips.h5"
     respect_skip_clips: bool = True

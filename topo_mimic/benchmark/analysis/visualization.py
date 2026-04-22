@@ -27,10 +27,10 @@ from .data_loading import load_intention, load_qpos
 
 
 BEHAVIOR_GROUPS = {
-    "Immobility": ["Immobility"],
-    "Walking": ["Walking"],
+    "Immobile": ["Immobile", "Immobility"],
+    "Turn": ["Turn", "Orienting"],
+    "Walk": ["Walk", "Walking"],
     "Rear": ["Rear", "Supported Rear", "Unsupported Rear"],
-    "Orienting": ["Orienting"],
     "Grooming": ["Grooming"],
 }
 
@@ -1100,9 +1100,12 @@ def plot_transition_graph(
             return nx.spring_layout(G, seed=42)
 
     behavior_colors = {
+        "Walk": "#3498DB",
         "Walking": "#3498DB",
         "Rear": "#E74C3C",
+        "Immobile": "#95A5A6",
         "Immobility": "#95A5A6",
+        "Turn": "#9B59B6",
         "Orienting": "#9B59B6",
         "Grooming": "#2ECC71",
     }

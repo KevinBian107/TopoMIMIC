@@ -4,7 +4,8 @@
 dataset: "rodent"
 output_dir: "outputs/benchmark_experiment_transitions"
 data_path: "data/rodent_ar.h5"
-split: "train"
+behavior_labels_csv: "behavior_labels/rodent_labels.csv"
+split: "all"
 n_clips: null  # Number of clips to use from split (null = all clips in split)
 
 # Data configuration (legacy)
@@ -46,7 +47,7 @@ k_selection:
   n_clusters: 25
 
 # Seeds for reproducibility (multiple seeds for stability analysis)
-seeds: [0, 12, 123, 1234, 12345]
+seeds: [0, 1, 2]
 aggregate_seeds: true
 
 # Methods to run
@@ -103,7 +104,7 @@ methods:
   - name: "w2_full_kmeans"
     type: "clustering"
     dm_source: "intention"
-    enabled: true
+    enabled: false  # w2_full on 829 full-length windows takes ~7hr per feature_space; disabled per user request 2026-04-22
     params:
       mds_components: 3
 
@@ -183,7 +184,7 @@ methods:
 
   - name: "mapper_qpos"
     type: "state_space"
-    enabled: false  # disable by default; enable in a qpos-specific experiment
+    enabled: true
     params:
       takens_m: 3
       takens_tau: 9
@@ -195,7 +196,7 @@ methods:
 
   - name: "mapper_ekp"
     type: "state_space"
-    enabled: false  # disable by default; enable in an ekp-specific experiment
+    enabled: true
     params:
       takens_m: 3
       takens_tau: 8

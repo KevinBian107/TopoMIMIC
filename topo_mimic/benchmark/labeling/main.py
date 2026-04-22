@@ -20,9 +20,10 @@ import yaml
 from topo_mimic.benchmark.auto_label import (
     DEFAULT_DOMINANCE_THRESHOLD,
     GROOMING_LABEL,
-    auto_label_clusters,
+    auto_label_clusters_directional,
     generate_auto_labels_yaml,
     load_behavior_segments,
+    split_segments_by_kind,
 )
 from topo_mimic.benchmark.labeling.core import (
     build_recommendations,
@@ -42,7 +43,7 @@ class AutoLabelConfig:
 @dataclass
 class LabelingConfig:
     experiment_dir: str = "outputs/benchmark_experiment_transitions"
-    behavior_labels_csv: str = "behavior_labels/rodent.csv"
+    behavior_labels_csv: str = "behavior_labels/rodent_labels.csv"
     method: str = "w2_dmp_qpos_kmeans"
     seed: int = 0
     auto_label: AutoLabelConfig = field(default_factory=AutoLabelConfig)
@@ -104,12 +105,12 @@ def run_labeling(config: LabelingConfig) -> dict:
     if not segments:
         print("WARNING: no GT segments found; auto-labels will be empty.")
 
-    print("\n=== Stage 3: GT majority-vote labeling ===")
-    cluster_labels = auto_label_clusters(
+    print("\n=== Stage 3: GT directional majority-vote labeling ===")
+    behav_segs, dir_segs = split_segments_by_kind(segments)
+    cluster_labels = auto_label_clusters_directional(
         cluster_dict,
-        segments,
-        dominance_threshold=config.auto_label.dominance_threshold,
-        grooming_label=config.auto_label.grooming_label,
+        behav_segs,
+        dir_segs,
     )
 
     print("\n=== Stage 4: Building recommendations ===")

@@ -88,7 +88,8 @@ def load_behavior_segments(
         else:
             video = str(row["Video"])
             clip_id = int(video.replace("clip_", "").replace(".mp4", ""))
-        behavior = normalize_behavior_name(str(row["Behavior"]))
+        raw_label = row["Label"] if "Label" in df.columns else row["Behavior"]
+        behavior = normalize_behavior_name(str(raw_label))
 
         if behavior in COMPOSITIONAL_BEHAVIORS:
             turn_overlaps_by_clip[clip_id].append((start_frame, end_frame, behavior))
@@ -397,7 +398,8 @@ def load_behavior_segments_multilabel(
         else:
             video = str(row["Video"])
             clip_id = int(video.replace("clip_", "").replace(".mp4", ""))
-        behavior = normalize_behavior_name(str(row["Behavior"]))
+        raw_label = row["Label"] if "Label" in df.columns else row["Behavior"]
+        behavior = normalize_behavior_name(str(raw_label))
 
         if merge_rear:
             behavior = merge_rear_category(behavior)

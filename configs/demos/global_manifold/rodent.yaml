@@ -1,6 +1,6 @@
 dataset: rodent
 data_path: data/rodent_ar.h5
-labels_csv: behavior_labels/rodent.csv
+labels_csv: behavior_labels/rodent_labels.csv
 xml_path: topo_mimic/dmwk/xml/rodent.xml
 stac_data_path: data/rodent_reference_clips.h5
 

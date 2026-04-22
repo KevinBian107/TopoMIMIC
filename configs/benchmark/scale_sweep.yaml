@@ -6,9 +6,9 @@ io:
 data:
   dataset: rodent
   rodent_rollout_dir: data/rodent_ar.h5
-  behavior_labels_csv: behavior_labels/rodent.csv
+  behavior_labels_csv: behavior_labels/rodent_labels.csv
   start_clip: 642
-  end_clip: 742   # current rodent.csv coverage (clips 642..741). Bump to 842 when labeling for clips 742..841 completes.
+  end_clip: 842   # original test-split range; Mapper fit_transform on 842 clips materializes a 400k-point cover that hangs in tdamapper. 200 clips produces ~99k points which fits the original scale_sweep compute envelope.
   xml_path: topo_mimic/dmwk/xml/rodent.xml
   stac_data_path: data/rodent_reference_clips.h5
   respect_skip_clips: true

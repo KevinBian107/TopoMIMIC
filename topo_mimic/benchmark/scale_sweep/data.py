@@ -13,7 +13,9 @@ from pathlib import Path
 
 import numpy as np
 
-from topo_mimic.benchmark.auto_label import BehaviorSegment, load_behavior_segments
+from topo_mimic.benchmark.auto_label import (
+    BehaviorSegment, load_behavior_segments, split_segments_by_kind,
+)
 from topo_mimic.benchmark.hyperparam_sweep.keypoint_loader import (
     qpos_to_keypoints,
     setup_stac_reference,
@@ -86,7 +88,11 @@ def load_scale_sweep_data(cfg: ScaleSweepConfig) -> ScaleSweepData:
     clip_ids = _resolve_clip_ids(cfg)
     log.info(f"Loading {len(clip_ids)} clips in range [{cfg.data.start_clip}, {cfg.data.end_clip})")
 
-    segments_by_clip = load_behavior_segments(cfg.data.behavior_labels_csv)
+    raw_segments = load_behavior_segments(cfg.data.behavior_labels_csv)
+    # rodent_labels.csv carries BOTH behavior and direction labels; scale-sweep's
+    # canonical (alphabetical) transition logic must only see behavior labels,
+    # otherwise it emits nonsense pairs like "Rear <-> Left".
+    segments_by_clip, _direction_segments = split_segments_by_kind(raw_segments)
     clip_ids = _filter_to_labeled_clips(segments_by_clip, clip_ids)
     if not clip_ids:
         raise RuntimeError(
