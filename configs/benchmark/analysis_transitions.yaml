@@ -89,3 +89,17 @@ consistency_n_samples: 5  # Sequences to sample per cluster for internal consist
 # For each cluster: warping path on cost matrix, aligned joint trajectories, and video
 run_dtw_visualization: false  # Enable detailed DTW visualization (slower)
 
+# =============================================================================
+# Transition-classifier cluster evaluation (replaces KID)
+# =============================================================================
+# Uses a MLP classifier trained on top-8 directional transitions from
+# rodent_labels.csv. For each cluster, resamples member windows to
+# `classifier_window_frames` and reports argmax match rate vs cluster's
+# auto-label, plus per-cluster confusion across the 8 transition classes.
+# Train the classifier first via:
+#   python3 -m topo_mimic.benchmark.classifier.train configs/benchmark/classifier.yaml
+run_classifier_analysis: true
+classifier_raw_h5_path: "data/rodent_ar.h5"
+classifier_ckpt_dir: "outputs/classifier_ckpts/qpos"
+classifier_window_frames: 100
+

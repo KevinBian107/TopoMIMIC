@@ -437,28 +437,28 @@ def run_analysis(config: AnalysisConfig) -> None:
                         import traceback
                         traceback.print_exc()
 
-            if config.run_kid_analysis:
-                kid_dir = os.path.join(seed_output_dir, "kid")
-                if _should_skip_analysis(kid_dir):
-                    print(f"    [skip] KID already exists at {kid_dir}")
+            if config.run_classifier_analysis:
+                classifier_dir = os.path.join(seed_output_dir, "classifier")
+                if _should_skip_analysis(classifier_dir):
+                    print(f"    [skip] classifier analysis already exists at {classifier_dir}")
                 else:
                     try:
-                        from topo_mimic.benchmark.analysis.run_kid import (
-                            run_kid_for_method_seed,
+                        from topo_mimic.benchmark.classifier.cluster_eval import (
+                            evaluate_clusters_with_classifier,
                         )
-                        print(f"    Running KID analysis...")
-                        run_kid_for_method_seed(
+                        print(f"    Running classifier cluster analysis...")
+                        evaluate_clusters_with_classifier(
                             cluster_dict=cluster_dict,
                             method_dir=method_dir,
                             seed=seed,
+                            raw_h5_path=config.classifier_raw_h5_path,
                             behavior_labels_csv=config.behavior_labels_csv,
-                            raw_h5_path=config.kid_raw_h5_path,
-                            output_dir=kid_dir,
-                            vae_cache_dir=config.kid_vae_cache_dir,
-                            kid_seed=config.kid_seed,
+                            classifier_ckpt_dir=config.classifier_ckpt_dir,
+                            output_dir=classifier_dir,
+                            window_frames=config.classifier_window_frames,
                         )
                     except Exception as e:
-                        print(f"    KID analysis failed: {e}")
+                        print(f"    Classifier cluster analysis failed: {e}")
                         import traceback
                         traceback.print_exc()
 

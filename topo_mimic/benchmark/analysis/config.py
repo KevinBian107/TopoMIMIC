@@ -23,12 +23,12 @@ class AnalysisConfig:
     run_transition_graph: bool = False
     run_dtw_metrics: bool = True
     run_dtw_visualization: bool = False
-    run_kid_analysis: bool = True
+    run_classifier_analysis: bool = True
     render_gt_transitions: bool = False
 
-    kid_raw_h5_path: str = "data/rodent_ar.h5"
-    kid_vae_cache_dir: str = "outputs/kid_vae_cache"
-    kid_seed: int = 42
+    classifier_raw_h5_path: str = "data/rodent_ar.h5"
+    classifier_ckpt_dir: str = "outputs/classifier_ckpts/qpos"
+    classifier_window_frames: int = 100
 
     gt_sanity_top_k: int = 10
     gt_sanity_data_key: str = "qpos_rollout"
@@ -86,10 +86,10 @@ def load_config(config_path: str | Path) -> AnalysisConfig:
         run_transition_graph=cfg.get("run_transition_graph", False),
         run_dtw_metrics=cfg.get("run_dtw_metrics", True),
         run_dtw_visualization=cfg.get("run_dtw_visualization", False),
-        run_kid_analysis=cfg.get("run_kid_analysis", True),
-        kid_raw_h5_path=cfg.get("kid_raw_h5_path", "data/rodent_ar.h5"),
-        kid_vae_cache_dir=cfg.get("kid_vae_cache_dir", "outputs/kid_vae_cache"),
-        kid_seed=cfg.get("kid_seed", 42),
+        run_classifier_analysis=cfg.get("run_classifier_analysis", True),
+        classifier_raw_h5_path=cfg.get("classifier_raw_h5_path", "data/rodent_ar.h5"),
+        classifier_ckpt_dir=cfg.get("classifier_ckpt_dir", "outputs/classifier_ckpts/qpos"),
+        classifier_window_frames=int(cfg.get("classifier_window_frames", 100)),
         render_gt_transitions=cfg.get("render_gt_transitions", False),
         gt_sanity_top_k=cfg.get("gt_sanity_top_k", 10),
         gt_sanity_data_key=cfg.get("gt_sanity_data_key", "qpos_rollout"),
