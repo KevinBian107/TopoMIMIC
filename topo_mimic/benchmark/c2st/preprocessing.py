@@ -46,15 +46,20 @@ def handle_rotation(data: np.ndarray) -> np.ndarray:
 
 def preprocess_qpos(
     data: np.ndarray,
-    exclude_xy: bool = True,
-    do_handle_rotation: bool = True,
+    skip_root_dims: int = 7,
 ) -> np.ndarray:
-    """(..., T, 74) → (..., T, 74). handle_rotation 74→76 then exclude_xy 76→74."""
-    if do_handle_rotation:
-        data = handle_rotation(data)
-    if exclude_xy:
-        data = data[..., 2:]
-    return data
+    """Strip the full root state to match DTW / KID preprocessing.
+
+    Input qpos is (..., T, 74) with layout xyz(3) + quat(4) + joints(67).
+    Dropping the first 7 dims removes xyz and the full root quaternion,
+    leaving 67 joint angles — the same feature space DTW uses
+    (``metrics.run_dtw_analysis`` calls ``data[..., skip_root_dims:]`` with
+    ``skip_root_dims=7``) and the same space the KID pipeline in
+    track-mjx/moseq_jax operates on. Keeping z or the root orientation
+    lets the classifier distinguish cluster vs real on absolute pose
+    rather than behavioral dynamics, which inflates C2ST accuracy.
+    """
+    return data[..., int(skip_root_dims):]
 
 
 def resample_to_K(arr: np.ndarray, K: int) -> np.ndarray:

@@ -92,7 +92,7 @@ def run_c2st_for_method_seed(
     """
     os.makedirs(output_dir, exist_ok=True)
     raw_qpos = load_raw_qpos(raw_h5_path)
-    qpos_preproc = preprocess_qpos(raw_qpos, exclude_xy=True, do_handle_rotation=True)
+    qpos_preproc = preprocess_qpos(raw_qpos, skip_root_dims=7)
 
     real_by_label = build_real_transitions(behavior_labels_csv, TRANSITION_LABELS)
     # Pre-stack real windows per label so we reuse them across clusters.

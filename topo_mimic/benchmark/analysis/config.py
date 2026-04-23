@@ -25,6 +25,7 @@ class AnalysisConfig:
     run_dtw_visualization: bool = False
     run_c2st_analysis: bool = True
     run_purity_analysis: bool = True
+    run_mmd_analysis: bool = True
     render_gt_transitions: bool = False
 
     c2st_raw_h5_path: str = "data/rodent_ar.h5"
@@ -91,6 +92,7 @@ def load_config(config_path: str | Path) -> AnalysisConfig:
         run_dtw_visualization=cfg.get("run_dtw_visualization", False),
         run_c2st_analysis=cfg.get("run_c2st_analysis", True),
         run_purity_analysis=cfg.get("run_purity_analysis", True),
+        run_mmd_analysis=cfg.get("run_mmd_analysis", True),
         c2st_raw_h5_path=cfg.get("c2st_raw_h5_path", "data/rodent_ar.h5"),
         c2st_window_frames=int(cfg.get("c2st_window_frames", 100)),
         c2st_min_cluster_size=int(cfg.get("c2st_min_cluster_size", 8)),

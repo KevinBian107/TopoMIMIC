@@ -315,6 +315,21 @@ class DTWResult:
     n_gt_seqs: int
 
 
+@dataclass
+class MMDResult:
+    """One row per (directed_label, turn) group — the KID and RBF-MMD
+    between flattened cluster-window distribution and flattened real-GT-
+    window distribution for that group."""
+    label: str                   # "A -> B"
+    turn_direction: str | None
+    cluster_ids: list[int]
+    kid: float                   # unbiased MMD^2 with polynomial KID kernel
+    mmd_rbf: float               # unbiased MMD^2 with RBF kernel (median sigma)
+    sigma: float                 # bandwidth used for RBF
+    n_cluster_seqs: int
+    n_gt_seqs: int
+
+
 def run_dtw_analysis(
     cluster_dict: dict,
     cluster_labels: dict[int, str],
@@ -586,6 +601,152 @@ def run_dtw_analysis(
         print(f"      Best: {best.label} (DTW={best.mean_dtw:.4f})")
         print(f"      Worst: {worst.label} (DTW={worst.mean_dtw:.4f})")
 
+    return results
+
+
+def run_mmd_analysis(
+    cluster_dict: dict,
+    cluster_labels: dict[int, str],
+    turn_directions: dict[int, str] | None,
+    behavior_labels_csv: str,
+    data: np.ndarray,
+    output_dir: str,
+    method_name: str = "",
+    seed: int = 0,
+    max_samples: int = 200,
+    short_threshold: int = 10,
+    merge_rear: bool = True,
+    skip_root_dims: int = 7,
+    min_seq_length: int = 3,
+    resample_K: int = 100,
+) -> list[MMDResult]:
+    """Per-(directed label, turn) KID + RBF-MMD between cluster and GT windows.
+
+    Mirrors ``run_dtw_analysis``'s grouping and GT-lookup. Each cluster window
+    is flattened from (K, D) to (K*D,), and the two resulting point clouds
+    (cluster vs matching GT) are fed to ``compute_mmd_kid``.
+
+    Writes ``{method}_seed{seed}_mmd_results.csv`` to ``output_dir`` and
+    returns a list of ``MMDResult``.
+    """
+    import os
+    import pandas as pd
+    from .mmd_kid import compute_mmd_kid
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    if turn_directions is None:
+        turn_directions = {}
+
+    if skip_root_dims > 0:
+        original_dim = data.shape[-1]
+        data = data[..., skip_root_dims:]
+        print(f"    Removed first {skip_root_dims} root dims: {original_dim}D -> {data.shape[-1]}D")
+
+    print("    Loading GT transitions...")
+    all_transitions = find_all_transitions(
+        behavior_labels_csv,
+        short_threshold=short_threshold,
+        merge_rear=merge_rear,
+        window_frames=resample_K,
+    )
+    print(f"    Found {len(all_transitions)} total GT transitions")
+
+    grouped_clusters = defaultdict(list)
+    for cluster_id, label in cluster_labels.items():
+        if not label or label.startswith("C"):
+            continue
+        parsed = parse_cluster_label(label, merge_rear=merge_rear)
+        if parsed is None or parsed.comparison_type != "transition":
+            continue
+        if len(parsed.primitives) < 2:
+            continue
+        target_behaviors = tuple(parsed.primitives[:2])
+        turn_dir_str = turn_directions.get(cluster_id)
+        grouped_clusters[(target_behaviors, turn_dir_str)].append(cluster_id)
+
+    print(f"    Found {len(grouped_clusters)} unique (directed label, turn) groups")
+
+    rng = np.random.default_rng(seed + 31)
+    results: list[MMDResult] = []
+    skipped: list[tuple] = []
+
+    for (target_behaviors, turn_dir_str), cluster_ids in tqdm(
+        grouped_clusters.items(), desc="    MMD analysis"
+    ):
+        turn_dir = parse_turn_direction(turn_dir_str)
+
+        combined_seqs: list[np.ndarray] = []
+        for cid in cluster_ids:
+            entries = cluster_dict.get(cid, [])
+            seqs = extract_sequences_from_cluster(
+                entries, data, min_seq_length, resample_K=resample_K,
+            )
+            combined_seqs.extend(seqs)
+
+        label_str = f"{target_behaviors[0]} -> {target_behaviors[1]}"
+        if not combined_seqs:
+            skipped.append((cluster_ids, label_str, "no valid sequences"))
+            continue
+
+        if len(combined_seqs) > max_samples:
+            idx = rng.choice(len(combined_seqs), size=max_samples, replace=False)
+            combined_seqs = [combined_seqs[i] for i in idx]
+
+        gt_seqs = extract_sequences_for_gt_label(
+            all_transitions,
+            data,
+            target_behaviors,
+            turn_direction=turn_dir,
+            min_seq_length=min_seq_length,
+            max_seqs=max_samples,
+            directed=True,
+            resample_K=resample_K,
+        )
+        if not gt_seqs:
+            turn_info = f" (turn={turn_dir_str})" if turn_dir_str else ""
+            skipped.append((cluster_ids, label_str, f"no GT sequences{turn_info}"))
+            continue
+
+        X = np.stack(combined_seqs, axis=0).astype(np.float32, copy=False)
+        Y = np.stack(gt_seqs, axis=0).astype(np.float32, copy=False)
+        out = compute_mmd_kid(X, Y, rng=rng)
+
+        results.append(MMDResult(
+            label=label_str,
+            turn_direction=turn_dir_str,
+            cluster_ids=cluster_ids,
+            kid=out["kid"],
+            mmd_rbf=out["mmd_rbf"],
+            sigma=out["sigma"],
+            n_cluster_seqs=out["n_cluster"],
+            n_gt_seqs=out["n_real"],
+        ))
+
+        turn_info = f" [{turn_dir_str}]" if turn_dir_str else ""
+        cluster_str = ", ".join(f"C{c}" for c in cluster_ids)
+        print(f"      {label_str}{turn_info} ({cluster_str}): "
+              f"KID={out['kid']:.4f}  MMD_rbf={out['mmd_rbf']:.4f}  "
+              f"(n={out['n_cluster']} vs {out['n_real']}, σ={out['sigma']:.2f})")
+
+    if skipped:
+        print(f"    Skipped {len(skipped)} MMD groups (no GT or no sequences)")
+
+    rows = []
+    for r in results:
+        rows.append({
+            "Label": r.label,
+            "Turn_Direction": r.turn_direction or "none",
+            "Cluster_IDs": ",".join(str(c) for c in r.cluster_ids),
+            "KID": round(r.kid, 6) if not np.isnan(r.kid) else "",
+            "MMD_RBF": round(r.mmd_rbf, 6) if not np.isnan(r.mmd_rbf) else "",
+            "Sigma": round(r.sigma, 4) if not np.isnan(r.sigma) else "",
+            "N_Cluster_Seqs": r.n_cluster_seqs,
+            "N_GT_Seqs": r.n_gt_seqs,
+        })
+    df = pd.DataFrame(rows)
+    out_csv = os.path.join(output_dir, f"{method_name}_seed{seed}_mmd_results.csv")
+    df.to_csv(out_csv, index=False)
     return results
 
 
