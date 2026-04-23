@@ -5,7 +5,8 @@ Replaces the KID + pretrained-transition-classifier pipelines.
 For each benchmark cluster labeled with a directional transition
 (auto_label_clusters_directional output), we:
 
-1. Extract the cluster's member windows (qpos, handle_rotation + exclude_xy,
+1. Extract the cluster's member windows (qpos with the first 7 root dims
+   stripped — same as DTW / KID preprocessing, i.e. pure joint angles —
    resampled to K=100 frames).
 2. Extract real GT windows of the same DIRECTIONAL transition label,
    excluding clips that appear in the cluster's own members (clip-level

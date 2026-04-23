@@ -492,6 +492,90 @@ def render_summary_table(
     print(f"Saved summary table to {output_path}")
 
 
+def load_individual_mmd_results(analysis_dir: str) -> dict[str, pd.DataFrame]:
+    """Glob ``mmd/*_mmd_results.csv`` under each method/seed dir."""
+    results = {}
+    analysis_path = Path(analysis_dir)
+
+    for method_dir in analysis_path.iterdir():
+        if not method_dir.is_dir():
+            continue
+        for seed_dir in method_dir.iterdir():
+            if not seed_dir.is_dir() or not seed_dir.name.startswith("seed_"):
+                continue
+            mmd_subdir = seed_dir / "mmd"
+            if not mmd_subdir.exists():
+                continue
+            for csv_file in mmd_subdir.glob("*_mmd_results.csv"):
+                try:
+                    df = pd.read_csv(csv_file)
+                except pd.errors.EmptyDataError:
+                    continue
+                key = csv_file.stem.replace("_mmd_results", "")
+                results[key] = df
+    return results
+
+
+def aggregate_mmd_results(
+    individual_results: dict[str, pd.DataFrame],
+) -> pd.DataFrame:
+    """Flatten per-(label, turn) MMD rows, tag with (Method, Seed)."""
+    all_rows = []
+    for result_key, df in individual_results.items():
+        if "_seed" in result_key:
+            method_name, seed_str = result_key.rsplit("_seed", 1)
+            try:
+                seed = int(seed_str)
+            except ValueError:
+                seed = 0
+        else:
+            method_name, seed = result_key, 0
+        for _, row in df.iterrows():
+            all_rows.append({
+                "Method": method_name,
+                "Seed": seed,
+                "Label": row["Label"],
+                "Turn": row.get("Turn_Direction", "none"),
+                "KID": row.get("KID", float("nan")),
+                "MMD_RBF": row.get("MMD_RBF", float("nan")),
+                "N_Cluster_Seqs": row.get("N_Cluster_Seqs", 0),
+                "N_GT_Seqs": row.get("N_GT_Seqs", 0),
+            })
+    return pd.DataFrame(all_rows)
+
+
+def create_mmd_pivot_table(
+    agg_df: pd.DataFrame,
+    metric: str = "KID",
+    include_turn: bool = True,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Rows = transitions with direction, cols = methods, values = mean of
+    the named ``metric`` column across seeds. Returns (mean, std, n_seeds).
+    """
+    df = agg_df.copy()
+    if include_turn:
+        df["Transition"] = df["Label"] + " [" + df["Turn"] + "]"
+    else:
+        df["Transition"] = df["Label"]
+
+    df[metric] = pd.to_numeric(df[metric], errors="coerce")
+    df = df.dropna(subset=[metric])
+    if df.empty:
+        empty = pd.DataFrame()
+        return empty, empty, empty
+
+    mean_df, std_df, n_seeds_df = _seed_mean_std_pivot(df, "Transition", metric)
+    method_order = _preferred_method_order(mean_df.columns)
+    mean_df = mean_df[method_order]
+    std_df = std_df.reindex(columns=method_order)
+    n_seeds_df = n_seeds_df.reindex(columns=method_order)
+
+    mean_df.columns = [METHOD_DISPLAY_NAMES.get(c, c) for c in mean_df.columns]
+    std_df.columns = [METHOD_DISPLAY_NAMES.get(c, c) for c in std_df.columns]
+    n_seeds_df.columns = [METHOD_DISPLAY_NAMES.get(c, c) for c in n_seeds_df.columns]
+    return mean_df, std_df, n_seeds_df
+
+
 def load_individual_purity_results(analysis_dir: str) -> dict[str, pd.DataFrame]:
     """Glob ``purity/*_purity.csv`` under each method/seed dir."""
     results = {}
@@ -1046,6 +1130,44 @@ def generate_all_tables(config: TableConfig) -> None:
         print(f"Saved consistency CSV to {consistency_csv_path} (std to {consistency_std_csv_path})")
     else:
         print("\nNo consistency results found, skipping consistency table.")
+
+    mmd_results = load_individual_mmd_results(config.analysis_dir)
+    if mmd_results:
+        print(f"\n=== MMD / KID Tables ===")
+        print(f"Found {len(mmd_results)} MMD result files")
+        mmd_agg_df = aggregate_mmd_results(mmd_results)
+        for metric, pretty, title in (
+            ("KID", "kid", "KID (polynomial-kernel MMD², ↓ lower = closer to real)"),
+            ("MMD_RBF", "mmd_rbf", "MMD² (RBF kernel, ↓ lower = closer to real)"),
+        ):
+            m_mean_df, m_std_df, m_nseeds_df = create_mmd_pivot_table(
+                mmd_agg_df, metric=metric, include_turn=True,
+            )
+            if m_mean_df.empty:
+                print(f"  {metric}: no rows; skipping.")
+                continue
+            print(f"\n  {metric}:")
+            print(m_mean_df.to_string())
+
+            png = output_dir / f"{pretty}_table.png"
+            pdf = output_dir / f"{pretty}_table.pdf"
+            render_nature_table(
+                m_mean_df, str(png), config,
+                title=title, show_mean_row=False, highlight_best=True,
+                higher_is_better=False,
+                std_df=m_std_df, n_seeds_df=m_nseeds_df,
+            )
+            render_nature_table(
+                m_mean_df, str(pdf), config,
+                title=title, show_mean_row=False, highlight_best=True,
+                higher_is_better=False,
+                std_df=m_std_df, n_seeds_df=m_nseeds_df,
+            )
+            m_mean_df.to_csv(output_dir / f"{pretty}_table.csv", float_format="%.6f")
+            m_std_df.to_csv(output_dir / f"{pretty}_table_std.csv", float_format="%.6f")
+            print(f"  saved {pretty}_table.{{csv,png,pdf}} (std to {pretty}_table_std.csv)")
+    else:
+        print("\nNo MMD results found, skipping MMD/KID tables.")
 
     purity_results = load_individual_purity_results(config.analysis_dir)
     if purity_results:

@@ -264,6 +264,68 @@ When this happens, DTW drops the row (no GT to score against) but
 consistency keeps it. This is a data-fact mismatch, not a rule mismatch,
 and is rare in practice (2/22 rows in the current rodent benchmark).
 
+## MMD / KID analysis
+
+A kernel two-sample test that directly compares the distribution of
+discovered cluster trajectories against real GT trajectories of the same
+directional label. Complements DTW (which is time-warp-invariant but
+distance-based per-pair) and C2ST (which trains a classifier and is
+vulnerable to temporal-compression asymmetry).
+
+### Definition
+
+For each `(directed label, turn)` group of discovered clusters, gather the
+cluster window set `X ⊂ ℝ^{n × (K·D)}` and the real-GT window set
+`Y ⊂ ℝ^{m × (K·D)}`. Both sides use the same preprocessing as DTW (strip
+first 7 root dims → 67 joint angles) and the same resample target
+(K = 100 frames). Windows are flattened to `(K·D,)`-dim vectors, so the
+kernel operates directly on the full trajectory.
+
+Two kernels are reported in parallel:
+
+- **KID (polynomial)** — `k(x, y) = ((x·y)/d + 1)^3`, `d = K·D`. This is
+  the Bińkowski 2018 KID kernel, no bandwidth to tune.
+- **MMD² (RBF)** — `k(x, y) = exp(-||x-y||² / (2σ²))`, with `σ` from the
+  median heuristic on the pooled sample `X ∪ Y`.
+
+Both estimators are the **unbiased MMD²** form (diagonals excluded from
+`K_xx` and `K_yy`). Zero means distributions match in the kernel's RKHS;
+the unbiased estimator can go slightly negative in finite samples when
+distributions truly coincide (estimator variance, not a bug).
+
+### Files
+
+- `topo_mimic/benchmark/analysis/mmd_kid.py` — `compute_mmd_kid(X, Y)`,
+  `polynomial_kernel`, `rbf_kernel`, `median_heuristic_sigma`,
+  `mmd2_unbiased`.
+- `topo_mimic/benchmark/analysis/metrics.py::run_mmd_analysis` —
+  per-`(method, seed)` entrypoint mirroring `run_dtw_analysis`.
+- Enabled via `AnalysisConfig.run_mmd_analysis: bool = True`.
+- Per-run output: `outputs/benchmark_analysis/{method}/seed_{N}/mmd/{method}_seed{N}_mmd_results.csv`
+  with columns `Label, Turn_Direction, Cluster_IDs, KID, MMD_RBF, Sigma,
+  N_Cluster_Seqs, N_GT_Seqs`.
+- Aggregation: `generate_results_table` loads those CSVs, pivots to
+  `(transition-with-direction) × method`, computes mean ± std across seeds
+  with 1-seed annotations, and writes `kid_table.{csv,png,pdf}` and
+  `mmd_rbf_table.{csv,png,pdf}` (plus matching `*_std.csv`). Rendered with
+  `higher_is_better=False` so the best-per-row highlight is the lowest
+  distributional distance.
+
+### How to read the numbers
+
+Low KID / MMD² = cluster windows and real windows trace out similar
+regions of flattened-trajectory space. The KID estimator on 6700-dim
+vectors with n, m ≈ 20–50 has noticeable variance (so the std bars
+matter). The companion RBF MMD² is rescaled by `σ`-median so absolute
+magnitudes between the two kernels are not directly comparable — use each
+within its own table.
+
+Because the windows are flattened and not time-warped, both KID and MMD²
+remain sensitive to temporal-compression asymmetry (cluster native span vs.
+GT native span, both resampled to K = 100). DTW is the complement: it
+absorbs temporal rescaling by design. Agreement between low DTW and low
+KID/MMD² is strong evidence that cluster and real truly coincide.
+
 ## Cluster purity analysis
 
 An independent metric that measures how faithfully a cluster's members
@@ -320,8 +382,9 @@ topo_mimic/benchmark/
     ├── behavior_parsing.py        # parse_cluster_label -> ParsedLabel, gt_key
     ├── ground_truth.py            # compute_window_turn, find_all_transitions,
     │                              # TransitionSegment.turn (unified tag)
-    ├── metrics.py                 # DTW filter uses t.turn (unified)
-    ├── purity.py                  # cluster-purity analysis (new)
+    ├── metrics.py                 # DTW + MMD/KID entrypoints, uses t.turn
+    ├── mmd_kid.py                 # KID / MMD² kernel math (new)
+    ├── purity.py                  # cluster-purity analysis
     ├── transition_ranking.py      # GT-side transition counts (direction-agnostic)
     └── visualization.py           # Transition-comparison plots
 ```

@@ -439,6 +439,35 @@ def run_analysis(config: AnalysisConfig) -> None:
                         import traceback
                         traceback.print_exc()
 
+            if config.run_mmd_analysis and dtw_data is not None:
+                mmd_dir = os.path.join(seed_output_dir, "mmd")
+                if _should_skip_analysis(mmd_dir):
+                    print(f"    [skip] MMD analysis already exists at {mmd_dir}")
+                elif os.path.exists(config.behavior_labels_csv):
+                    try:
+                        from .metrics import run_mmd_analysis
+                        print(f"    Running MMD/KID analysis...")
+                        run_mmd_analysis(
+                            cluster_dict=cluster_dict,
+                            cluster_labels=cluster_labels,
+                            turn_directions=turn_directions,
+                            behavior_labels_csv=config.behavior_labels_csv,
+                            data=dtw_data,
+                            output_dir=mmd_dir,
+                            method_name=method_name,
+                            seed=seed,
+                            max_samples=config.dtw_max_seqs,
+                            short_threshold=config.short_behavior_threshold,
+                            merge_rear=config.merge_rear,
+                            skip_root_dims=config.dtw_skip_root_dims,
+                            min_seq_length=config.dtw_min_seq_length,
+                            resample_K=config.c2st_window_frames,
+                        )
+                    except Exception as e:
+                        print(f"    MMD/KID analysis failed: {e}")
+                        import traceback
+                        traceback.print_exc()
+
             if config.run_c2st_analysis:
                 c2st_dir = os.path.join(seed_output_dir, "c2st")
                 if _should_skip_analysis(c2st_dir):
