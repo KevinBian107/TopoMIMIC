@@ -3,10 +3,14 @@
 How cluster labels are assigned from ground truth and how those labels map
 back to GT transitions for the analysis pipeline.
 
-**Rewrite date: 2026-04-21.** Replaces the legacy `"A <-> B"` canonical format with the new
-directional `"A -> B Direction"` format. The legacy canonical labeler is still
-callable for the scale-sweep discovery logic (see
-`topo_mimic/benchmark/auto_label.py`).
+The labeler uses the directional `"A -> B Direction"` format. A legacy
+canonical `"A <-> B"` labeler is still callable for the scale-sweep
+discovery logic (see `topo_mimic/benchmark/auto_label.py`). The
+discovered-cluster side and the GT side use the same per-window frame-count
+rule for direction assignment (`direction_tag_from_window` on the cluster
+side, `compute_window_turn` on the GT side); the discovered side adds a
+per-sample majority vote on top. See [Unified direction rule](#unified-direction-rule)
+below.
 
 ## Label kinds
 
@@ -58,20 +62,23 @@ Each cluster member is a `(clip_id, frame_indices)` pair. For each member:
 1. Majority vote on the per-member `(from, to)` pairs. Ties are deterministic
    (sorted by `(from, to)` ascending); the losing tied pairs are exposed
    under `alternatives`.
-2. Aggregate direction frame counts across ALL members of the cluster
-   (`Left`, `Right`, `Straight` counts summed).
-3. Pick a single direction per cluster:
-   - If either `Left` or `Right` has ≥1 frame, pick the one with more
-     frames; ties go to `Left`.
-   - Otherwise fall back to `Straight`.
+2. Per-sample direction vote (see [unified rule](#unified-direction-rule-2026-04-23)):
+   - Each member sample (one `(clip_id, frame_indices)` pair) gets ONE
+     direction tag by `direction_tag_from_window` applied to its own
+     window's direction-segment overlap.
+   - Samples with zero direction overlap abstain from the vote.
+3. Cluster direction = plain majority vote across the per-sample tags.
+   Ties resolve `Left > Right > Straight`. When no sample voted, fall back
+   to `Straight`.
 4. Render the cluster label string via `format_directional_label`:
    - Transition: `"{from} -> {to} {direction}"` (e.g. `"Immobile -> Turn Left"`)
    - Single:     `"{behavior} {direction}"`     (e.g. `"Immobile Straight"`)
 
-Direction is chosen at the cluster level, not per-member. The user-facing
-rule is: *if the cluster spent any time turning, the label reflects that
-turn direction; Straight is a fallback for clusters that never overlapped
-Left or Right frames.*
+Direction is assigned per-sample then voted at the cluster level, not by
+pooling frame counts across the whole cluster. This prevents one sample
+whose window happens to bleed into an adjacent turning behavior from
+forcing every `[Straight]` sample under it to inherit a spurious Left/Right
+tag.
 
 ## Label format reference
 
@@ -167,11 +174,142 @@ gui:
   share: false
 ```
 
+## Unified direction rule
+
+The discovered side and the GT side use the same direction-assignment rule
+so that the DTW-results and consistency tables share most of their rows.
+
+### The per-window rule (shared by both sides)
+
+Given a frame window `W` and the clip's Left/Right/Straight direction
+segments, count how many of `W`'s frames fall inside each direction segment.
+Apply this priority:
+
+```
+if Left > 0 or Right > 0:
+    tag = "Left" if Left >= Right else "Right"
+elif Straight > 0:
+    tag = "Straight"
+else:
+    tag = None   # window has no direction overlap, caller abstains
+```
+
+Ties (`Left == Right > 0`) resolve to `Left`.
+
+This rule lives in **two** places but is semantically identical:
+
+| Side       | Function                                            | Window                                                |
+|------------|-----------------------------------------------------|-------------------------------------------------------|
+| Discovered | `auto_label.direction_tag_from_window`              | The member sample's recorded `frame_indices`          |
+| GT         | `analysis.ground_truth.compute_window_turn`         | `[transition_frame ± window_frames/2)`, default K=100 |
+
+### Discovered-side adds a per-sample vote on top
+
+Each cluster member sample gets ONE tag (or abstains) via the per-window
+rule. The cluster's final direction is the plain majority across sample
+tags:
+
+```python
+counts = Counter(per_sample_tags)           # over members that voted
+if no sample voted:
+    cluster_direction = "Straight"
+else:
+    cluster_direction = max(
+        (counts["Left"],  "Left"),
+        (counts["Right"], "Right"),
+        (counts["Straight"], "Straight"),
+        key=lambda x: x[0],
+    )[1]     # ties: Left > Right > Straight
+```
+
+`aggregate_direction_counts` produces the `Counter`,
+`choose_cluster_direction` picks the winner.
+
+### GT-side stores ONE tag per transition instance
+
+`find_all_transitions(csv_path, window_frames=100)` populates a single
+`turn` attribute on each `TransitionSegment` via `compute_window_turn`.
+The `from_turn` / `to_turn` fields are also populated (by the
+"nearest turn to transition_frame" rule in `get_turn_direction_for_segment`)
+and preserved for display, but they are not used for DTW matching.
+
+### Matching at DTW time
+
+`metrics.extract_sequences_for_gt_label` filters with plain equality
+against the unified tag:
+
+```python
+if filter_by_turn and t.turn != turn_direction:
+    continue
+```
+
+All three directions (`Left`, `Right`, `Straight`) filter symmetrically.
+
+### Window size
+
+Controlled by `find_all_transitions(..., window_frames=100)`. The default
+matches `AnalysisConfig.c2st_window_frames = 100` and is the natural choice
+because discovered cluster member windows are also ~100 frames wide
+(centered on some latent-space event). Setting both windows to the same
+size aligns the frame statistics the two sides see.
+
+### Why some DTW rows can still go missing
+
+Even under the unified rule, a discovered cluster can end up with a label
+no GT instance emits — e.g. `Immobile -> Turn [straight]`. GT's ±50-frame
+window around every `Immobile -> Turn` boundary almost always catches
+`Turn`'s Left/Right flag, so the GT-side `turn` is rarely `Straight` for
+that transition. The cluster's wider pool of samples may vote differently.
+When this happens, DTW drops the row (no GT to score against) but
+consistency keeps it. This is a data-fact mismatch, not a rule mismatch,
+and is rare in practice (2/22 rows in the current rodent benchmark).
+
+## Cluster purity analysis
+
+An independent metric that measures how faithfully a cluster's members
+actually match its auto-assigned label. Lives in
+`topo_mimic/benchmark/analysis/purity.py`.
+
+### Definition
+
+For a cluster with label `"X -> Y Z"` (or singleton `"X Z"`):
+
+1. Parse label → `behavior_set = {X, Y}` (or `{X}`), `direction = Z`.
+2. For each member sample:
+   - For each frame in the sample's window, look up the concurrent GT
+     behavior and GT direction.
+   - Frame "belongs" iff (behavior ∈ `behavior_set`) AND (direction ==
+     `direction`). Frames with no direction overlap count as `Straight`
+     (matches the auto-labeler's abstain-on-zero fallback).
+   - `sample_purity = n_matching / n_total_frames`, in `[0, 1]`.
+3. `cluster_purity = mean(sample_purity across members)`.
+
+Also reported: per-cluster std, min, max.
+
+### Why it's useful
+
+Directly quantifies what the unified rule is trying to fix. A cluster
+labeled `"Rear -> Immobile Left"` with purity 0.05 tells you the label is
+essentially noise — only 5% of the cluster's frames actually belong to the
+claimed transition direction. A purity of 0.85 says the cluster lands
+almost entirely inside the right GT region.
+
+### Files
+
+- `topo_mimic/benchmark/analysis/purity.py` — `run_purity_analysis(...)`,
+  `compute_cluster_purity(...)`, `_parse_cluster_label(...)`.
+- Enabled via `AnalysisConfig.run_purity_analysis: bool = True`.
+- Per-run output: `outputs/benchmark_analysis/{method}/seed_{N}/purity/{method}_seed{N}_purity.csv`.
+- Aggregation: `generate_results_table._load_individual_purity_results` →
+  `create_purity_pivot_table` → `purity_table.{csv,png,pdf}` with mean ± std
+  across seeds and 1-seed annotations, rendered with `higher_is_better=True`.
+
 ## Files
 
 ```
 topo_mimic/benchmark/
 ├── auto_label.py                  # BEHAVIOR_LABELS, DIRECTION_LABELS,
+│                                  # direction_tag_from_window (shared rule),
 │                                  # auto_label_clusters_directional (new),
 │                                  # auto_label_clusters (legacy canonical)
 ├── labeling/
@@ -180,6 +318,10 @@ topo_mimic/benchmark/
 │   └── gui.py                     # Gradio overrides
 └── analysis/
     ├── behavior_parsing.py        # parse_cluster_label -> ParsedLabel, gt_key
+    ├── ground_truth.py            # compute_window_turn, find_all_transitions,
+    │                              # TransitionSegment.turn (unified tag)
+    ├── metrics.py                 # DTW filter uses t.turn (unified)
+    ├── purity.py                  # cluster-purity analysis (new)
     ├── transition_ranking.py      # GT-side transition counts (direction-agnostic)
     └── visualization.py           # Transition-comparison plots
 ```
