@@ -23,7 +23,15 @@ class AnalysisConfig:
     run_transition_graph: bool = False
     run_dtw_metrics: bool = True
     run_dtw_visualization: bool = False
+    run_c2st_analysis: bool = True
+    run_purity_analysis: bool = True
     render_gt_transitions: bool = False
+
+    c2st_raw_h5_path: str = "data/rodent_ar.h5"
+    c2st_window_frames: int = 100
+    c2st_min_cluster_size: int = 20  # 5-fold CV needs ≥4 per class per fold for stable acc; 20 gives 4
+    c2st_n_folds: int = 5
+    c2st_models: tuple[str, ...] = ("logreg", "rf", "mlp")
 
     gt_sanity_top_k: int = 10
     gt_sanity_data_key: str = "qpos_rollout"
@@ -81,6 +89,13 @@ def load_config(config_path: str | Path) -> AnalysisConfig:
         run_transition_graph=cfg.get("run_transition_graph", False),
         run_dtw_metrics=cfg.get("run_dtw_metrics", True),
         run_dtw_visualization=cfg.get("run_dtw_visualization", False),
+        run_c2st_analysis=cfg.get("run_c2st_analysis", True),
+        run_purity_analysis=cfg.get("run_purity_analysis", True),
+        c2st_raw_h5_path=cfg.get("c2st_raw_h5_path", "data/rodent_ar.h5"),
+        c2st_window_frames=int(cfg.get("c2st_window_frames", 100)),
+        c2st_min_cluster_size=int(cfg.get("c2st_min_cluster_size", 8)),
+        c2st_n_folds=int(cfg.get("c2st_n_folds", 5)),
+        c2st_models=tuple(cfg.get("c2st_models", ["logreg", "rf", "mlp"])),
         render_gt_transitions=cfg.get("render_gt_transitions", False),
         gt_sanity_top_k=cfg.get("gt_sanity_top_k", 10),
         gt_sanity_data_key=cfg.get("gt_sanity_data_key", "qpos_rollout"),

@@ -64,6 +64,7 @@ def qpos_to_keypoints_mujoco(
     mjx_model: Any,
     mjx_data: Any,
     site_ids: list[int],
+    clip_batch_size: int = 32,
 ) -> np.ndarray:
     if not HAS_MUJOCO:
         raise ImportError("mujoco not installed")
@@ -77,11 +78,19 @@ def qpos_to_keypoints_mujoco(
         markers = data.site_xpos[site_ids_array]
         return markers
 
-    process_sequence = jax.vmap(forward_kinematics)
-    process_all = jax.vmap(process_sequence)
+    # Vectorize over frames within a single clip, then loop clips in Python
+    # batches to keep peak memory bounded — the full (n_clips, n_frames)
+    # vmap materialized ~400GB on CPU for 829×500 qpos on the rodent model.
+    process_sequence = jax.jit(jax.vmap(forward_kinematics))
 
-    keypoints = process_all(jp.array(qpos_data))
-    return np.array(keypoints)
+    n_clips = qpos_data.shape[0]
+    chunks: list[np.ndarray] = []
+    for start in range(0, n_clips, clip_batch_size):
+        stop = min(start + clip_batch_size, n_clips)
+        batch = jp.asarray(qpos_data[start:stop])
+        batch_out = jax.vmap(process_sequence)(batch)
+        chunks.append(np.asarray(batch_out))
+    return np.concatenate(chunks, axis=0)
 
 
 def setup_stac_reference(

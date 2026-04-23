@@ -96,8 +96,10 @@ def main() -> None:
         results.append(res)
 
     print("\n[4/4] rendering figures")
-    proj_pdf = os.path.join(cfg.output_dir, "projection_grid.pdf")
-    render_projection_grid(cfg, results, frame_labels, proj_pdf)
+    dmc_pdf = os.path.join(cfg.output_dir, "projection_grid_dmc.pdf")
+    dmp_pdf = os.path.join(cfg.output_dir, "projection_grid_dmp.pdf")
+    render_projection_grid(cfg, results, frame_labels, dmc_pdf, overlay_type="dmc")
+    render_projection_grid(cfg, results, frame_labels, dmp_pdf, overlay_type="dmp")
 
     if not args.skip_filmstrip:
         film_pdf = os.path.join(cfg.output_dir, "filmstrip_grid.pdf")

@@ -1,253 +1,327 @@
 # Transition Mapping Documentation
 
-This document explains how cluster labels are mapped to ground truth data for the transition cluster comparison analysis.
+How cluster labels are assigned from ground truth and how those labels map
+back to GT transitions for the analysis pipeline.
 
-## Behavior Types
+The labeler uses the directional `"A -> B Direction"` format. A legacy
+canonical `"A <-> B"` labeler is still callable for the scale-sweep
+discovery logic (see `topo_mimic/benchmark/auto_label.py`). The
+discovered-cluster side and the GT side use the same per-window frame-count
+rule for direction assignment (`direction_tag_from_window` on the cluster
+side, `compute_window_turn` on the GT side); the discovered side adds a
+per-sample majority vote on top. See [Unified direction rule](#unified-direction-rule)
+below.
 
-### Primitive Behaviors
-These are mutually exclusive base behaviors - a frame can only have ONE primitive behavior at a time:
-- Walking
-- Immobility
-- Orienting
-- Grooming
-- Rear (merged from Supported Rear and Unsupported Rear)
+## Label kinds
 
-**Note:** By default, `Supported Rear` and `Unsupported Rear` are merged into a single `Rear` category. This can be disabled via configuration.
+The rodent ground-truth CSV (`behavior_labels/rodent_labels.csv`) stores TWO
+kinds of labels in the same file, distinguished by the `Label` column value:
 
-### Turn Direction (Flag Variable)
-Turn direction is a **flag variable** that modifies each behavior segment:
-- **Left (L)**: Segment has Left Turn overlay
-- **Right (R)**: Segment has Right Turn overlay
-- **Straight (S)**: No turn overlay
+### Behavior labels (mutually exclusive)
+At most one behavior covers any given frame.
 
-Turn direction is determined by checking if Left Turn or Right Turn labels overlap with the behavior segment. If both overlap, the turn closest to the transition point is used.
+- `Immobile`
+- `Turn`
+- `Rear`
+- `Walk`
 
-## Short Intermediate Behavior Bridging
+### Direction labels (overlay)
+Directional flag that may overlap behavior segments in time. At most one
+direction covers any given frame.
 
-When analyzing transitions, short intermediate behaviors are bridged to create cleaner transition segments.
+- `Left`
+- `Right`
+- `Straight`
 
-### How It Works
+`auto_label.BEHAVIOR_LABELS` and `auto_label.DIRECTION_LABELS` are the frozen
+sets used throughout the codebase; `split_segments_by_kind(segments)` splits
+a mixed dict loaded from CSV into `(behavior_segments, direction_segments)`.
 
-If a sequence looks like:
+## Auto-label algorithm (directional, primary)
+
+Implemented in `auto_label.auto_label_clusters_directional`. Runs in two
+stages.
+
+### Stage 1 — per-member pair
+
+Each cluster member is a `(clip_id, frame_indices)` pair. For each member:
+
+1. Restrict attention to the frames in `frame_indices`.
+2. Count how many of those frames fall inside each BEHAVIOR segment of that
+   clip (direction segments ignored).
+3. Take the top-2 behaviors by frame count.
+4. Order them by first appearance — the behavior whose earliest covered
+   frame occurs first is `from`, the other is `to`.
+5. If only one behavior covered any frames, `(from, to) = (single_behavior,
+   None)`.
+6. If no behavior covered any frames, the member is dropped from the
+   cluster-level vote.
+
+### Stage 2 — cluster label
+
+1. Majority vote on the per-member `(from, to)` pairs. Ties are deterministic
+   (sorted by `(from, to)` ascending); the losing tied pairs are exposed
+   under `alternatives`.
+2. Per-sample direction vote (see [unified rule](#unified-direction-rule-2026-04-23)):
+   - Each member sample (one `(clip_id, frame_indices)` pair) gets ONE
+     direction tag by `direction_tag_from_window` applied to its own
+     window's direction-segment overlap.
+   - Samples with zero direction overlap abstain from the vote.
+3. Cluster direction = plain majority vote across the per-sample tags.
+   Ties resolve `Left > Right > Straight`. When no sample voted, fall back
+   to `Straight`.
+4. Render the cluster label string via `format_directional_label`:
+   - Transition: `"{from} -> {to} {direction}"` (e.g. `"Immobile -> Turn Left"`)
+   - Single:     `"{behavior} {direction}"`     (e.g. `"Immobile Straight"`)
+
+Direction is assigned per-sample then voted at the cluster level, not by
+pooling frame counts across the whole cluster. This prevents one sample
+whose window happens to bleed into an adjacent turning behavior from
+forcing every `[Straight]` sample under it to inherit a spurious Left/Right
+tag.
+
+## Label format reference
+
+| Case | Label example | `ParsedLabel.comparison_type` |
+|---|---|---|
+| Transition with direction | `Immobile -> Turn Left` | `transition` |
+| Transition (no directional frames) | `Immobile -> Turn Straight` | `transition` |
+| Single behavior with direction | `Immobile Left` | `intersection` |
+| Single behavior, straight | `Immobile Straight` | `intersection` |
+| Empty (no GT coverage) | `""` | skipped |
+
+Downstream consumers parse the label via
+`topo_mimic/benchmark/analysis/behavior_parsing.parse_cluster_label`, which
+whitespace-splits and buckets tokens into `primitives`
+({`Immobile`, `Turn`, `Rear`, `Walk`}) and `compositional` ({`Left`,
+`Right`, `Straight`}). The `->` arrow token is not a behavior and is
+silently dropped, so the parser sees the same token sequence for `"A -> B
+Left"` and `"A B Left"`.
+
+## Legacy canonical labeler
+
+`auto_label.auto_label_clusters` is the older format and remains active for
+`topo_mimic/benchmark/scale_sweep/discovery.py`. It:
+
+- Takes only behavior segments (direction segments must be filtered out
+  upstream, which `scale_sweep/data.py` now does via
+  `split_segments_by_kind`).
+- Applies a dominance threshold (default 20%) before declaring a
+  transition; otherwise emits a singleton.
+- Has a grooming-singleton override (dead code for the current rodent CSV
+  but harmless).
+- Emits `"A <-> B"` with `A <= B` alphabetically, or `"A"` (singleton).
+
+The scale-sweep discovery table continues to group canonical labels by
+alphabetical base transition so both directions of a pair map to one row.
+
+## Running the auto-labeler
+
+**Full benchmark run** (fits methods + labels results):
+```bash
+python3 -m topo_mimic.benchmark.experiment_transitions configs/benchmark/experiment_transitions.yaml
 ```
-Rear (100 frames) → Walk (50 frames) → Orienting (8 frames) → Walk (60 frames)
+
+**Relabel only** (reuses cached `results.pkl` per method, does NOT refit):
+```bash
+python3 -m topo_mimic.benchmark.experiment_transitions configs/benchmark/experiment_transitions.yaml --only-relabel
+```
+Use this when the labeling logic changes but the clusters themselves are
+still valid. Requires a previous non-`--only-relabel` run to have written
+`{output_dir}/{method}/results.pkl` with `cluster_dict` in it.
+
+**Labeling GUI**:
+```yaml
+# In configs/benchmark/labeling.yaml
+launch_gui: true
+```
+```bash
+python3 -m topo_mimic.benchmark.labeling.main configs/benchmark/labeling.yaml
+```
+The GUI reads `labels_seed_{seed}.yaml` from the method's output directory
+(written by either the full benchmark run or the `--only-relabel` pass) and
+lets the user override cluster labels manually.
+
+## Downstream analysis grouping
+
+`ParsedLabel.gt_key` groups clusters by direction-agnostic base transition:
+
+```
+"Immobile -> Turn Left"  -> ("transition", ("Immobile", "Turn"))
+"Turn -> Immobile Right" -> ("transition", ("Immobile", "Turn"))   # same key
+"Immobile Left"          -> ("intersection", ("Immobile", "Left"))
 ```
 
-And `Orienting` is below the threshold (default: 10 frames), the entire sequence becomes:
-```
-Rear → Walk (single transition)
-```
+This matches the grouping used by the GT transition counter in
+`transition_ranking.py`, which also sorts the (from, to) pair
+alphabetically when forming the base transition. Direction is retained in
+the label and in `ParsedLabel.from_turn` / `to_turn` for display.
 
-The short `Orienting` segment is bridged, and the two `Walk` segments are merged.
+## Configuration
 
-### Configuration
+`configs/benchmark/labeling.yaml` knobs that affect labeling:
 
 ```yaml
-short_behavior_threshold: 10  # Max frames for intermediate behavior to be bridged
+behavior_labels_csv: "behavior_labels/rodent_labels.csv"
+method: "w2_dmp_qpos_kmeans"   # which method's clusters to (re-)label
+seed: 0
+auto_label:
+  dominance_threshold: 0.2     # only used by the canonical labeler
+  grooming_label: "Grooming"   # only used by the canonical labeler
+launch_gui: true
+gui:
+  port: 7860
+  share: false
 ```
 
-## Transition Variants (3x3 Matrix)
+## Unified direction rule
 
-Each transition can have up to 9 variants based on turn directions:
+The discovered side and the GT side use the same direction-assignment rule
+so that the DTW-results and consistency tables share most of their rows.
 
-| From \ To | S-Walk | L-Walk | R-Walk |
-|-----------|--------|--------|--------|
-| S-Rear    | S-Rear → S-Walk | S-Rear → L-Walk | S-Rear → R-Walk |
-| L-Rear    | L-Rear → S-Walk | L-Rear → L-Walk | L-Rear → R-Walk |
-| R-Rear    | R-Rear → S-Walk | R-Rear → L-Walk | R-Rear → R-Walk |
+### The per-window rule (shared by both sides)
 
-### Turn Direction Determination
-
-For each segment in a transition:
-
-1. Find all Left Turn / Right Turn labels that overlap with the segment
-2. If no overlaps → **Straight**
-3. If one type overlaps → use that direction
-4. If both types overlap → use the turn **closest to the transition point**
-
-The transition point is the frame where the "from" behavior ends.
-
-## Label Parsing Rules
-
-The analysis parses cluster labels by splitting on whitespace and categorizing each word.
-
-### Case 1: Transition (2+ Primitives)
-**Example labels:** `"Walking Immobility"`, `"Walking Rear Left_Turn"`
-
-When a label contains **2 or more primitive behaviors**, it's treated as a **transition**.
-
-| Label | Primitives | Turn Context | Ground Truth Lookup |
-|-------|------------|--------------|---------------------|
-| `Walking Immobility` | [Walking, Immobility] | - | All Walking <-> Immobility transitions |
-| `Walking Rear Left_Turn` | [Walking, Rear] | Left Turn | Walking <-> Rear transitions (turn context noted) |
-
-### Case 2: Intersection (1 Primitive + 1+ Turn)
-**Example labels:** `"Walking Left_Turn"`, `"Orienting Right_Turn"`
-
-When a label contains **exactly 1 primitive** and **1+ turn directions**, it's treated as an **intersection**.
-
-| Label | Primitives | Turn | Ground Truth Lookup |
-|-------|------------|------|---------------------|
-| `Walking Left_Turn` | [Walking] | Left Turn | Frames where Walking AND Left Turn are labeled |
-| `Orienting Right_Turn` | [Orienting] | Right Turn | Frames where Orienting AND Right Turn are labeled |
-
-### Case 3: Single Behavior (Skipped)
-**Example labels:** `"Walking"`, `"Left_Turn"`
-
-Labels with only a single behavior are **skipped** in the comparison analysis.
-
-## Transition Ranking Analysis
-
-The analysis outputs a ranking of transition variants by frequency in the ground truth data.
-
-### Output Files
-
-1. **`transition_variants_ranking.csv`**: Full ranking with turn directions
-   ```csv
-   Rank,From_Behavior,To_Behavior,From_Turn,To_Turn,Count,Formatted,Base_Transition
-   1,Immobility,Walking,straight,straight,45,S-Immobility -> S-Walking,Immobility <-> Walking
-   2,Immobility,Walking,straight,left,23,S-Immobility -> L-Walking,Immobility <-> Walking
-   ...
-   ```
-
-2. **`base_transition_counts.csv`**: Counts ignoring turn directions
-   ```csv
-   Rank,Behavior_1,Behavior_2,Transition,Count
-   1,Immobility,Walking,Immobility <-> Walking,120
-   2,Orienting,Walking,Orienting <-> Walking,85
-   ...
-   ```
-
-3. **`transition_matrix.csv`**: Matrix format (behaviors × behaviors)
-
-4. **`transition_matrix_with_turns.csv`**: Matrix with turn variants expanded
-
-## Cluster Grouping
-
-Multiple clusters with the **same ground truth key** are grouped together:
-
-- Clusters labeled `"Walking Immobility"` and `"Immobility Walking"` → grouped (same transition)
-- Clusters labeled `"Walking Left_Turn"` and `"Left_Turn Walking"` → grouped (same intersection)
-- Clusters labeled `"Walking Left_Turn"` and `"Walking Right_Turn"` → NOT grouped (different turn)
-
-## Behavior Groups
-
-Transitions are organized into groups for visualization:
-
-| Group | Behaviors Included |
-|-------|-------------------|
-| Immobility | Immobility |
-| Walking | Walking |
-| Rear | Rear (includes Supported Rear, Unsupported Rear) |
-| Orienting | Orienting |
-| Grooming | Grooming |
-
-A transition is assigned to the **first matching group** based on its behaviors.
-
-## Configuration Options
-
-```yaml
-# Short behavior bridging
-short_behavior_threshold: 10  # Max frames for intermediate behavior bridging
-max_gap_between_segments: 10  # Max gap between consecutive segments
-
-# Rear merging
-merge_rear: true  # Merge Supported/Unsupported Rear into Rear
-
-# Analysis flags
-run_transition_ranking: true  # Generate transition variant rankings
-run_transition_comparison: true  # Generate comparison plots
-```
-
-## Output
-
-### Transition Ranking Output
-```
-analysis_output/
-└── transition_ranking/
-    ├── transition_variants_ranking.csv
-    ├── base_transition_counts.csv
-    ├── transition_matrix.csv
-    └── transition_matrix_with_turns.csv
-```
-
-### Per-Method Output
-```
-analysis_output/
-└── {method}/
-    └── seed_{N}/
-        ├── {method}_seed{N}_transitions_intention_{BehaviorGroup}.pdf
-        ├── {method}_seed{N}_transitions_qpos_{BehaviorGroup}.pdf
-        └── {method}_seed{N}_variance_heatmap.pdf
-```
-
-## Module Structure
-
-The analysis code is organized in `topo_mimic/benchmark/analysis/`:
+Given a frame window `W` and the clip's Left/Right/Straight direction
+segments, count how many of `W`'s frames fall inside each direction segment.
+Apply this priority:
 
 ```
-analysis/
-├── __init__.py           # Package exports
-├── config.py             # Configuration dataclasses
-├── behavior_parsing.py   # Behavior normalization, turn direction enum
-├── ground_truth.py       # GT extraction with bridging and turns
-├── transition_ranking.py # Variant counting and ranking
-├── data_loading.py       # Data loading utilities
-├── visualization.py      # Plotting functions
-└── main.py              # Main analysis runner
+if Left > 0 or Right > 0:
+    tag = "Left" if Left >= Right else "Right"
+elif Straight > 0:
+    tag = "Straight"
+else:
+    tag = None   # window has no direction overlap, caller abstains
 ```
 
-## Examples
+Ties (`Left == Right > 0`) resolve to `Left`.
 
-### Example 1: Short Behavior Bridging
-```
-Input segments (same clip):
-  Rear: frames 0-100
-  Walk: frames 101-150
-  Orienting: frames 151-158 (8 frames, below threshold)
-  Walk: frames 159-220
+This rule lives in **two** places but is semantically identical:
 
-After bridging:
-  Rear: frames 0-100
-  Walk: frames 101-220 (merged)
+| Side       | Function                                            | Window                                                |
+|------------|-----------------------------------------------------|-------------------------------------------------------|
+| Discovered | `auto_label.direction_tag_from_window`              | The member sample's recorded `frame_indices`          |
+| GT         | `analysis.ground_truth.compute_window_turn`         | `[transition_frame ± window_frames/2)`, default K=100 |
 
-Result: One Rear <-> Walk transition
-```
+### Discovered-side adds a per-sample vote on top
 
-### Example 2: Turn Direction Assignment
-```
-Segment: Rear, frames 50-150
-Turn overlaps:
-  - Right Turn: frames 80-120 (overlaps)
-  - Left Turn: frames 200-250 (no overlap)
+Each cluster member sample gets ONE tag (or abstains) via the per-window
+rule. The cluster's final direction is the plain majority across sample
+tags:
 
-Transition point: frame 150 (end of Rear)
-Result: Right Turn (closest to transition point)
-```
-
-### Example 3: Transition Variant
-```
-From: Rear (frames 50-150) with Right Turn overlay → R-Rear
-To: Walk (frames 151-250) with no turn overlay → S-Walk
-
-Variant: R-Rear → S-Walk
+```python
+counts = Counter(per_sample_tags)           # over members that voted
+if no sample voted:
+    cluster_direction = "Straight"
+else:
+    cluster_direction = max(
+        (counts["Left"],  "Left"),
+        (counts["Right"], "Right"),
+        (counts["Straight"], "Straight"),
+        key=lambda x: x[0],
+    )[1]     # ties: Left > Right > Straight
 ```
 
-### Example 4: Full Transition Sequence
+`aggregate_direction_counts` produces the `Counter`,
+`choose_cluster_direction` picks the winner.
+
+### GT-side stores ONE tag per transition instance
+
+`find_all_transitions(csv_path, window_frames=100)` populates a single
+`turn` attribute on each `TransitionSegment` via `compute_window_turn`.
+The `from_turn` / `to_turn` fields are also populated (by the
+"nearest turn to transition_frame" rule in `get_turn_direction_for_segment`)
+and preserved for display, but they are not used for DTW matching.
+
+### Matching at DTW time
+
+`metrics.extract_sequences_for_gt_label` filters with plain equality
+against the unified tag:
+
+```python
+if filter_by_turn and t.turn != turn_direction:
+    continue
 ```
-Ground truth labels:
-  clip_642.mp4:
-    - Supported Rear: 0-100, Right Turn: 50-100
-    - Walking: 101-200
-    - Orienting: 201-208 (8 frames)
-    - Walking: 209-300, Left Turn: 250-300
-    - Immobility: 301-400
 
-After processing (merge_rear=True, short_threshold=10):
-  - Rear (R): 0-100 → Walking (S): 101-300 (Orienting bridged)
-  - Walking (L): 101-300 → Immobility (S): 301-400
+All three directions (`Left`, `Right`, `Straight`) filter symmetrically.
 
-Transitions found:
-  1. R-Rear → S-Walking
-  2. L-Walking → S-Immobility
+### Window size
+
+Controlled by `find_all_transitions(..., window_frames=100)`. The default
+matches `AnalysisConfig.c2st_window_frames = 100` and is the natural choice
+because discovered cluster member windows are also ~100 frames wide
+(centered on some latent-space event). Setting both windows to the same
+size aligns the frame statistics the two sides see.
+
+### Why some DTW rows can still go missing
+
+Even under the unified rule, a discovered cluster can end up with a label
+no GT instance emits — e.g. `Immobile -> Turn [straight]`. GT's ±50-frame
+window around every `Immobile -> Turn` boundary almost always catches
+`Turn`'s Left/Right flag, so the GT-side `turn` is rarely `Straight` for
+that transition. The cluster's wider pool of samples may vote differently.
+When this happens, DTW drops the row (no GT to score against) but
+consistency keeps it. This is a data-fact mismatch, not a rule mismatch,
+and is rare in practice (2/22 rows in the current rodent benchmark).
+
+## Cluster purity analysis
+
+An independent metric that measures how faithfully a cluster's members
+actually match its auto-assigned label. Lives in
+`topo_mimic/benchmark/analysis/purity.py`.
+
+### Definition
+
+For a cluster with label `"X -> Y Z"` (or singleton `"X Z"`):
+
+1. Parse label → `behavior_set = {X, Y}` (or `{X}`), `direction = Z`.
+2. For each member sample:
+   - For each frame in the sample's window, look up the concurrent GT
+     behavior and GT direction.
+   - Frame "belongs" iff (behavior ∈ `behavior_set`) AND (direction ==
+     `direction`). Frames with no direction overlap count as `Straight`
+     (matches the auto-labeler's abstain-on-zero fallback).
+   - `sample_purity = n_matching / n_total_frames`, in `[0, 1]`.
+3. `cluster_purity = mean(sample_purity across members)`.
+
+Also reported: per-cluster std, min, max.
+
+### Why it's useful
+
+Directly quantifies what the unified rule is trying to fix. A cluster
+labeled `"Rear -> Immobile Left"` with purity 0.05 tells you the label is
+essentially noise — only 5% of the cluster's frames actually belong to the
+claimed transition direction. A purity of 0.85 says the cluster lands
+almost entirely inside the right GT region.
+
+### Files
+
+- `topo_mimic/benchmark/analysis/purity.py` — `run_purity_analysis(...)`,
+  `compute_cluster_purity(...)`, `_parse_cluster_label(...)`.
+- Enabled via `AnalysisConfig.run_purity_analysis: bool = True`.
+- Per-run output: `outputs/benchmark_analysis/{method}/seed_{N}/purity/{method}_seed{N}_purity.csv`.
+- Aggregation: `generate_results_table._load_individual_purity_results` →
+  `create_purity_pivot_table` → `purity_table.{csv,png,pdf}` with mean ± std
+  across seeds and 1-seed annotations, rendered with `higher_is_better=True`.
+
+## Files
+
+```
+topo_mimic/benchmark/
+├── auto_label.py                  # BEHAVIOR_LABELS, DIRECTION_LABELS,
+│                                  # direction_tag_from_window (shared rule),
+│                                  # auto_label_clusters_directional (new),
+│                                  # auto_label_clusters (legacy canonical)
+├── labeling/
+│   ├── core.py                    # ClusterLabel -> LabelRecommendation adapter
+│   ├── main.py                    # CLI + GUI entry for relabeling a single method
+│   └── gui.py                     # Gradio overrides
+└── analysis/
+    ├── behavior_parsing.py        # parse_cluster_label -> ParsedLabel, gt_key
+    ├── ground_truth.py            # compute_window_turn, find_all_transitions,
+    │                              # TransitionSegment.turn (unified tag)
+    ├── metrics.py                 # DTW filter uses t.turn (unified)
+    ├── purity.py                  # cluster-purity analysis (new)
+    ├── transition_ranking.py      # GT-side transition counts (direction-agnostic)
+    └── visualization.py           # Transition-comparison plots
 ```

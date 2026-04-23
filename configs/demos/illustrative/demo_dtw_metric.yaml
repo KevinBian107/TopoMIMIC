@@ -2,7 +2,7 @@ experiment_dir: "outputs/benchmark_experiment_transitions"
 method: "w2_dmp_qpos_kmeans"
 seed: 0
 
-behavior_labels_csv: "behavior_labels/rodent.csv"
+behavior_labels_csv: "behavior_labels/rodent_labels.csv"
 data_path: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
 data_key: "qpos_rollout"
 xml_path: "/home/jovyan/vast/kaiwen/TopoVNL/topo_mimic/dmwk/xml/rodent.xml"

@@ -174,6 +174,8 @@ def extract_sustained_transitions(
         total_sustained_segments += len(segments)
 
         for seg in segments:
+            if int(seg.syllable_id) < 0:
+                continue
             segments_per_syllable[seg.syllable_id] = segments_per_syllable.get(seg.syllable_id, 0) + 1
             durations.append(seg.duration)
             sustained_frames += seg.duration
@@ -183,6 +185,11 @@ def extract_sustained_transitions(
             seg_b = segments[i + 1]
 
             if seg_a.syllable_id == seg_b.syllable_id:
+                continue
+            # Skip transitions involving the noise / unassigned label (Mapper outputs -1
+            # for Takens-warmup and DBSCAN-noise frames; KPMS labels are always >= 0 so
+            # this is a no-op for HMM-based methods).
+            if int(seg_a.syllable_id) < 0 or int(seg_b.syllable_id) < 0:
                 continue
 
             frame_indices = np.arange(seg_a.start_frame, seg_b.end_frame)
@@ -255,10 +262,101 @@ def extract_sustained_transitions(
     return cluster_dict, stats
 
 
+def extract_each_syllable_as_cluster(
+    labels_list: list[np.ndarray],
+    min_total_frames: int = 0,
+) -> tuple[dict[int, list[tuple[int, np.ndarray]]], dict]:
+    """
+    Treat each unique syllable (or VAE cluster id) as its own cluster.
+
+    Contrast with ``extract_sustained_transitions`` which groups (from, to)
+    syllable pairs into transition clusters. This function is a flat partition:
+    for each unique label in ``labels_list``, collect (clip_id, frame_indices)
+    where that label is active.
+
+    Args:
+        labels_list: list of 1D arrays, one per clip, holding frame-level
+            syllable or cluster ids.
+        min_total_frames: drop syllables whose total frame count across all
+            clips is below this threshold. Default 0 (keep all).
+
+    Returns:
+        cluster_dict: {cluster_id -> [(clip_id, frame_indices), ...]} where
+            cluster_id is a 0-indexed label ordered by descending total frames
+            across all clips.
+        stats: dict with n_clusters, n_clips, total_frames, syllable_id_map
+            (cluster_id -> original syllable id), syllable_totals_original.
+    """
+    per_syllable_members: dict[int, list[tuple[int, np.ndarray]]] = {}
+    syllable_totals: dict[int, int] = {}
+    total_frames = 0
+
+    for clip_id, syllables in enumerate(labels_list):
+        syllables = np.asarray(syllables)
+        total_frames += int(syllables.size)
+        if syllables.size == 0:
+            continue
+        for syll_id in np.unique(syllables):
+            syll_int = int(syll_id)
+            frame_indices = np.where(syllables == syll_id)[0].astype(int)
+            if frame_indices.size == 0:
+                continue
+            if syll_int not in per_syllable_members:
+                per_syllable_members[syll_int] = []
+            per_syllable_members[syll_int].append((clip_id, frame_indices))
+            syllable_totals[syll_int] = syllable_totals.get(syll_int, 0) + int(frame_indices.size)
+
+    if min_total_frames > 0:
+        per_syllable_members = {
+            s: m for s, m in per_syllable_members.items()
+            if syllable_totals.get(s, 0) >= min_total_frames
+        }
+
+    sorted_syllables = sorted(per_syllable_members.keys(), key=lambda s: -syllable_totals[s])
+    cluster_dict: dict[int, list[tuple[int, np.ndarray]]] = {}
+    syllable_id_map: dict[int, int] = {}
+    for cluster_id, syll_id in enumerate(sorted_syllables):
+        cluster_dict[cluster_id] = per_syllable_members[syll_id]
+        syllable_id_map[cluster_id] = syll_id
+
+    stats = {
+        "n_clips": len(labels_list),
+        "n_clusters": len(cluster_dict),
+        "total_frames": total_frames,
+        "min_total_frames": min_total_frames,
+        "syllable_id_map": syllable_id_map,
+        "syllable_totals_original": syllable_totals,
+    }
+    return cluster_dict, stats
+
+
 def print_transition_stats(stats: dict) -> None:
-    """Print formatted transition statistics."""
+    """Print formatted cluster / transition statistics.
+
+    Supports both the new syllable-as-cluster stats schema and the legacy
+    sustained-transition schema.
+    """
     print(f"\n{'='*60}")
-    print("KPMS Sustained Transition Analysis")
+    if "syllable_id_map" in stats:
+        print("Syllable-as-Cluster Analysis")
+        print(f"{'='*60}")
+        print(f"n_clips: {stats['n_clips']}")
+        print(f"n_clusters (= unique syllables kept): {stats['n_clusters']}")
+        print(f"total_frames across all clips: {stats['total_frames']}")
+        print(f"min_total_frames threshold: {stats['min_total_frames']}")
+        totals = stats.get("syllable_totals_original", {})
+        syll_map = stats.get("syllable_id_map", {})
+        if syll_map:
+            print(f"\nTop 15 clusters by total frames:")
+            print(f"  {'Cluster':<10} {'Orig Syll':<12} {'Total Frames':<15}")
+            print(f"  {'-'*37}")
+            for cluster_id in sorted(syll_map.keys())[:15]:
+                orig = syll_map[cluster_id]
+                total = totals.get(orig, 0)
+                print(f"  {cluster_id:<10} {orig:<12} {total:<15}")
+        return
+
+    print("Sustained Transition Analysis (legacy)")
     print(f"{'='*60}")
     print(f"Parameters:")
     print(f"  min_sustained_duration: {stats['min_duration']} frames")
@@ -576,9 +674,9 @@ class KPMSIntentionMethod(BaseMethod):
 
         cluster_dict, stats = extract_sustained_transitions(
             labels_list,
-            min_duration=self.params.get("min_sustained_duration", 50),
-            top_k=self.params.get("top_k_transitions", 10),
-            min_instances=self.params.get("min_instances", 3),
+            min_duration=int(self.params.get("min_sustained_duration", 50)),
+            top_k=int(self.params.get("top_k_transitions", 10)),
+            min_instances=int(self.params.get("min_transition_instances", 3)),
         )
 
         print_transition_stats(stats)
@@ -771,9 +869,9 @@ class KPMSKeypointMethod(BaseMethod):
 
         cluster_dict, stats = extract_sustained_transitions(
             labels_list,
-            min_duration=self.params.get("min_sustained_duration", 50),
-            top_k=self.params.get("top_k_transitions", 10),
-            min_instances=self.params.get("min_instances", 3),
+            min_duration=int(self.params.get("min_sustained_duration", 50)),
+            top_k=int(self.params.get("top_k_transitions", 10)),
+            min_instances=int(self.params.get("min_transition_instances", 3)),
         )
 
         print_transition_stats(stats)
@@ -943,9 +1041,9 @@ class CustomVAEMethod(BaseMethod):
 
         cluster_dict, stats = extract_sustained_transitions(
             labels_list,
-            min_duration=self.params.get("min_sustained_duration", 50),
-            top_k=self.params.get("top_k_transitions", 10),
-            min_instances=self.params.get("min_instances", 3),
+            min_duration=int(self.params.get("min_sustained_duration", 50)),
+            top_k=int(self.params.get("top_k_transitions", 10)),
+            min_instances=int(self.params.get("min_transition_instances", 3)),
         )
 
         print_transition_stats(stats)
@@ -1039,7 +1137,31 @@ METHOD_REGISTRY: dict[str, type[BaseMethod]] = {
 }
 
 
+def _register_mapper_methods() -> None:
+    """Lazy-register Mapper methods. Called the first time get_method() is invoked.
+
+    Done lazily because the mapper_method module imports names from this module
+    (BaseMethod, KPMSResult, etc.), which would cause a partial-import error if
+    done at module import time.
+    """
+    if "mapper_int" in METHOD_REGISTRY:
+        return
+    try:
+        from topo_mimic.benchmark.mapper.mapper_method import (
+            MapperIntMethod,
+            MapperQposMethod,
+            MapperEKPMethod,
+        )
+    except ImportError as exc:
+        print(f"[METHOD_REGISTRY] Mapper methods not registered: {exc}")
+        return
+    METHOD_REGISTRY["mapper_int"] = MapperIntMethod
+    METHOD_REGISTRY["mapper_qpos"] = MapperQposMethod
+    METHOD_REGISTRY["mapper_ekp"] = MapperEKPMethod
+
+
 def get_method(name: str, params: dict = None) -> BaseMethod:
+    _register_mapper_methods()
     if name not in METHOD_REGISTRY:
         raise ValueError(f"Unknown method: {name}. Available: {list(METHOD_REGISTRY.keys())}")
     return METHOD_REGISTRY[name](params)

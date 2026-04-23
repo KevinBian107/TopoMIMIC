@@ -55,7 +55,7 @@ def load_behavior_segments(csv_path: str) -> dict[str, list[BehaviorSegment]]:
 
         video = str(row["Video"])
         clip_id = int(video.replace("clip_", "").replace(".mp4", ""))
-        behavior = str(row["Behavior"])
+        behavior = str(row["Label"] if "Label" in df.columns else row["Behavior"])
 
         segments[behavior].append(BehaviorSegment(
             clip_id=clip_id,

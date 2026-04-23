@@ -17,6 +17,7 @@ walker/
 outputs/
 outputs_archive/
 paper/
+logs/
 
 # labeling framework
 .gradio

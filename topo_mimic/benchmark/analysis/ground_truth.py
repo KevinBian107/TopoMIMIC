@@ -40,6 +40,7 @@ class TransitionSegment:
     to_end: int
     from_turn: TurnDirection = TurnDirection.STRAIGHT
     to_turn: TurnDirection = TurnDirection.STRAIGHT
+    turn: TurnDirection = TurnDirection.STRAIGHT  # unified window-based tag
 
     @property
     def all_frames(self) -> list[int]:
@@ -52,12 +53,56 @@ class TransitionSegment:
         return tuple(sorted([self.from_behavior, self.to_behavior]))
 
     @property
+    def directed_key(self) -> tuple[str, str]:
+        """Direction-preserving (from, to) tuple. Use this when you need to
+        distinguish "Walk -> Immobile" from "Immobile -> Walk"."""
+        return (self.from_behavior, self.to_behavior)
+
+    @property
     def transition_key_with_turns(self) -> tuple:
         key = self.transition_key
         if key[0] == self.from_behavior:
             return (key[0], key[1], self.from_turn, self.to_turn)
         else:
             return (key[0], key[1], self.to_turn, self.from_turn)
+
+
+def compute_window_turn(
+    transition_frame: int,
+    turn_overlaps: list[tuple[int, int, str]],
+    window_frames: int,
+) -> TurnDirection:
+    """Window-based turn direction — matches ``auto_label.direction_tag_from_window``.
+
+    Counts Left / Right / Straight frames that the ``turn_overlaps`` segments
+    cover inside ``[transition_frame - window_frames//2, transition_frame +
+    window_frames//2)``. Rule: any L or R → pick the larger (ties → Left);
+    else Straight if any Straight overlap; else Straight (default).
+    """
+    half = window_frames // 2
+    lo = transition_frame - half
+    hi = transition_frame + (window_frames - half)
+
+    l = 0
+    r = 0
+    s = 0
+    for t_start, t_end, t_type in turn_overlaps:
+        # Turn overlap segments in rodent_labels.csv are inclusive end frames.
+        overlap = max(0, min(hi, t_end + 1) - max(lo, t_start))
+        if overlap == 0:
+            continue
+        if t_type in ("Left", "Left Turn"):
+            l += overlap
+        elif t_type in ("Right", "Right Turn"):
+            r += overlap
+        elif t_type == "Straight":
+            s += overlap
+
+    if l == 0 and r == 0:
+        return TurnDirection.STRAIGHT
+    if l >= r:
+        return TurnDirection.LEFT
+    return TurnDirection.RIGHT
 
 
 def load_behavior_segments(
@@ -88,7 +133,8 @@ def load_behavior_segments(
         else:
             video = str(row["Video"])
             clip_id = int(video.replace("clip_", "").replace(".mp4", ""))
-        behavior = normalize_behavior_name(str(row["Behavior"]))
+        raw_label = row["Label"] if "Label" in df.columns else row["Behavior"]
+        behavior = normalize_behavior_name(str(raw_label))
 
         if behavior in COMPOSITIONAL_BEHAVIORS:
             turn_overlaps_by_clip[clip_id].append((start_frame, end_frame, behavior))
@@ -140,9 +186,11 @@ def get_turn_direction_for_segment(
     overlapping_turns.sort(key=lambda x: (x[0], -x[1]))
     _, _, turn_type = overlapping_turns[0]
 
-    if turn_type == "Left Turn":
+    # Accept both the legacy "Left Turn" / "Right Turn" tokens and the new
+    # rodent_labels.csv forms "Left" / "Right" / "Straight".
+    if turn_type in ("Left Turn", "Left"):
         return TurnDirection.LEFT
-    elif turn_type == "Right Turn":
+    elif turn_type in ("Right Turn", "Right"):
         return TurnDirection.RIGHT
     else:
         return TurnDirection.STRAIGHT
@@ -316,9 +364,16 @@ def find_all_transitions(
     short_threshold: int = 10,
     max_gap: int = 10,
     merge_rear: bool = True,
+    window_frames: int = 100,
 ) -> list[TransitionSegment]:
     """
     Find all GT transitions in the dataset (not filtered by behavior pair).
+
+    The unified ``turn`` attribute on each returned TransitionSegment is
+    computed via ``compute_window_turn`` over a ``window_frames``-wide window
+    centered on the transition frame. This is the value downstream DTW
+    filtering should match against for symmetry with the per-sample-vote
+    cluster labeler (see ``auto_label.direction_tag_from_window``).
 
     Returns:
         List of all TransitionSegment objects found
@@ -357,6 +412,9 @@ def find_all_transitions(
             to_turn = get_turn_direction_for_segment(
                 seg_b, turn_overlaps, transition_frame
             )
+            turn = compute_window_turn(
+                transition_frame, turn_overlaps, window_frames
+            )
 
             transitions.append(TransitionSegment(
                 clip_id=clip_id,
@@ -368,6 +426,7 @@ def find_all_transitions(
                 to_end=seg_b.end_frame,
                 from_turn=from_turn,
                 to_turn=to_turn,
+                turn=turn,
             ))
 
     return transitions
@@ -397,7 +456,8 @@ def load_behavior_segments_multilabel(
         else:
             video = str(row["Video"])
             clip_id = int(video.replace("clip_", "").replace(".mp4", ""))
-        behavior = normalize_behavior_name(str(row["Behavior"]))
+        raw_label = row["Label"] if "Label" in df.columns else row["Behavior"]
+        behavior = normalize_behavior_name(str(raw_label))
 
         if merge_rear:
             behavior = merge_rear_category(behavior)

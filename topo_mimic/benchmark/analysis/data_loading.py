@@ -46,19 +46,31 @@ def load_cluster_dict(method_dir: str, seed: int = 0) -> dict:
     return {}
 
 
+_DIRECTION_TOKENS = {"Left": "left", "Right": "right", "Straight": "straight"}
+
+
+def _extract_direction_from_label(label: str) -> str | None:
+    """Directional auto-labels embed the turn as the trailing token
+    (e.g. "Immobile -> Turn Left" or "Immobile Left"). Return "left"/"right"
+    /"straight" or None if no direction token is present.
+    """
+    if not label:
+        return None
+    tokens = label.strip().split()
+    if tokens and tokens[-1] in _DIRECTION_TOKENS:
+        return _DIRECTION_TOKENS[tokens[-1]]
+    return None
+
+
 def load_labels_yaml(
     method_dir: str,
     seed: int = 0,
 ) -> tuple[dict[int, str], dict[int, str]]:
-    """
-    Load cluster labels and turn directions from YAML file.
+    """Load cluster labels and turn directions.
 
-    Args:
-        method_dir: Path to method output directory
-        seed: Random seed
-
-    Returns:
-        Tuple of (labels, turn_directions) where both are {cluster_id: value}
+    Turn directions come from either (a) a legacy ``turn_directions`` YAML
+    block, or (b) parsed from the trailing Left/Right/Straight token on the
+    new directional cluster labels (``"A -> B Direction"``).
     """
     labels_path = os.path.join(method_dir, f"labels_seed_{seed}.yaml")
     if not os.path.exists(labels_path):
@@ -67,12 +79,20 @@ def load_labels_yaml(
     with open(labels_path, "r") as f:
         data = yaml.safe_load(f)
 
-    labels = data.get("labels", {})
-    turn_directions = data.get("turn_directions", {})
+    labels = data.get("labels", {}) or {}
+    turn_directions = data.get("turn_directions", {}) or {}
 
     na_values = {"n/a", "na", "N/A", "NA", ""}
     labels_out = {int(k): v for k, v in labels.items() if v and v.strip().lower() not in na_values}
-    turns_out = {int(k): v for k, v in turn_directions.items() if v}
+
+    turns_out: dict[int, str] = {int(k): v for k, v in turn_directions.items() if v}
+    # Back-fill from the label string for the new directional auto-labels.
+    for cid, lbl in labels_out.items():
+        if cid in turns_out:
+            continue
+        extracted = _extract_direction_from_label(lbl)
+        if extracted is not None:
+            turns_out[cid] = extracted
 
     return labels_out, turns_out
 

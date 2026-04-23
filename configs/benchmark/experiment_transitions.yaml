@@ -4,7 +4,8 @@
 dataset: "rodent"
 output_dir: "outputs/benchmark_experiment_transitions"
 data_path: "data/rodent_ar.h5"
-split: "train"
+behavior_labels_csv: "behavior_labels/rodent_labels.csv"
+split: "all"
 n_clips: null  # Number of clips to use from split (null = all clips in split)
 
 # Data configuration (legacy)
@@ -46,7 +47,7 @@ k_selection:
   n_clusters: 25
 
 # Seeds for reproducibility (multiple seeds for stability analysis)
-seeds: [0, 12, 123, 1234, 12345]
+seeds: [0, 1, 2]
 aggregate_seeds: true
 
 # Methods to run
@@ -103,7 +104,7 @@ methods:
   - name: "w2_full_kmeans"
     type: "clustering"
     dm_source: "intention"
-    enabled: true
+    enabled: false  # w2_full on 829 full-length windows takes ~7hr per feature_space; disabled per user request 2026-04-22
     params:
       mds_components: 3
 
@@ -166,6 +167,44 @@ methods:
       min_sustained_duration: 25
       top_k_transitions: 10
       min_instances: 1
+
+  # Mapper baseline: each node on the Mapper graph becomes a cluster.
+  # Inverse-density lens + CubicalCover + DBSCAN inner clustering.
+  - name: "mapper_int"
+    type: "state_space"
+    enabled: true  # point-cap subsample added 2026-04-22, safe on 842 clips
+    params:
+      takens_m: 3
+      takens_tau: 6
+      knn_k: 3
+      n_intervals: 10
+      overlap_frac: 0.5
+      dbscan_min_samples: 5
+      min_total_frames: 0
+
+  - name: "mapper_qpos"
+    type: "state_space"
+    enabled: true  # point-cap subsample added 2026-04-22, safe on 842 clips
+    params:
+      takens_m: 3
+      takens_tau: 9
+      knn_k: 3
+      n_intervals: 10
+      overlap_frac: 0.5
+      dbscan_min_samples: 5
+      min_total_frames: 0
+
+  - name: "mapper_ekp"
+    type: "state_space"
+    enabled: true  # point-cap subsample added 2026-04-22, safe on 842 clips
+    params:
+      takens_m: 3
+      takens_tau: 8
+      knn_k: 3
+      n_intervals: 10
+      overlap_frac: 0.5
+      dbscan_min_samples: 5
+      min_total_frames: 0
 
 # Video rendering settings
 rendering:
