@@ -90,16 +90,19 @@ consistency_n_samples: 5  # Sequences to sample per cluster for internal consist
 run_dtw_visualization: false  # Enable detailed DTW visualization (slower)
 
 # =============================================================================
-# Transition-classifier cluster evaluation (replaces KID)
+# C2ST cluster evaluation (replaces KID and the single-classifier pipeline)
 # =============================================================================
-# Uses a MLP classifier trained on top-8 directional transitions from
-# rodent_labels.csv. For each cluster, resamples member windows to
-# `classifier_window_frames` and reports argmax match rate vs cluster's
-# auto-label, plus per-cluster confusion across the 8 transition classes.
-# Train the classifier first via:
-#   python3 -m topo_mimic.benchmark.classifier.train configs/benchmark/classifier.yaml
-run_classifier_analysis: true
-classifier_raw_h5_path: "data/rodent_ar.h5"
-classifier_ckpt_dir: "outputs/classifier_ckpts/qpos"
-classifier_window_frames: 100
+# For each (method, seed, cluster) trains a binary classifier on
+# (cluster windows, GT transition windows of the same label) and reports
+# held-out CV accuracy. 0.5 = indistinguishable from real; 1.0 = trivially
+# separable. Three model types per cluster (LogReg / RandomForest / MLP).
+# Real-GT windows are subsampled to match the cluster size; the cluster's
+# own source clips are excluded from the real pool to avoid clip-level
+# leakage.
+run_c2st_analysis: true
+c2st_raw_h5_path: "data/rodent_ar.h5"
+c2st_window_frames: 100
+c2st_min_cluster_size: 20  # below this, skip the cluster; at n=20 a 5-fold CV gets 4 per class per fold
+c2st_n_folds: 5
+c2st_models: ["logreg", "rf", "mlp"]
 

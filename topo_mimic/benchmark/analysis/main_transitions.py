@@ -374,6 +374,7 @@ def run_analysis(config: AnalysisConfig) -> None:
                             min_seq_length=config.dtw_min_seq_length,
                             pure_behavior_labels=config.pure_behavior_labels,
                             pure_behavior_min_length=config.pure_behavior_min_length,
+                            resample_K=config.c2st_window_frames,
                         )
                         method_key = f"{method_name}_seed{seed}"
                         all_dtw_results[method_key] = dtw_results
@@ -400,6 +401,7 @@ def run_analysis(config: AnalysisConfig) -> None:
                                 min_seq_length=config.dtw_min_seq_length,
                                 merge_rear=config.merge_rear,
                                 n_samples=config.consistency_n_samples,
+                                resample_K=config.c2st_window_frames,
                             )
                             method_key = f"{method_name}_seed{seed}"
                             all_consistency_results[method_key] = consistency_results
@@ -437,28 +439,50 @@ def run_analysis(config: AnalysisConfig) -> None:
                         import traceback
                         traceback.print_exc()
 
-            if config.run_classifier_analysis:
-                classifier_dir = os.path.join(seed_output_dir, "classifier")
-                if _should_skip_analysis(classifier_dir):
-                    print(f"    [skip] classifier analysis already exists at {classifier_dir}")
+            if config.run_c2st_analysis:
+                c2st_dir = os.path.join(seed_output_dir, "c2st")
+                if _should_skip_analysis(c2st_dir):
+                    print(f"    [skip] C2ST analysis already exists at {c2st_dir}")
                 else:
                     try:
-                        from topo_mimic.benchmark.classifier.cluster_eval import (
-                            evaluate_clusters_with_classifier,
+                        from topo_mimic.benchmark.c2st.run_c2st_analysis import (
+                            run_c2st_for_method_seed,
                         )
-                        print(f"    Running classifier cluster analysis...")
-                        evaluate_clusters_with_classifier(
-                            cluster_dict=cluster_dict,
+                        print(f"    Running C2ST cluster analysis...")
+                        run_c2st_for_method_seed(
                             method_dir=method_dir,
                             seed=seed,
-                            raw_h5_path=config.classifier_raw_h5_path,
+                            raw_h5_path=config.c2st_raw_h5_path,
                             behavior_labels_csv=config.behavior_labels_csv,
-                            classifier_ckpt_dir=config.classifier_ckpt_dir,
-                            output_dir=classifier_dir,
-                            window_frames=config.classifier_window_frames,
+                            output_dir=c2st_dir,
+                            window_frames=config.c2st_window_frames,
+                            min_cluster_size=config.c2st_min_cluster_size,
+                            n_folds=config.c2st_n_folds,
+                            models=tuple(config.c2st_models),
                         )
                     except Exception as e:
-                        print(f"    Classifier cluster analysis failed: {e}")
+                        print(f"    C2ST cluster analysis failed: {e}")
+                        import traceback
+                        traceback.print_exc()
+
+            if config.run_purity_analysis:
+                purity_dir = os.path.join(seed_output_dir, "purity")
+                if _should_skip_analysis(purity_dir):
+                    print(f"    [skip] Purity analysis already exists at {purity_dir}")
+                else:
+                    try:
+                        from topo_mimic.benchmark.analysis.purity import run_purity_analysis
+                        print(f"    Running cluster purity analysis...")
+                        run_purity_analysis(
+                            cluster_dict=cluster_dict,
+                            labels=cluster_labels,
+                            behavior_labels_csv=config.behavior_labels_csv,
+                            output_dir=purity_dir,
+                            seed=seed,
+                            method_name=method_name,
+                        )
+                    except Exception as e:
+                        print(f"    Purity analysis failed: {e}")
                         import traceback
                         traceback.print_exc()
 

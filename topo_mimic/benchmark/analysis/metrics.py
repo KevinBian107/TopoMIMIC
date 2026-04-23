@@ -54,10 +54,28 @@ def compute_dtw(seq_a: np.ndarray, seq_b: np.ndarray) -> float:
     return dtw_matrix[n, m] / (n + m)
 
 
+def _resample_to_K(arr: np.ndarray, K: int) -> np.ndarray:
+    """Linear resample (T, D) -> (K, D)."""
+    if arr.ndim != 2:
+        raise ValueError(f"expected (T, D), got {arr.shape}")
+    T = arr.shape[0]
+    if T == K:
+        return arr.astype(np.float32, copy=True)
+    if T == 1:
+        return np.broadcast_to(arr, (K, arr.shape[1])).astype(np.float32, copy=True)
+    src_idx = np.linspace(0, T - 1, K, dtype=np.float64)
+    lo = np.floor(src_idx).astype(np.int64)
+    hi = np.clip(lo + 1, 0, T - 1)
+    frac = (src_idx - lo).astype(np.float32)
+    out = (1.0 - frac[:, None]) * arr[lo] + frac[:, None] * arr[hi]
+    return out.astype(np.float32, copy=True)
+
+
 def extract_sequences_from_cluster(
     cluster_entries: list,
     data: np.ndarray,
     min_seq_length: int = 3,
+    resample_K: int | None = None,
 ) -> list[np.ndarray]:
     """
     Extract sequences from cluster entries.
@@ -85,6 +103,8 @@ def extract_sequences_from_cluster(
             continue
 
         seq = data[clip_id, valid_frames]
+        if resample_K is not None and seq.shape[0] != resample_K:
+            seq = _resample_to_K(seq, resample_K)
         sequences.append(seq)
 
     return sequences
@@ -135,6 +155,7 @@ def extract_sequences_for_gt_label(
     min_seq_length: int = 3,
     max_seqs: int = 50,
     directed: bool = True,
+    resample_K: int | None = None,
 ) -> list[np.ndarray]:
     """
     Extract sequences for a specific GT transition type with optional turn filtering.
@@ -159,7 +180,7 @@ def extract_sequences_for_gt_label(
 
     filter_by_turn = (
         turn_direction is not None
-        and turn_direction not in (TurnDirection.STRAIGHT, TurnDirection.NON_DETERMINISTIC)
+        and turn_direction != TurnDirection.NON_DETERMINISTIC
     )
 
     if directed:
@@ -172,12 +193,8 @@ def extract_sequences_for_gt_label(
         if t_key != target_key:
             continue
 
-        if filter_by_turn:
-            has_matching_turn = (
-                t.from_turn == turn_direction or t.to_turn == turn_direction
-            )
-            if not has_matching_turn:
-                continue
+        if filter_by_turn and t.turn != turn_direction:
+            continue
 
         if t.clip_id >= len(data):
             continue
@@ -190,6 +207,8 @@ def extract_sequences_for_gt_label(
 
         valid_frames = np.sort(valid_frames)
         seq = data[t.clip_id, valid_frames]
+        if resample_K is not None and seq.shape[0] != resample_K:
+            seq = _resample_to_K(seq, resample_K)
         sequences.append(seq)
 
     if len(sequences) > max_seqs:
@@ -313,6 +332,7 @@ def run_dtw_analysis(
     min_seq_length: int = 3,
     pure_behavior_labels: list[str] | None = None,
     pure_behavior_min_length: int = 30,
+    resample_K: int | None = None,
 ) -> list[DTWResult]:
     """
     Compare discovered clusters to their corresponding GT using DTW distance.
@@ -398,7 +418,7 @@ def run_dtw_analysis(
         combined_seqs = []
         for cid in cluster_ids:
             entries = cluster_dict.get(cid, [])
-            seqs = extract_sequences_from_cluster(entries, data, min_seq_length)
+            seqs = extract_sequences_from_cluster(entries, data, min_seq_length, resample_K=resample_K)
             combined_seqs.extend(seqs)
 
         if not combined_seqs:
@@ -419,6 +439,7 @@ def run_dtw_analysis(
             min_seq_length=min_seq_length,
             max_seqs=max_samples,
             directed=True,
+            resample_K=resample_K,
         )
 
         label_str = f"{target_behaviors[0]} -> {target_behaviors[1]}"
@@ -500,7 +521,7 @@ def run_dtw_analysis(
             combined_seqs = []
             for cid in cluster_ids:
                 entries = cluster_dict.get(cid, [])
-                seqs = extract_sequences_from_cluster(entries, data, min_seq_length)
+                seqs = extract_sequences_from_cluster(entries, data, min_seq_length, resample_K=resample_K)
                 combined_seqs.extend(seqs)
 
             if not combined_seqs or not gt_seqs:
@@ -591,6 +612,7 @@ def run_internal_consistency_analysis(
     min_seq_length: int = 3,
     merge_rear: bool = True,
     n_samples: int = 5,
+    resample_K: int | None = None,
 ) -> list[InternalConsistencyResult]:
     """
     Measure internal cluster consistency via pairwise DTW among sampled sequences.
@@ -655,7 +677,7 @@ def run_internal_consistency_analysis(
         combined_seqs = []
         for cid in cluster_ids:
             entries = cluster_dict.get(cid, [])
-            seqs = extract_sequences_from_cluster(entries, data, min_seq_length)
+            seqs = extract_sequences_from_cluster(entries, data, min_seq_length, resample_K=resample_K)
             combined_seqs.extend(seqs)
 
         if len(combined_seqs) < 2:
@@ -929,7 +951,7 @@ def run_warping_analysis(
         combined_seqs = []
         for cid in cluster_ids:
             entries = cluster_dict.get(cid, [])
-            seqs = extract_sequences_from_cluster(entries, data, min_seq_length)
+            seqs = extract_sequences_from_cluster(entries, data, min_seq_length, resample_K=resample_K)
             combined_seqs.extend(seqs)
 
         if not combined_seqs:
@@ -945,6 +967,7 @@ def run_warping_analysis(
             turn_direction=turn_dir, min_seq_length=min_seq_length,
             max_seqs=max_samples,
             directed=True,
+            resample_K=resample_K,
         )
 
         if not gt_seqs:

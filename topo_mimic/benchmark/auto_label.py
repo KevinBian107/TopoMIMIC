@@ -17,9 +17,13 @@ Two labelers live here:
    GUI. Emits labels of the form ``"A -> B Direction"`` (transition) or
    ``"A Direction"`` (single behavior). Per-member, the ordered pair is found
    by first-appearance within the member's frames; the cluster's
-   (from, to) is a majority vote across members, and the cluster's direction
-   is computed from aggregate direction frame counts with priority
-   Left/Right > Straight.
+   (from, to) is a majority vote across members. Direction is now assigned
+   via a per-sample vote: each member's window gets its own direction tag
+   under the frame-count rule (Left/Right > Straight; longer of L/R wins
+   ties → Left), and the cluster direction is the plain majority across
+   sample tags (ties → Left > Right > Straight). The GT side uses the same
+   per-window rule via ``direction_tag_from_window`` so cluster and GT
+   labels are computed symmetrically.
 
 2. ``auto_label_clusters`` — LEGACY canonical labeler, kept for the
    scale-sweep discovery logic. Emits ``"A <-> B"`` (alphabetical) or a
@@ -298,36 +302,66 @@ def label_member_directional(
     return b, a
 
 
+def direction_tag_from_window(
+    frames: np.ndarray,
+    direction_segs: list[BehaviorSegment],
+) -> str | None:
+    """Per-WINDOW direction tag (shared rule, used by both cluster samples AND
+    GT transition instances — this is the single source of truth).
+
+    Counts Left/Right/Straight frames in the window:
+      - Any Left or Right → pick whichever has more frames (ties → Left).
+      - Both L and R zero but Straight > 0 → Straight.
+      - No direction overlap at all → None (abstain).
+    """
+    if not direction_segs or frames.size == 0:
+        return None
+    counts, n = _count_frames_per_behavior(frames, direction_segs)
+    if n == 0:
+        return None
+    l = int(counts.get("Left", 0))
+    r = int(counts.get("Right", 0))
+    if l == 0 and r == 0:
+        return "Straight"
+    return "Left" if l >= r else "Right"
+
+
 def aggregate_direction_counts(
     members: list[tuple[int, np.ndarray]],
     direction_segments_by_clip: dict[int, list[BehaviorSegment]],
 ) -> Counter:
-    """Sum the per-direction frame counts across every member of a cluster."""
-    total: Counter = Counter()
+    """Per-SAMPLE direction votes, tallied into a Counter.
+
+    Each cluster member sample gets ONE direction tag via
+    ``direction_tag_from_window`` applied to its own frame window. Samples
+    with zero direction overlap abstain. Returned Counter's keys are the
+    three direction strings, values are sample-vote counts.
+    """
+    counter: Counter = Counter()
     for clip_id, frames in members:
         segs = direction_segments_by_clip.get(int(clip_id), [])
         if not segs:
             continue
-        counts, _ = _count_frames_per_behavior(frames, segs)
-        total.update(counts)
-    return total
+        tag = direction_tag_from_window(frames, segs)
+        if tag is not None:
+            counter[tag] += 1
+    return counter
 
 
 def choose_cluster_direction(direction_counts: Counter) -> str:
-    """Pick ONE direction per cluster.
+    """Cluster direction = plain majority vote of per-sample direction tags.
 
-    Rule (user-specified):
-      - If Left or Right has any frames, pick the one with more frames; ties
-        go to Left. Straight is only chosen when neither Left nor Right
-        covers any frames in the cluster.
+    With the per-sample-vote aggregator above, ``direction_counts`` holds
+    "number of samples whose window voted X". The cluster picks the direction
+    with the most sample votes (ties broken Left > Right > Straight). When no
+    sample voted at all, default to Straight.
     """
     l = int(direction_counts.get("Left", 0))
     r = int(direction_counts.get("Right", 0))
-    if l == 0 and r == 0:
+    s = int(direction_counts.get("Straight", 0))
+    if l == 0 and r == 0 and s == 0:
         return "Straight"
-    if l >= r:
-        return "Left"
-    return "Right"
+    return max((l, "Left"), (r, "Right"), (s, "Straight"), key=lambda x: x[0])[1]
 
 
 def auto_label_clusters_directional(
