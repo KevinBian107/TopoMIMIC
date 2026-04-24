@@ -158,30 +158,31 @@ def load_dm_frames(
     return out
 
 
-def build_random_matched_frames(
-    dm_frames: list[tuple[int, int]],
+def build_random_uniform_fraction_frames(
+    total_target: int,
+    n_clips: int,
     n_frames_per_clip: int,
     rng: np.random.Generator,
-) -> list[tuple[int, int]]:
-    """Per-clip uniform-random frame sample matched to DM's per-clip support.
+) -> tuple[list[tuple[int, int]], float]:
+    """Uniform-fraction per-clip sample matching DM's total frame count.
 
-    For each clip in ``dm_frames``, draws exactly as many frames (without
-    replacement) as DM picked from that clip. Any clip absent from
-    ``dm_frames`` contributes zero frames — i.e. the random set's clip-level
-    coverage is identical to DM's.
+    Draws the SAME number of uniform-random frames from every clip (no
+    per-clip weighting by how many DM picked). The per-clip count is
+    round(total_target / n_clips) so the overall N matches DM's total
+    across 842 clips. Returns (frames, fraction_per_clip) where
+    fraction_per_clip = per_clip_k / n_frames_per_clip is the subsample
+    fraction used.
     """
-    from collections import Counter
-    per_clip_count = Counter(int(cid) for cid, _ in dm_frames)
+    per_clip_k = int(round(total_target / max(1, n_clips)))
+    per_clip_k = max(0, min(per_clip_k, n_frames_per_clip))
+    fraction = per_clip_k / n_frames_per_clip if n_frames_per_clip else 0.0
     out: list[tuple[int, int]] = []
-    for cid, k in per_clip_count.items():
-        if k <= 0:
-            continue
-        if k >= n_frames_per_clip:
-            picks = np.arange(n_frames_per_clip, dtype=np.int64)
-        else:
-            picks = rng.choice(n_frames_per_clip, size=k, replace=False)
+    if per_clip_k == 0:
+        return out, fraction
+    for cid in range(n_clips):
+        picks = rng.choice(n_frames_per_clip, size=per_clip_k, replace=False)
         out.extend((cid, int(f)) for f in picks)
-    return out
+    return out, fraction
 
 
 def project_points(
@@ -264,12 +265,16 @@ def render_figure(
     dm_method: str,
     projection: str,
     feature_spaces: list[str],
-    real_coords: dict[str, np.ndarray],
-    real_labels: dict[str, np.ndarray],
-    dm_coords: dict[str, np.ndarray],
-    dm_labels: dict[str, np.ndarray],
-    random_coords: dict[str, np.ndarray],
-    random_labels: dict[str, np.ndarray],
+    top_coords: dict[str, np.ndarray],
+    top_labels: dict[str, np.ndarray],
+    top_row_title: str,
+    top_point_size: float,
+    top_empty_text: str,
+    bottom_coords: dict[str, np.ndarray],
+    bottom_labels: dict[str, np.ndarray],
+    bottom_row_title: str,
+    bottom_point_size: float,
+    bottom_empty_text: str,
     transitions: list[str],
     color_map: dict,
     cfg: DemoConfig,
@@ -282,51 +287,37 @@ def render_figure(
     })
 
     n_cols = len(feature_spaces)
-    fig, axes = plt.subplots(3, n_cols, figsize=(4.2 * n_cols, 12.0))
+    fig, axes = plt.subplots(2, n_cols, figsize=(4.2 * n_cols, 8.4))
     if n_cols == 1:
-        axes = np.asarray(axes).reshape(3, 1)
+        axes = np.asarray(axes).reshape(2, 1)
 
-    row_titles = [
-        "Real frames",
-        f"{DM_METHOD_DISPLAY[dm_method]} frames",
-        "Random (per-clip matched to DM)",
-    ]
+    row_titles = [top_row_title, bottom_row_title]
 
     for col, fs in enumerate(feature_spaces):
-        rc = real_coords.get(fs)
-        rl = real_labels.get(fs)
-        dc = dm_coords.get(fs)
-        dl = dm_labels.get(fs)
-        nc = random_coords.get(fs)
-        nl = random_labels.get(fs)
+        tc = top_coords.get(fs)
+        tl = top_labels.get(fs)
+        bc = bottom_coords.get(fs)
+        bl = bottom_labels.get(fs)
 
-        ax_real = axes[0, col]
-        ax_dm   = axes[1, col]
-        ax_rnd  = axes[2, col]
+        ax_top = axes[0, col]
+        ax_bot = axes[1, col]
 
-        if rc is not None and rc.size:
-            scatter_projection(ax_real, rc, rl, color_map, cfg.point_size)
+        if tc is not None and tc.size:
+            scatter_projection(ax_top, tc, tl, color_map, top_point_size)
         else:
-            ax_real.text(0.5, 0.5, "no data", ha="center", va="center",
-                         transform=ax_real.transAxes, fontsize=8, color="#777")
-            nature_style_axis(ax_real)
+            ax_top.text(0.5, 0.5, top_empty_text, ha="center", va="center",
+                        transform=ax_top.transAxes, fontsize=8, color="#777")
+            nature_style_axis(ax_top)
 
-        if dc is not None and dc.size:
-            scatter_projection(ax_dm, dc, dl, color_map, cfg.point_size_dm)
+        if bc is not None and bc.size:
+            scatter_projection(ax_bot, bc, bl, color_map, bottom_point_size)
         else:
-            ax_dm.text(0.5, 0.5, "no DM frames", ha="center", va="center",
-                       transform=ax_dm.transAxes, fontsize=8, color="#777")
-            nature_style_axis(ax_dm)
+            ax_bot.text(0.5, 0.5, bottom_empty_text, ha="center", va="center",
+                        transform=ax_bot.transAxes, fontsize=8, color="#777")
+            nature_style_axis(ax_bot)
 
-        if nc is not None and nc.size:
-            scatter_projection(ax_rnd, nc, nl, color_map, cfg.point_size_dm)
-        else:
-            ax_rnd.text(0.5, 0.5, "no random frames", ha="center", va="center",
-                        transform=ax_rnd.transAxes, fontsize=8, color="#777")
-            nature_style_axis(ax_rnd)
-
-        ax_real.set_title(FEATURE_SPACE_DISPLAY.get(fs, fs), fontsize=10,
-                          fontweight="bold", pad=6)
+        ax_top.set_title(FEATURE_SPACE_DISPLAY.get(fs, fs), fontsize=10,
+                         fontweight="bold", pad=6)
 
     for row, title in enumerate(row_titles):
         axes[row, 0].set_ylabel(title, fontsize=10, fontweight="bold",
@@ -447,9 +438,13 @@ def main(config_path: str | None = None) -> None:
             dm_X[fs] = X
             dm_L[fs] = L
 
+            n_clips = feature_data_cache[fs].shape[0]
             n_frames_per_clip = feature_data_cache[fs].shape[1]
-            rand_frames = build_random_matched_frames(
-                frames, n_frames_per_clip, rng,
+            rand_frames, frac = build_random_uniform_fraction_frames(
+                total_target=X.shape[0],
+                n_clips=n_clips,
+                n_frames_per_clip=n_frames_per_clip,
+                rng=rng,
             )
             Xn, Ln = prepare_dm_subset(
                 feature_data_cache[fs], rand_frames, frame_label_cache[fs],
@@ -457,7 +452,12 @@ def main(config_path: str | None = None) -> None:
             rand_X[fs] = Xn
             rand_L[fs] = Ln
 
-            print(f"  {fs}: DM N={X.shape[0]}  random-matched N={Xn.shape[0]}  D={X.shape[1]}")
+            print(
+                f"  {fs}: DM N={X.shape[0]}  "
+                f"uniform-per-clip N={Xn.shape[0]}  "
+                f"(per-clip k={int(round(frac * n_frames_per_clip))} = "
+                f"{100 * frac:.2f}% of T={n_frames_per_clip})  D={X.shape[1]}"
+            )
 
         for projection in cfg.projections:
             print(f"  projection: {projection}")
@@ -507,23 +507,50 @@ def main(config_path: str | None = None) -> None:
                     rand_coords[fs] = np.zeros((0, 2), dtype=np.float32)
                     rand_L_proj[fs] = np.array([], dtype=object)
 
-            out_png = os.path.join(
-                cfg.output_dir, f"proj_{dm_method}_{projection}.png",
+            real_vs_dm_path = os.path.join(
+                cfg.output_dir, f"proj_{dm_method}_{projection}_real_vs_dm.png",
             )
             render_figure(
                 dm_method=dm_method,
                 projection=projection,
                 feature_spaces=cfg.feature_spaces,
-                real_coords=real_coords,
-                real_labels=real_L_proj,
-                dm_coords=dm_coords,
-                dm_labels=dm_L_proj,
-                random_coords=rand_coords,
-                random_labels=rand_L_proj,
+                top_coords=real_coords,
+                top_labels=real_L_proj,
+                top_row_title="Real frames",
+                top_point_size=cfg.point_size,
+                top_empty_text="no data",
+                bottom_coords=dm_coords,
+                bottom_labels=dm_L_proj,
+                bottom_row_title=f"{DM_METHOD_DISPLAY[dm_method]} frames",
+                bottom_point_size=cfg.point_size_dm,
+                bottom_empty_text="no DM frames",
                 transitions=transitions_order,
                 color_map=color_map,
                 cfg=cfg,
-                out_path=out_png,
+                out_path=real_vs_dm_path,
+            )
+
+            rand_vs_dm_path = os.path.join(
+                cfg.output_dir, f"proj_{dm_method}_{projection}_random_vs_dm.png",
+            )
+            render_figure(
+                dm_method=dm_method,
+                projection=projection,
+                feature_spaces=cfg.feature_spaces,
+                top_coords=rand_coords,
+                top_labels=rand_L_proj,
+                top_row_title="Random (uniform % per clip, N matches DM)",
+                top_point_size=cfg.point_size_dm,
+                top_empty_text="no random frames",
+                bottom_coords=dm_coords,
+                bottom_labels=dm_L_proj,
+                bottom_row_title=f"{DM_METHOD_DISPLAY[dm_method]} frames",
+                bottom_point_size=cfg.point_size_dm,
+                bottom_empty_text="no DM frames",
+                transitions=transitions_order,
+                color_map=color_map,
+                cfg=cfg,
+                out_path=rand_vs_dm_path,
             )
 
 
