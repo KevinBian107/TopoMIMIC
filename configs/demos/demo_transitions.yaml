@@ -2,7 +2,7 @@ dataset: rodent
 data_path: data/rodent_ar.h5
 labels_csv: behavior_labels/rodent_labels.csv
 dm_key: intention
-output_dir: outputs/demos/illustrative/rodent_transitions
+output_dir: outputs/demos/rodent_transitions
 
 window_size: 100
 min_transition_frames: 20

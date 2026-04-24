@@ -1551,7 +1551,7 @@ def render_clip_filmstrips(
     n_poses: int = 6,
     sample_every: int = 80,
 ) -> None:
-    from demos.illustrative.demo_bodies import (
+    from demos.demo_bodies import (
         _render_poses_individually,
         _tile_cropped_poses,
     )

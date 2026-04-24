@@ -1,6 +1,6 @@
 data_source: "data/rodent_ar_latest.h5"
 labels_path: "behavior_labels/rodent_labels.csv"
-output_path: "outputs/demos/illustrative/behavior_clusters.png"
+output_path: "outputs/demos/behavior_clusters.png"
 
 n_clips: 100
 max_points_per_behavior: 10

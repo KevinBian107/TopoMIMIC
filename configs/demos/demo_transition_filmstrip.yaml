@@ -1,5 +1,5 @@
 dataset: rodent
-output_dir: "outputs/demos/illustrative/transition_filmstrip"
+output_dir: "outputs/demos/transition_filmstrip"
 behavior_labels_csv: "behavior_labels/rodent_labels.csv"
 output_format: pdf
 data:

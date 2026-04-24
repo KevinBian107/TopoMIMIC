@@ -18,9 +18,9 @@ DM-selected frames for the (dm_method, feature_space) method reading
 for the configured seed.
 
 Usage:
-  python -m demos.illustrative.demo_feature_space_projections
-  python -m demos.illustrative.demo_feature_space_projections --config \\
-    configs/demos/illustrative/demo_feature_space_projections.yaml
+  python -m demos.demo_feature_space_projections
+  python -m demos.demo_feature_space_projections --config \\
+    configs/demos/demo_feature_space_projections.yaml
 """
 
 from __future__ import annotations
@@ -62,7 +62,7 @@ class DemoConfig:
     tsne_subsample_n: int = 5000
     point_size: float = 2.0
     point_size_dm: float = 5.0
-    output_dir: str = "outputs/demos/illustrative/feature_space_projections"
+    output_dir: str = "outputs/demos/feature_space_projections"
 
 
 FEATURE_SPACE_DISPLAY = {"intention": "Intention", "qpos": "qpos", "ekp": "EKP"}

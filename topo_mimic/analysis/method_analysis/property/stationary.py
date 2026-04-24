@@ -273,7 +273,7 @@ def render_filmstrip_grid(
     sample_every: int = 80,
     grid_cols: int = 4,
 ) -> None:
-    from demos.illustrative.demo_bodies import (
+    from demos.demo_bodies import (
         _render_poses_individually,
         _tile_cropped_poses,
     )

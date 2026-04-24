@@ -19,7 +19,7 @@ from pathlib import Path
 
 import numpy as np
 
-from demos.illustrative.skeleton_filmstrip import (
+from demos.skeleton_filmstrip import (
     _get_camera_params,
     _render_poses_individually,
     _replace_white_bg,

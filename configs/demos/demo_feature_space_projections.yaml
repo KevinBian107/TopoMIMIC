@@ -23,4 +23,4 @@ tsne_subsample_n: 5000
 point_size: 2.0
 point_size_dm: 5.0
 
-output_dir: "outputs/demos/illustrative/feature_space_projections"
+output_dir: "outputs/demos/feature_space_projections"

@@ -1,6 +1,8 @@
 # Shaped by What's Missing: Topological Invariance Simplification Discovers Behavioral Transitions
 
-Classical manifold learning methods (PCA, UMAP, t-SNE) learn a low-dimensional **embedding** of high-dimensional data. We take a different approach: instead of projecting to a coordinate space, we learn the **topological skeleton** of the data manifold itself. Each behavioral clip from a deep RL policy ([Mimic-mjx](https://mimic-mjx.talmolab.org/)) is a trajectory in a high-dimensional temporal space (e.g. 500 frames × 16D = a point in R<sup>8000</sup>). We reconstruct the discrete Morse graph of this point cloud to extract two structural primitives:
+Project page: <https://kbian.org/TopoMimic-website/>
+
+Classical manifold learning methods (PCA, UMAP, t-SNE) learn a low-dimensional **embedding** of high-dimensional data. We take a different approach: instead of projecting to a coordinate space, we learn the **topological skeleton** of the data manifold itself. Each behavioral clip from a deep RL policy ([Mimic-mjx](https://mimic-mjx.talmolab.org/)) is a trajectory in a high-dimensional temporal space. We reconstruct the discrete Morse graph of this point cloud to extract two structural primitives:
 
 - **DM Cycles (H₁)** — loops in the graph skeleton, capturing periodic or recurrent behavioral motifs.
 - **DM Paths (H₀)** — edge-disjoint paths between persistent density minima, capturing transition corridors.
@@ -9,16 +11,6 @@ These sub-trajectories are the learned manifold coordinates. The natural metric 
 
 ![Demo](figures/dmpc_demo.gif)
 > Demonstration of discrete Morse cycles and paths in an inverse density space.
-
-```
-    R^(T × D)                    Topological skeleton                Metric space
- ┌──────────────┐             ┌─────────────────────┐           ┌──────────────────┐
- │ 500 × 16  (int)│   DM graph  │  Cycles (H₁ loops)  │  W₂ dist  │                  │
- │ 500 × 62 (qpos)│──────────►│  Paths  (H₀ bridges)│─────────►│  MDS + Clustering │
- │ 500 × 69  (ekp)│ reconstruction│  between density    │  between  │                  │
- └──────────────┘             │  minima             │  sub-traj └──────────────────┘
-   high-dim input               manifold primitives             behavioral taxonomy
-```
 
 ## Documentation
 
@@ -40,7 +32,18 @@ bash bash_scripts/run_all.sh
 
 ## Citation
 
-If you use this work, please cite the paper. See `paper/paper.md` for the draft manuscript.
+```bibtex
+@article{topomimic2026,
+  title={Shaped by What's Missing: Topological Invariance
+         Simplification Discovers Behavioral Transitions},
+  author={Bian, Kaiwen and Leonardis, Eric J. and Yang, Yuanjia
+          and Zhang, Charles and Azim, Eiman
+          and {\"O}lveczky, Bence P. and Wang, Yusu
+          and Pereira, Talmo D.},
+  journal={arXiv preprint},
+  year={2026}
+}
+```
 
 ## Acknowledgements
 

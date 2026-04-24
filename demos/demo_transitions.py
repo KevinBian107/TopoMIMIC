@@ -8,7 +8,7 @@ all colored by behavior transition labels looked up from the GT CSV.
 
 Usage:
     python demos/demo_transitions.py
-    python demos/demo_transitions.py --config configs/demos/illustrative/demo_transitions.yaml
+    python demos/demo_transitions.py --config configs/demos/demo_transitions.yaml
 """
 
 import os
@@ -86,7 +86,7 @@ class Config:
     data_path: str = "data/rodent_ar.h5"
     labels_csv: str = "behavior_labels.csv"
     dm_key: str = "intention"
-    output_dir: str = "outputs/demos/illustrative/rodent_transitions"
+    output_dir: str = "outputs/demos/rodent_transitions"
     window_size: int = 100
     min_transition_frames: int = 20
     short_threshold: int = 10
@@ -1204,7 +1204,7 @@ def run_skeleton_analysis(
             )
 
         if qpos_clip is not None:
-            from demos.illustrative.skeleton_filmstrip import (
+            from demos.skeleton_filmstrip import (
                 plot_skeleton_filmstrip,
                 FilmstripSkeletonConfig,
             )
@@ -1582,7 +1582,7 @@ def main():
     parser = argparse.ArgumentParser(description="Rodent transition demo")
     parser.add_argument(
         "--config",
-        default="configs/demos/illustrative/demo_transitions.yaml",
+        default="configs/demos/demo_transitions.yaml",
         help="Path to demo config YAML",
     )
     args = parser.parse_args()

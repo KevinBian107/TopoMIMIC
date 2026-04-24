@@ -7,9 +7,9 @@ chronophotography filmstrips (grey-box style). Each row is one cluster label,
 each column is a different sample from that cluster.
 
 Usage:
-    python -m demos.illustrative.demo_cluster_filmstrips
-    python -m demos.illustrative.demo_cluster_filmstrips --config configs/demos/illustrative/demo_cluster_filmstrips.yaml
-    python -m demos.illustrative.demo_cluster_filmstrips --method w2_dmc_int_kmeans
+    python -m demos.demo_cluster_filmstrips
+    python -m demos.demo_cluster_filmstrips --config configs/demos/demo_cluster_filmstrips.yaml
+    python -m demos.demo_cluster_filmstrips --method w2_dmc_int_kmeans
 """
 
 import os
@@ -53,7 +53,7 @@ class ClusterFilmstripConfig:
     data_key: str = "qpos_rollout"
     xml_path: str = "topo_mimic/extraction/xml/rodent.xml"
     dataset: str = "rodent"
-    output_dir: str = "outputs/demos/illustrative/cluster_filmstrips"
+    output_dir: str = "outputs/demos/cluster_filmstrips"
     k_samples: int = 5
     n_poses: int = 6
     filmstrip_gap_fraction: float = 0.25
@@ -78,7 +78,7 @@ def _render_filmstrip(
     n_poses: int = 6,
     gap_fraction: float = 0.25,
 ) -> np.ndarray:
-    from demos.illustrative.skeleton_filmstrip import render_filmstrip_for_frames
+    from demos.skeleton_filmstrip import render_filmstrip_for_frames
     return render_filmstrip_for_frames(
         qposes, frame_indices, xml_path, dataset,
         n_poses=n_poses, gap_fraction=gap_fraction,
@@ -250,7 +250,7 @@ def main():
     parser.add_argument("--seed", type=int, default=None)
     args = parser.parse_args()
 
-    default_cfg = Path(__file__).resolve().parents[2] / "configs/demos/illustrative/demo_cluster_filmstrips.yaml"
+    default_cfg = Path(__file__).resolve().parents[2] / "configs/demos/demo_cluster_filmstrips.yaml"
     cfg = load_config(args.config or (str(default_cfg) if default_cfg.exists() else None))
     if args.method is not None:
         cfg.method = args.method

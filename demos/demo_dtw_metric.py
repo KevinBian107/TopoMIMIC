@@ -7,8 +7,8 @@ with the DTW cost matrix on the left and two chronophotography filmstrips
 (discovered top, GT bottom) on the right.
 
 Usage:
-    python -m demos.illustrative.demo_dtw_metric
-    python -m demos.illustrative.demo_dtw_metric --config configs/demos/illustrative/demo_dtw_metric.yaml
+    python -m demos.demo_dtw_metric
+    python -m demos.demo_dtw_metric --config configs/demos/demo_dtw_metric.yaml
 """
 
 import os
@@ -59,7 +59,7 @@ class DTWDemoConfig:
     data_key: str = "qpos_rollout"
     xml_path: str = "topo_mimic/extraction/xml/rodent.xml"
     dataset: str = "rodent"
-    output_dir: str = "outputs/demos/illustrative/dtw_metric"
+    output_dir: str = "outputs/demos/dtw_metric"
     skip_root_dims: int = 7
     short_threshold: int = 50
     merge_rear: bool = True
@@ -92,7 +92,7 @@ def _render_filmstrip(
     tint_start: np.ndarray | None = None,
     tint_end: np.ndarray | None = None,
 ) -> np.ndarray:
-    from demos.illustrative.skeleton_filmstrip import render_filmstrip_for_frames
+    from demos.skeleton_filmstrip import render_filmstrip_for_frames
     return render_filmstrip_for_frames(
         qposes, frame_indices, xml_path, dataset,
         n_poses=n_poses, gap_fraction=gap_fraction,

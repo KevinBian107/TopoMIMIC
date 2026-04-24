@@ -2,19 +2,14 @@ experiment_dir: "outputs/experiment/transitions"
 method: "w2_dmp_qpos_kmeans"
 seed: 0
 
-behavior_labels_csv: "behavior_labels/rodent_labels.csv"
 data_path: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
 data_key: "qpos_rollout"
 xml_path: "/home/jovyan/vast/kaiwen/TopoVNL/topo_mimic/extraction/xml/rodent.xml"
 dataset: "rodent"
 
-output_dir: "outputs/demos/illustrative/dtw_metric"
+output_dir: "outputs/demos/cluster_filmstrips"
 
-skip_root_dims: 7
-short_threshold: 50
-merge_rear: true
-min_seq_length: 3
-
-n_filmstrip_poses: 8
-filmstrip_gap_fraction: 0.15
+k_samples: 5
+n_poses: 6
+filmstrip_gap_fraction: 0.25
 dpi: 300

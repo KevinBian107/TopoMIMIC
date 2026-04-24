@@ -61,7 +61,7 @@ class DemoConfig:
     projections: list[str] = field(default_factory=lambda: ["pca", "umap", "tsne"])
     point_size_clip: float = 18.0
     point_size_dm: float = 8.0
-    output_dir: str = "outputs/demos/illustrative/clip_level_projections"
+    output_dir: str = "outputs/demos/clip_level_projections"
 
 
 FEATURE_SPACE_DISPLAY = {"intention": "Intention", "qpos": "qpos", "ekp": "EKP"}

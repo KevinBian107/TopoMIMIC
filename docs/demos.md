@@ -20,33 +20,33 @@ Visual examples of TDA concepts.
 
 ### Torus DM Demo
 ```bash
-python -m demos.illustrative.demo_torus
+python -m demos.demo_torus
 ```
 Demonstrates discrete Morse graph extraction on a synthetic torus point cloud. Shows how the DM skeleton captures the topology of a known shape.
 
 ### Behavior Overlap Demo
 ```bash
-python -m demos.illustrative.demo_behavior_overlap
+python -m demos.demo_behavior_overlap
 ```
 Visualizes overlap between different behavioral clusters in feature space, demonstrating how topological methods can distinguish behaviors that overlap in simple projections.
 
 ### Saddle Point Demo
 ```bash
-python -m demos.illustrative.demo_saddle
+python -m demos.demo_saddle
 ```
 Demonstrates saddle point detection in the density landscape — the transition regions between behavioral basins.
 
 ### Transition Filmstrip
 ```bash
-python -m demos.illustrative.demo_transition_filmstrip
-python -m demos.illustrative.demo_transition_filmstrip --config configs/demos/illustrative/demo_transition_filmstrip.yaml
+python -m demos.demo_transition_filmstrip
+python -m demos.demo_transition_filmstrip --config configs/demos/demo_transition_filmstrip.yaml
 ```
 Renders filmstrip visualizations of behavioral transitions captured by DM paths and cycles.
 
 ### Feature-Space Projection Comparison (real vs. DM)
 ```bash
-python -m demos.illustrative.demo_feature_space_projections
-python -m demos.illustrative.demo_feature_space_projections --config configs/demos/illustrative/demo_feature_space_projections.yaml
+python -m demos.demo_feature_space_projections
+python -m demos.demo_feature_space_projections --config configs/demos/demo_feature_space_projections.yaml
 ```
 Six Nature-style figures comparing real vs. DM-selected frames under the
 three feature spaces (intention, qpos, ekp) and three projections (PCA,
@@ -58,12 +58,12 @@ Points are colored by the GT transition each frame belongs to (via
 `find_all_transitions(window_frames=100)`); frames outside any transition
 span are grey. A single horizontal legend sits below the grid. File
 names: `proj_{dmc|dmp}_{pca|umap|tsne}.{png,pdf}` under
-`outputs/demos/illustrative/feature_space_projections/`.
+`outputs/demos/feature_space_projections/`.
 
 ### Clip-Level Projection Comparison
 ```bash
-python -m demos.illustrative.demo_clip_projections
-python -m demos.illustrative.demo_clip_projections --config configs/demos/illustrative/demo_clip_projections.yaml
+python -m demos.demo_clip_projections
+python -m demos.demo_clip_projections --config configs/demos/demo_clip_projections.yaml
 ```
 Parallel to `demo_feature_space_projections` but aggregated one level up:
 each real clip becomes a single flattened `(500·D,)`-dim vector (842
@@ -72,16 +72,16 @@ flattened `(K·D,)`-dim vector (with `K = dm_resample_k`, default 100).
 Six Nature-style figures, 2 rows × 3 columns each — top row real clips,
 bottom row DM paths/cycles; columns = intention / qpos / ekp; file
 names `proj_clip_{dmc|dmp}_{pca|umap|tsne}.{png,pdf}` under
-`outputs/demos/illustrative/clip_level_projections/`. Clip color = dominant GT
+`outputs/demos/clip_level_projections/`. Clip color = dominant GT
 transition in the clip (longest `(from, to)` span); DM member color =
 the cluster's auto-label with the trailing direction token stripped.
 Rows use separate projections (input dims differ: 500·D vs K·D).
 
 ### DTW Metric Visualization
 ```bash
-python -m demos.illustrative.demo_dtw_metric
-python -m demos.illustrative.demo_dtw_metric --config configs/demos/illustrative/demo_dtw_metric.yaml
-python -m demos.illustrative.demo_dtw_metric --method w2_dmc_int_kmeans --seed 0
+python -m demos.demo_dtw_metric
+python -m demos.demo_dtw_metric --config configs/demos/demo_dtw_metric.yaml
+python -m demos.demo_dtw_metric --method w2_dmc_int_kmeans --seed 0
 ```
 Nature-style per-cluster DTW comparison figures. For each unique transition cluster in a benchmark method, renders a panel with the DTW cost matrix (with warping path) on the left and two chronophotography filmstrips on the right: discovered sequence (blue tint) on top, ground truth (red tint) on bottom. Uses the same DTW computation as the main analysis pipeline. Default method: `w2_dmp_qpos_kmeans`.
 
@@ -143,7 +143,7 @@ End-to-end transition analysis pipelines.
 ### Rodent Transition Demo (Figure 2C)
 ```bash
 python -m demos.transition_demos.demo_rodent_transitions
-python -m demos.illustrative.demo_transitions --config configs/demos/illustrative/demo_transitions.yaml
+python -m demos.demo_transitions --config configs/demos/demo_transitions.yaml
 ```
 Visualizes rodent behavioral transitions using PCA/UMAP/t-SNE with up to 3 rows per embedding plot: GT transitions, DM cycles, and DM paths. With `skeleton_analysis.enabled: true`, also produces skeleton filmstrip figures (Figure 2C) in `{output_dir}/skeleton_analysis_filmstrip/`.
 

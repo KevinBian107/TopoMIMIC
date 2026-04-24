@@ -23,7 +23,7 @@ TopoVNL/
 ├── configs/                   # YAML configs, mirrors topo_mimic/ layout
 ├── outputs/                   # pipeline outputs, mirrors topo_mimic/ layout
 ├── bash_scripts/              # per-stage shell drivers + run_all.sh
-├── demos/illustrative/        # pedagogical / concept demos (not method results)
+├── demos/                     # pedagogical / concept demos (not method results)
 ├── behavior_labels/           # rodent GT CSV
 ├── data/                      # input rollouts (.h5)
 ├── figures/                   # static figures referenced by the paper
@@ -103,7 +103,7 @@ configs/
 │   └── scale_sweep/         scale_sweep.yaml
 ├── labeling/                auto_label.yaml, render_for_label.yaml
 ├── hyperparam_sweep/        kpms_sweep.yaml, vae_sweep.yaml + wandb sweep specs
-└── demos/illustrative/      concept demos only (synthetic / GT-only)
+└── demos/                   concept demos only (synthetic / GT-only)
 ```
 
 ## `outputs/` — mirrors `topo_mimic/`
@@ -118,7 +118,7 @@ outputs/
 │   ├── scale_sweep/v1/cfg_<hash>/
 │   └── tables/              (warping_analysis/, CSV aggregates, PDF/PNG tables)
 ├── labeling/rendered_for_label/
-└── demos/illustrative/
+└── demos/
 ```
 
 ## `bash_scripts/`
@@ -137,7 +137,7 @@ run_all.sh                 chains all of the above
 
 Override the Python binary with `PYTHON=/path/to/python3 bash bash_scripts/run_all.sh`.
 
-## `demos/illustrative/`
+## `demos/`
 
 Concept demos only — no real-method outputs. Use these to understand TDA or to illustrate figures:
 
