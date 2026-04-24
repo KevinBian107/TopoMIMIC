@@ -28,7 +28,6 @@ _RUN_FLAGS = (
     "run_c2st_analysis",
     "run_purity_analysis",
     "run_mmd_analysis",
-    "render_gt_transitions",
 )
 
 

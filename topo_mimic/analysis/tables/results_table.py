@@ -1222,7 +1222,7 @@ def generate_all_tables(config: TableConfig) -> None:
     print(f"\nAll tables saved to {output_dir}")
 
 
-def main():
+def main(argv: list[str] | None = None):
     parser = argparse.ArgumentParser(
         description="Generate Nature-style results table from DTW analysis"
     )
@@ -1251,7 +1251,7 @@ def main():
         help="DPI for output images",
     )
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     config = TableConfig(
         analysis_dir=args.analysis_dir,

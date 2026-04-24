@@ -20,7 +20,7 @@ echo "=============================="
 
 for block in gt_sanity transition_ranking mds transition_comparison \
              transition_graph dtw_metrics dtw_visualization mmd c2st \
-             purity classification ; do
+             purity classification; do
   echo ""
   echo "--- block: ${block} ---"
   $PYTHON -m topo_mimic.analysis.feature_analysis.blocks.${block} "$CFG"

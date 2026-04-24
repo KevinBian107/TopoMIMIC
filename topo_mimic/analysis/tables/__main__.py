@@ -20,7 +20,7 @@ def _run_warping() -> None:
 
 def _run_results() -> None:
     from .results_table import main as results_main
-    results_main()
+    results_main(argv=[])
 
 
 def main() -> None:
