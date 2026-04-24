@@ -39,17 +39,17 @@ from demos.property.demo_theta_filmstrip import (
     render_fixed_camera_frames,
     _composite_frames_opaque,
 )
-from topo_mimic.benchmark.analysis.ground_truth import (
+from topo_mimic.analysis.feature_analysis.ground_truth import (
     find_all_transitions,
     TransitionSegment,
 )
-from topo_mimic.dmwk.utils.load_utils import load_rollout_from_source
+from topo_mimic.extraction.utils.load_utils import load_rollout_from_source
 
 
 @dataclass
 class DataConfig:
     rollout_path: str = "data/rodent_ar.h5"
-    xml_path: str = "topo_mimic/dmwk/xml/rodent.xml"
+    xml_path: str = "topo_mimic/extraction/xml/rodent.xml"
 
 
 @dataclass

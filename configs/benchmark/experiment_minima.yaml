@@ -24,7 +24,7 @@ top_k_minima: 4
 minima_frame_radius: 10
 minima_n_frames: 5
 render_target_size: [320, 240]
-xml_path: "topo_mimic/dmwk/xml/rodent.xml"
+xml_path: "topo_mimic/extraction/xml/rodent.xml"
 camera: "close_profile"
 
 # Clips to skip (same as experiment_transitions)

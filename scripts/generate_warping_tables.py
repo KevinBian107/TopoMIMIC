@@ -25,11 +25,11 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from topo_mimic.benchmark.analysis.data_loading import (
+from topo_mimic.analysis.feature_analysis.data_loading import (
     load_experiment_results,
     load_labels_yaml,
 )
-from topo_mimic.benchmark.analysis.metrics import (
+from topo_mimic.analysis.feature_analysis.metrics import (
     run_warping_analysis,
     WarpingResult,
 )

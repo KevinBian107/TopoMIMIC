@@ -37,8 +37,8 @@ from dataclasses import dataclass
 sys.path.insert(0, "/home/jovyan/vast/kaiwen/TopoVNL")
 sys.path.append("/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM")
 
-from topo_mimic.dmwk.skeletonization.skeletonization import extract_skeleton_pcd_dm
-from topo_mimic.dmwk.skeletonization.remap import (
+from topo_mimic.extraction.skeletonization.skeletonization import extract_skeleton_pcd_dm
+from topo_mimic.extraction.skeletonization.remap import (
     parse_swr_remap,
     remap_cycle_to_original,
 )

@@ -8,7 +8,7 @@ data:
   rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
   split: "train"
   pca_dims: null
-  xml_path: "topo_mimic/dmwk/xml/rodent.xml"
+  xml_path: "topo_mimic/extraction/xml/rodent.xml"
   stac_data_path: "data/rodent_reference_clips.h5"
 
 takens:

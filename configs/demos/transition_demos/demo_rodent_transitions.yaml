@@ -24,7 +24,7 @@ dm_pipeline:
 
 rendering:
   enabled: true
-  xml_path: topo_mimic/dmwk/xml/rodent.xml
+  xml_path: topo_mimic/extraction/xml/rodent.xml
   max_samples: 5
   framerate: 30
   target_size: [640, 480]

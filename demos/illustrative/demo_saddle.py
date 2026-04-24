@@ -33,7 +33,7 @@ import yaml
 sys.path.insert(0, "/home/jovyan/vast/kaiwen/TopoVNL")
 sys.path.append("/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM")
 
-from topo_mimic.dmwk.skeletonization.skeletonization import extract_skeleton_pcd_dm
+from topo_mimic.extraction.skeletonization.skeletonization import extract_skeleton_pcd_dm
 
 
 @dataclass
@@ -283,7 +283,7 @@ def extract_paths_between_minima(
     output_dir: str,
 ) -> tuple[list[list[int]], int, int | None, int | None]:
     """Find the two most persistent minima and edge-disjoint paths between them."""
-    from topo_mimic.dmwk.skeletonization.dm_path import find_dm_minima
+    from topo_mimic.extraction.skeletonization.dm_path import find_dm_minima
 
     min1, min2 = find_dm_minima(output_dir)
     if min1 is None or min2 is None:

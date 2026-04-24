@@ -57,14 +57,14 @@ from scipy.spatial.distance import cdist
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
-from topo_mimic.dmwk.utils.load_utils import (
+from topo_mimic.extraction.utils.load_utils import (
     get_aggregate_data,
     get_clip_indices,
     load_rollout_from_source,
     is_consolidated_format,
 )
-from topo_mimic.dmwk.utils.rendering import render_from_saved_rollout
-from topo_mimic.dmwk.skeletonization.skeletonization import extract_skeleton_pcd_dm
+from topo_mimic.extraction.utils.rendering import render_from_saved_rollout
+from topo_mimic.extraction.skeletonization.skeletonization import extract_skeleton_pcd_dm
 
 
 @dataclass
@@ -74,7 +74,7 @@ class DataConfig:
     intention_key: str = "intention"
     qpos_key: str = "qpos_rollout"
     skip_clips: list[int] = field(default_factory=list)
-    xml_path: str = "topo_mimic/dmwk/xml/rodent.xml"
+    xml_path: str = "topo_mimic/extraction/xml/rodent.xml"
 
 
 @dataclass

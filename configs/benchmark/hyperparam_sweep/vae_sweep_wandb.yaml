@@ -1,4 +1,4 @@
-program: topo_mimic/benchmark/hyperparam_sweep/custom_vae/vae_sweep.py
+program: topo_mimic/hyperparam_sweep/custom_vae/vae_sweep.py
 method: bayes
 metric:
   goal: maximize

@@ -12,8 +12,8 @@ from PIL import Image, ImageDraw, ImageFont
 import imageio_ffmpeg
 import h5py
 
-from topo_mimic.dmwk.utils.load_utils import load_from_h5py, load_rollout_from_source
-from topo_mimic.dmwk.utils.rendering import render_from_saved_rollout
+from topo_mimic.extraction.utils.load_utils import load_from_h5py, load_rollout_from_source
+from topo_mimic.extraction.utils.rendering import render_from_saved_rollout
 
 
 @dataclass

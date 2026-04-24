@@ -5,7 +5,7 @@
 h5_path: "data/rodent_ar.h5"
 behavior_labels_csv: "behavior_labels/rodent_labels.csv"
 experiment_dir: "outputs/benchmark_experiment_transitions"
-xml_path: "topo_mimic/dmwk/xml/rodent.xml"
+xml_path: "topo_mimic/extraction/xml/rodent.xml"
 stac_data_path: "data/rodent_reference_clips.h5"
 
 seed: 0

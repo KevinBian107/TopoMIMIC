@@ -39,8 +39,8 @@ import numpy as np
 import yaml
 from matplotlib.lines import Line2D
 
-from topo_mimic.benchmark.analysis.ground_truth import find_all_transitions
-from topo_mimic.dmwk.utils.feature_transforms import (
+from topo_mimic.analysis.feature_analysis.ground_truth import find_all_transitions
+from topo_mimic.extraction.utils.feature_transforms import (
     apply_dm_key_transform,
     get_hdf5_key_for_dm_key,
 )
@@ -51,7 +51,7 @@ class DemoConfig:
     h5_path: str = "data/rodent_ar.h5"
     behavior_labels_csv: str = "behavior_labels/rodent_labels.csv"
     experiment_dir: str = "outputs/benchmark_experiment_transitions"
-    xml_path: str = "topo_mimic/dmwk/xml/rodent.xml"
+    xml_path: str = "topo_mimic/extraction/xml/rodent.xml"
     stac_data_path: str = "data/rodent_reference_clips.h5"
     seed: int = 0
     window_frames: int = 100

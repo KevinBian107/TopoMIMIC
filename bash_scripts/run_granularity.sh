@@ -12,15 +12,15 @@ echo "=============================="
 
 echo ""
 echo "--- Intention ---"
-$PYTHON -m topo_mimic.granularity.main configs/dmwk/granularity_intention.yaml
+$PYTHON -m topo_mimic.analysis.method_analysis.granularity.main configs/dmwk/granularity_intention.yaml
 
 echo ""
 echo "--- Qpos ---"
-$PYTHON -m topo_mimic.granularity.main configs/dmwk/granularity_qpos.yaml
+$PYTHON -m topo_mimic.analysis.method_analysis.granularity.main configs/dmwk/granularity_qpos.yaml
 
 echo ""
 echo "--- EKP ---"
-$PYTHON -m topo_mimic.granularity.main configs/dmwk/granularity_ekp.yaml
+$PYTHON -m topo_mimic.analysis.method_analysis.granularity.main configs/dmwk/granularity_ekp.yaml
 
 echo ""
 echo "All granularity analyses complete."

@@ -33,12 +33,12 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from topo_mimic.dmwk.utils.dataset_config import get_dataset_preset
-from topo_mimic.dmwk.utils.load_utils import get_aggregate_data, get_clip_indices
-from topo_mimic.dmwk.utils.feature_transforms import get_hdf5_key_for_dm_key
-from topo_mimic.dmwk.skeletonization.postprocess import _uniform_downsample
-from topo_mimic.benchmark.experiment_transitions import build_feature_matrix
-from topo_mimic.benchmark.analysis.ground_truth import (
+from topo_mimic.extraction.utils.dataset_config import get_dataset_preset
+from topo_mimic.extraction.utils.load_utils import get_aggregate_data, get_clip_indices
+from topo_mimic.extraction.utils.feature_transforms import get_hdf5_key_for_dm_key
+from topo_mimic.extraction.skeletonization.postprocess import _uniform_downsample
+from topo_mimic.experiment.transitions import build_feature_matrix
+from topo_mimic.analysis.feature_analysis.ground_truth import (
     find_all_transitions,
     load_behavior_segments_multilabel,
     TransitionSegment,
@@ -48,7 +48,7 @@ from topo_mimic.benchmark.analysis.ground_truth import (
 @dataclass
 class RenderingConfig:
     enabled: bool = True
-    xml_path: str = "topo_mimic/dmwk/xml/rodent.xml"
+    xml_path: str = "topo_mimic/extraction/xml/rodent.xml"
     max_samples: int = 5
     framerate: int = 30
     target_size: tuple[int, int] = (640, 480)
@@ -451,7 +451,7 @@ def _bootstrap_to_target(
 
 
 def _build_dm_pipeline_config(config: Config) -> "PipelineConfig":
-    from topo_mimic.dmwk.dm_pipeline import (
+    from topo_mimic.extraction.dm_pipeline import (
         PipelineConfig,
         DataConfig as DMDataConfig,
         TakensConfig,
@@ -493,13 +493,13 @@ def _run_dm_pipeline(
 ) -> tuple[list, list, list | None, int, int]:
     import pickle as pkl
     import yaml as _yaml
-    from topo_mimic.dmwk.dm_pipeline import (
+    from topo_mimic.extraction.dm_pipeline import (
         run_dm_extraction,
         get_cycle_statistics,
         get_path_statistics,
         plot_ami_fnn_diagnostics,
     )
-    from topo_mimic.dmwk.skeletonization.preprocess import estimate_delay_embedding_params
+    from topo_mimic.extraction.skeletonization.preprocess import estimate_delay_embedding_params
 
     sys.path.append("/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM")
 
@@ -641,7 +641,7 @@ def _find_all_persistent_minima(
     top_k: int = 10,
     min_persistence: float = 0.0,
 ) -> list[int]:
-    from topo_mimic.dmwk.skeletonization.dm_path import (
+    from topo_mimic.extraction.skeletonization.dm_path import (
         _parse_persistence_pairs,
         _parse_sorted_weights,
     )
@@ -691,7 +691,7 @@ def extract_skeleton_for_clip(
     takens_offset: int = 0,
 ) -> SkeletonResult | None:
     from collections import Counter
-    from topo_mimic.dmwk.skeletonization.remap import (
+    from topo_mimic.extraction.skeletonization.remap import (
         parse_swr_remap,
         remap_cycle_to_original,
     )
@@ -1537,7 +1537,7 @@ def run_demo(config: Config) -> None:
     if config.rendering.enabled:
         print("\n=== Stage 6: Rendering ===")
         try:
-            from topo_mimic.dmwk.skeletonization.rendering import (
+            from topo_mimic.extraction.skeletonization.rendering import (
                 render_grid_clusters_side_by_side,
             )
 

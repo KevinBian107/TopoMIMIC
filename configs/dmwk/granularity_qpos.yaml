@@ -9,7 +9,7 @@ data:
   # pca_dims: optional PCA reduction (only applies to qpos/ekp, ignored for intention)
   pca_dims: 10
   # xml_path/stac_data_path: required for ekp feature space
-  xml_path: "topo_mimic/dmwk/xml/rodent.xml"
+  xml_path: "topo_mimic/extraction/xml/rodent.xml"
   stac_data_path: "data/rodent_reference_clips.h5"
 
 takens:

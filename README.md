@@ -91,19 +91,19 @@ bash bash_scripts/run_walker_basecase.sh  # Walker: DM extraction + benchmark + 
 ### Step 1: Extract DM Graphs + Paths + Benchmark
 Run discrete Morse extraction on all clips, then benchmark. Each feature space has its own config with tuned Takens and persistence parameters:
 ```bash
-python -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline_intention.yaml
-python -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline_qpos.yaml
-python -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline_ekp.yaml
-python -m topo_mimic.benchmark.experiment_transitions configs/benchmark/experiment_transitions.yaml
+python -m topo_mimic.extraction.dm_pipeline configs/dmwk/dm_pipeline_intention.yaml
+python -m topo_mimic.extraction.dm_pipeline configs/dmwk/dm_pipeline_qpos.yaml
+python -m topo_mimic.extraction.dm_pipeline configs/dmwk/dm_pipeline_ekp.yaml
+python -m topo_mimic.experiment.transitions configs/benchmark/experiment_transitions.yaml
 ```
 With `use_dm_path: true` (default in all configs), this extracts both DM cycles (H1) and DM paths (H0: edge-disjoint paths between density minima). The benchmark runs all enabled methods (w2_dmc_*_kmeans, w2_dmp_*_kmeans, gw_dmc_int_kmeans, w2_full_kmeans, kpms_*).
 
 ### Step 2: Granularity Analysis
 Analyze how persistence threshold affects behavior discrimination and cluster redundancy across all feature spaces:
 ```bash
-python -m topo_mimic.granularity.main configs/dmwk/granularity_intention.yaml
-python -m topo_mimic.granularity.main configs/dmwk/granularity_qpos.yaml
-python -m topo_mimic.granularity.main configs/dmwk/granularity_ekp.yaml
+python -m topo_mimic.analysis.method_analysis.granularity.main configs/dmwk/granularity_intention.yaml
+python -m topo_mimic.analysis.method_analysis.granularity.main configs/dmwk/granularity_qpos.yaml
+python -m topo_mimic.analysis.method_analysis.granularity.main configs/dmwk/granularity_ekp.yaml
 ```
 
 This runs:
@@ -114,7 +114,7 @@ This runs:
 ### Step 3: Auto-assignments
 After running the benchmark experiment, label the clusters using the automatic label assignment pipeline:
 ```bash
-python -m topo_mimic.benchmark.labeling.main configs/benchmark/labeling.yaml
+python -m topo_mimic.labeling.main configs/benchmark/labeling.yaml
 ```
 
 Labels are auto-assigned from ground-truth overlap in `behavior_labels/rodent.csv`: each cluster member is labeled by a majority of its top-2 GT behaviors (`behav_a <-> behav_b`), with a grooming-as-singleton override, and each cluster gets the majority label across its members. No Wasserstein distance is computed. See [docs/autoassign.md](docs/autoassign.md) for the full algorithm and config knobs (dominance threshold, grooming override label). To launch the interactive GUI for manual overrides on top of the auto-assignments:
@@ -126,14 +126,14 @@ launch_gui: true
 ### Step 4: Analysis
 Generate variance heatmaps, cross-method comparison, and seed stability analysis:
 ```bash
-python -m topo_mimic.benchmark.analysis.main_transitions configs/benchmark/analysis_transitions.yaml
-python -m topo_mimic.benchmark.generate_results_table
+python -m topo_mimic.analysis.feature_analysis.main_transitions configs/benchmark/analysis_transitions.yaml
+python -m topo_mimic.analysis._tmp_tables
 ```
 
 ### Step 5: Baseline Scale Sweep (Fairness Check)
 Sweeps KPMS (κ × num_states) and Mapper (lens × n_intervals × feature_space), then reports which real transitions each variant discovers. Addresses "baseline under-tuned" reviewer concerns. Outputs `discovery_long.csv` under `outputs/scale_sweep/v1/cfg_{hash}/`.
 ```bash
-python3 -m topo_mimic.benchmark.scale_sweep configs/benchmark/scale_sweep.yaml
+python3 -m topo_mimic.analysis.scale_sweep configs/benchmark/scale_sweep.yaml
 ```
 CLI: `--phases 0,1,2,3,4,5`, `--max-fits N`, `--force`. Clip range is set in the yaml. If KPMS GPU fits OOM, prepend `JAX_PLATFORMS=cpu` to fall back to CPU (Mapper is CPU-only anyway).
 

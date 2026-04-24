@@ -2,7 +2,7 @@ output_dir: outputs/rear_cycles
 
 data:
   rodent_rollout_dir: data/rodent_ar.h5
-  xml_path: topo_mimic/dmwk/xml/rodent.xml
+  xml_path: topo_mimic/extraction/xml/rodent.xml
   stac_data_path: data/rodent_reference_clips.h5
 
 feature_space:

@@ -20,8 +20,8 @@ from tqdm import tqdm
 import imageio_ffmpeg
 from PIL import Image, ImageDraw, ImageFont
 
-from topo_mimic.dmwk.utils.load_utils import is_consolidated_format
-from topo_mimic.dmwk.utils.rendering import render_from_saved_rollout
+from topo_mimic.extraction.utils.load_utils import is_consolidated_format
+from topo_mimic.extraction.utils.rendering import render_from_saved_rollout
 
 
 GENERATED_KEY = "qpos_rollout"

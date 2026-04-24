@@ -48,13 +48,13 @@ import imageio_ffmpeg
 from tqdm import tqdm
 from scipy.spatial.distance import cdist
 
-from topo_mimic.dmwk.utils.load_utils import (
+from topo_mimic.extraction.utils.load_utils import (
     get_aggregate_data,
     get_clip_indices,
     load_rollout_from_source,
 )
-from topo_mimic.dmwk.utils.rendering import render_from_saved_rollout
-from topo_mimic.dmwk.skeletonization.skeletonization import extract_skeleton_pcd_dm
+from topo_mimic.extraction.utils.rendering import render_from_saved_rollout
+from topo_mimic.extraction.skeletonization.skeletonization import extract_skeleton_pcd_dm
 
 
 def plot_trial_intention_with_cycles(

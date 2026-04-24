@@ -29,35 +29,35 @@ _DM_PKG = str(REPO_ROOT / "PCD-Graph-Recon-DM")
 if _DM_PKG not in sys.path:
     sys.path.append(_DM_PKG)
 
-from topo_mimic.benchmark.analysis.behavior_parsing import (
+from topo_mimic.analysis.feature_analysis.behavior_parsing import (
     PRIMITIVE_BEHAVIORS,
     merge_rear_category,
     normalize_behavior_name,
 )
-from topo_mimic.benchmark.analysis.ground_truth import (
+from topo_mimic.analysis.feature_analysis.ground_truth import (
     BehaviorSegment,
     TurnDirection,
     load_behavior_segments,
 )
-from topo_mimic.dmwk.skeletonization.dm_path import (
+from topo_mimic.extraction.skeletonization.dm_path import (
     _find_persistent_minima,
     _parse_persistence_pairs,
     _parse_sorted_weights,
 )
-from topo_mimic.dmwk.skeletonization.remap import (
+from topo_mimic.extraction.skeletonization.remap import (
     parse_swr_remap,
     remap_cycle_to_original,
 )
-from topo_mimic.dmwk.skeletonization.skeletonization import (
+from topo_mimic.extraction.skeletonization.skeletonization import (
     extract_cycles_from_dm_graph,
     extract_skeleton_pcd_dm,
 )
-from topo_mimic.dmwk.utils.dataset_config import get_dataset_preset
-from topo_mimic.dmwk.utils.feature_transforms import (
+from topo_mimic.extraction.utils.dataset_config import get_dataset_preset
+from topo_mimic.extraction.utils.feature_transforms import (
     apply_dm_key_transform,
     get_hdf5_key_for_dm_key,
 )
-from topo_mimic.dmwk.utils.load_utils import get_aggregate_data
+from topo_mimic.extraction.utils.load_utils import get_aggregate_data
 
 
 # ───────────────────────────── Config ─────────────────────────────
@@ -508,7 +508,7 @@ def estimate_takens_params(
     clip_ids_sorted: list[int],
     max_clips: int = 40,
 ) -> tuple[int, int]:
-    from topo_mimic.dmwk.skeletonization.preprocess import estimate_delay_embedding_params
+    from topo_mimic.extraction.skeletonization.preprocess import estimate_delay_embedding_params
 
     sample_clips = clip_ids_sorted[:max_clips]
     hdf5_key = get_hdf5_key_for_dm_key(fs.dm_key)

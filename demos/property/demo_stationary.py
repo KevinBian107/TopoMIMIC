@@ -30,7 +30,7 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.resolve()))
 
-from topo_mimic.dmwk.utils.load_utils import load_rollout_from_source
+from topo_mimic.extraction.utils.load_utils import load_rollout_from_source
 
 
 NATURE_RC = {
@@ -73,7 +73,7 @@ class DistributionConfig:
 class Config:
     dm_results_dir: str = "outputs/dm_pipeline_intention"
     rodent_rollout_dir: str = "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
-    xml_path: str = "topo_mimic/dmwk/xml/rodent.xml"
+    xml_path: str = "topo_mimic/extraction/xml/rodent.xml"
     output_dir: str = "outputs/stationary_clips"
     num_clips: int = 500
     filmstrip_n_clips: int = 8

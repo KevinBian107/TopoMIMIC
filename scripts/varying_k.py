@@ -21,12 +21,12 @@ import imageio_ffmpeg
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from topo_mimic.dmwk.utils.load_utils import (
+from topo_mimic.extraction.utils.load_utils import (
     get_clip_indices,
     load_rollout_from_source,
 )
-from topo_mimic.dmwk.skeletonization.skeletonization import extract_skeleton_pcd_dm
-from topo_mimic.dmwk.utils.rendering import render_from_saved_rollout
+from topo_mimic.extraction.skeletonization.skeletonization import extract_skeleton_pcd_dm
+from topo_mimic.extraction.utils.rendering import render_from_saved_rollout
 
 
 @dataclass

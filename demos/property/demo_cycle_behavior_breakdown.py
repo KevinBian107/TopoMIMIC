@@ -36,7 +36,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from topo_mimic.benchmark.auto_label import (
+from topo_mimic.experiment.auto_label import (
     BEHAVIOR_LABELS,
     BehaviorSegment,
     load_behavior_segments,

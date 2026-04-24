@@ -61,7 +61,7 @@ class AnalysisConfig:
     output_dir: str = "outputs/dm_dim_reduction_effect"
     rodent_rollout_dir: str = "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
     split: str = "train"
-    xml_path: str = "topo_mimic/dmwk/xml/rodent.xml"
+    xml_path: str = "topo_mimic/extraction/xml/rodent.xml"
     stac_data_path: str = "data/rodent_reference_clips.h5"
     takens_m: int = 3
     takens_tau: int = 6
@@ -80,7 +80,7 @@ def load_config(config_path: str) -> AnalysisConfig:
 
 
 def load_data(config: AnalysisConfig) -> tuple[np.ndarray, list[int]]:
-    from topo_mimic.dmwk.dm_pipeline import DataConfig, load_data as dm_load_data
+    from topo_mimic.extraction.dm_pipeline import DataConfig, load_data as dm_load_data
 
     data_cfg = DataConfig(
         dm_key=config.dm_key,

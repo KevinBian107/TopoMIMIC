@@ -6,7 +6,7 @@ data:
   test_clips: [642, 742]
 
 keypoint:
-  xml_path: "topo_mimic/dmwk/xml/rodent.xml"
+  xml_path: "topo_mimic/extraction/xml/rodent.xml"
   stac_data_path: "data/rodent_reference_clips.h5"
 
 hyperparams:

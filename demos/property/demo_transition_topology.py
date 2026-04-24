@@ -50,19 +50,19 @@ from demos.property.demo_cycle_asymmetry import (
     VisualizationConfig,
     DMResult,
 )
-from topo_mimic.dmwk.skeletonization.rendering import (
+from topo_mimic.extraction.skeletonization.rendering import (
     _load_full_clip_frames,
     _ensure_rgb_uint8,
 )
-from topo_mimic.dmwk.skeletonization.remap import (
+from topo_mimic.extraction.skeletonization.remap import (
     parse_swr_remap,
     remap_cycle_to_original,
     split_cycle_into_segments,
 )
-from topo_mimic.dmwk.utils.feature_transforms import (
+from topo_mimic.extraction.utils.feature_transforms import (
     get_hdf5_key_for_dm_key,
 )
-from topo_mimic.dmwk.utils.load_utils import get_aggregate_data
+from topo_mimic.extraction.utils.load_utils import get_aggregate_data
 
 
 # ---------------------------------------------------------------------------

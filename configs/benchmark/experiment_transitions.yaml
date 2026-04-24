@@ -31,7 +31,7 @@ dm_sources:
 
 # Keypoint configuration (for kpms_keypoint method)
 keypoint:
-  xml_path: "topo_mimic/dmwk/xml/rodent.xml"
+  xml_path: "topo_mimic/extraction/xml/rodent.xml"
   stac_data_path: "data/rodent_reference_clips.h5"
 
 # Window extraction settings

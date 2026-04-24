@@ -159,7 +159,7 @@ extraction to cluster visualization.
 ### Key Modules Explained
 
 ```
-                    topo_mimic.dmwk
+                    topo_mimic.extraction
 ┌────────────────────────────────────────────────────────────────┐
 │                                                                │
 │   skeletonization/skeletonization.py                           │
@@ -580,12 +580,12 @@ readable (pkl) and human-annotatable (yaml) formats.
 │  └───────┬───────┘                                                      │
 │          │                                                              │
 │          ▼                                                              │
-│  ┌───────────────┐   topo_mimic/dmwk/utils/load_utils.py                │
+│  ┌───────────────┐   topo_mimic/extraction/utils/load_utils.py                │
 │  │  Data Loader  │   get_aggregate_data(), load_rollout_from_source()   │
 │  └───────┬───────┘                                                      │
 │          │                                                              │
 │          ▼                                                              │
-│  ┌───────────────┐   topo_mimic/dmwk/skeletonization/                   │
+│  ┌───────────────┐   topo_mimic/extraction/skeletonization/                   │
 │  │    Takens     │   preprocess.py                                      │
 │  │   Embedding   │   estimate_delay_embedding_params(), takens_points() │
 │  └───────┬───────┘                                                      │
@@ -598,20 +598,20 @@ readable (pkl) and human-annotatable (yaml) formats.
 │  └───────┬───────┘                                                      │
 │          │                                                              │
 │          ▼                                                              │
-│  ┌───────────────┐   topo_mimic/dmwk/skeletonization/                   │
+│  ┌───────────────┐   topo_mimic/extraction/skeletonization/                   │
 │  │  Cycle/Path   │   skeletonization.py, dm_path.py                     │
 │  │  Extraction   │   extract_skeleton_pcd_dm(), extract_dm_paths()      │
 │  └───────┬───────┘                                                      │
 │          │                                                              │
 │          ▼                                                              │
-│  ┌───────────────┐   topo_mimic/benchmark/experiment_transitions.py                 │
+│  ┌───────────────┐   topo_mimic/experiment/transitions.py                 │
 │  │  Clustering   │   compute_w2_distance_matrix()                       │
-│  │   Methods     │   topo_mimic/benchmark/methods.py                    │
-│  │               │   topo_mimic/benchmark/experiment_transitions.py     │
+│  │   Methods     │   topo_mimic/experiment/methods.py                    │
+│  │               │   topo_mimic/experiment/transitions.py     │
 │  └───────┬───────┘                                                      │
 │          │                                                              │
 │          ▼                                                              │
-│  ┌───────────────┐   topo_mimic/dmwk/skeletonization/                   │
+│  ┌───────────────┐   topo_mimic/extraction/skeletonization/                   │
 │  │ Visualization │   plotting.py, rendering.py                          │
 │  │  & Analysis   │                                                      │
 │  └───────────────┘                                                      │
@@ -629,26 +629,26 @@ the relevant source files.
 
 **Step 1: Run DM Extraction** (per feature space, or use automation script)
 ```bash
-python -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline_intention.yaml
-python -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline_qpos.yaml
-python -m topo_mimic.dmwk.dm_pipeline configs/dmwk/dm_pipeline_ekp.yaml
+python -m topo_mimic.extraction.dm_pipeline configs/dmwk/dm_pipeline_intention.yaml
+python -m topo_mimic.extraction.dm_pipeline configs/dmwk/dm_pipeline_qpos.yaml
+python -m topo_mimic.extraction.dm_pipeline configs/dmwk/dm_pipeline_ekp.yaml
 # Or: bash bash_scripts/run_dm_pipeline.sh
 ```
 
 **Step 2: Run Benchmark Experiments**
 ```bash
-python -m topo_mimic.benchmark.experiment_transitions configs/benchmark/experiment_transitions.yaml
+python -m topo_mimic.experiment.transitions configs/benchmark/experiment_transitions.yaml
 # Or: bash bash_scripts/run_benchmark.sh
 ```
 
 **Step 3: Run Analysis**
 ```bash
-python -m topo_mimic.benchmark.analysis.main_transitions configs/benchmark/analysis_transitions.yaml
+python -m topo_mimic.analysis.feature_analysis.main_transitions configs/benchmark/analysis_transitions.yaml
 ```
 
 **Step 4: Run Granularity Analysis** (Optional)
 ```bash
-python -m topo_mimic.granularity.main configs/dmwk/granularity.yaml
+python -m topo_mimic.analysis.method_analysis.granularity.main configs/dmwk/granularity.yaml
 # Or: bash bash_scripts/run_granularity.sh
 ```
 

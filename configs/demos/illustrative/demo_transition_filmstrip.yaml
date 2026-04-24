@@ -4,7 +4,7 @@ behavior_labels_csv: "behavior_labels/rodent_labels.csv"
 output_format: pdf
 data:
   rollout_path: "data/rodent_ar.h5"
-  xml_path: "topo_mimic/dmwk/xml/rodent.xml"
+  xml_path: "topo_mimic/extraction/xml/rodent.xml"
 filmstrip:
   n_poses: 5
   camera_elevation: -40

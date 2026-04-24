@@ -33,20 +33,20 @@ import h5py
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from topo_mimic.benchmark.analysis.data_loading import (
+from topo_mimic.analysis.feature_analysis.data_loading import (
     load_cluster_dict,
     load_labels_yaml,
 )
-from topo_mimic.benchmark.analysis.ground_truth import (
+from topo_mimic.analysis.feature_analysis.ground_truth import (
     find_all_transitions,
     TransitionSegment,
 )
-from topo_mimic.benchmark.analysis.behavior_parsing import (
+from topo_mimic.analysis.feature_analysis.behavior_parsing import (
     parse_cluster_label,
     parse_turn_direction,
     TurnDirection,
 )
-from topo_mimic.benchmark.analysis.dtw_visualization import compute_dtw_with_path
+from topo_mimic.analysis.feature_analysis.dtw_visualization import compute_dtw_with_path
 
 
 @dataclass
@@ -57,7 +57,7 @@ class DTWDemoConfig:
     behavior_labels_csv: str = "behavior_labels.csv"
     data_path: str = "data/rodent_ar.h5"
     data_key: str = "qpos_rollout"
-    xml_path: str = "topo_mimic/dmwk/xml/rodent.xml"
+    xml_path: str = "topo_mimic/extraction/xml/rodent.xml"
     dataset: str = "rodent"
     output_dir: str = "outputs/dtw_metric"
     skip_root_dims: int = 7

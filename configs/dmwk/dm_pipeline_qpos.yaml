@@ -8,7 +8,7 @@ data:
   rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
   split: "all"
   pca_dims: 10  # Optional PCA pre-reduction before Takens (useful for high-D spaces)
-  xml_path: "topo_mimic/dmwk/xml/rodent.xml"  # Required for ekp transform
+  xml_path: "topo_mimic/extraction/xml/rodent.xml"  # Required for ekp transform
   stac_data_path: "data/rodent_reference_clips.h5"  # Required for ekp transform
 
 # Takens delay embedding parameters

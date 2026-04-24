@@ -35,11 +35,11 @@ import h5py
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from topo_mimic.benchmark.analysis.data_loading import (
+from topo_mimic.analysis.feature_analysis.data_loading import (
     load_cluster_dict,
     load_labels_yaml,
 )
-from topo_mimic.benchmark.analysis.behavior_parsing import (
+from topo_mimic.analysis.feature_analysis.behavior_parsing import (
     parse_cluster_label,
 )
 
@@ -51,7 +51,7 @@ class ClusterFilmstripConfig:
     seed: int = 0
     data_path: str = "data/rodent_ar.h5"
     data_key: str = "qpos_rollout"
-    xml_path: str = "topo_mimic/dmwk/xml/rodent.xml"
+    xml_path: str = "topo_mimic/extraction/xml/rodent.xml"
     dataset: str = "rodent"
     output_dir: str = "outputs/cluster_filmstrips"
     k_samples: int = 5
