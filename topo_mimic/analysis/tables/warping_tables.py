@@ -37,7 +37,7 @@ from topo_mimic.analysis.feature_analysis.metrics import (
 EXPERIMENT_DIR = "outputs/experiment/transitions"
 DATA_PATH = "data/rodent_ar.h5"
 DATA_KEY = "qpos_rollout"
-BEHAVIOR_LABELS_CSV = "behavior_labels.csv"
+BEHAVIOR_LABELS_CSV = "behavior_labels/rodent_labels.csv"
 OUTPUT_DIR = "outputs/analysis/tables/warping_analysis"
 
 METHOD_ORDER = [
