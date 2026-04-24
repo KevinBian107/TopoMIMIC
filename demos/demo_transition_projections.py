@@ -746,11 +746,6 @@ def render_transition_filmstrip_figure(
                 tint_start=tint_start, tint_end=tint_end,
             )
             ax.imshow(strip)
-            ax.text(
-                0.02, 0.98, f"clip {cid} · {len(verts_arr)} verts",
-                transform=ax.transAxes, ha="left", va="top",
-                fontsize=6.5, color="#555",
-            )
 
     from matplotlib.patches import Patch
     handles = [
