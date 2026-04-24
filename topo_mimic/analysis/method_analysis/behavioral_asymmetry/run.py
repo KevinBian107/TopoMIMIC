@@ -282,6 +282,8 @@ def paired_violin_panel(
 
     trans = ax.get_xaxis_transform()
     for xc, name in zip(group_centers, group_names):
+        if not name:
+            continue
         ax.text(xc, -0.22, name, transform=trans,
                 ha="center", va="top", fontsize=8, fontweight="bold",
                 color="#222")
@@ -307,13 +309,13 @@ def render_figure_for_space(
     sym_all = df[df["symmetry"] == "symmetric"]
     asym_all = df[df["symmetry"] == "asymmetric"]
     agg_abs = [(
-        "All A→B→A",
+        "",
         boot(sym_all, "cycle_count_abs"),
         boot(asym_all, "cycle_count_abs"),
         len(sym_all), len(asym_all),
     )]
     agg_norm = [(
-        "All A→B→A",
+        "",
         boot(sym_all, "cycle_count_norm"),
         boot(asym_all, "cycle_count_norm"),
         len(sym_all), len(asym_all),
@@ -405,7 +407,7 @@ def render_combined_normalized_figure(
         s_all = df[df["symmetry"] == "symmetric"]
         a_all = df[df["symmetry"] == "asymmetric"]
         groups.append((
-            "All A→B→A",
+            "",
             boot(s_all, "cycle_count_norm"),
             boot(a_all, "cycle_count_norm"),
             len(s_all), len(a_all),
@@ -477,7 +479,7 @@ def render_combined_aggregated_figure(
         s_all = df[df["symmetry"] == "symmetric"]
         a_all = df[df["symmetry"] == "asymmetric"]
         per_space_group[fs] = [(
-            "All A→B→A",
+            "",
             boot(s_all, "cycle_count_norm"),
             boot(a_all, "cycle_count_norm"),
             len(s_all), len(a_all),
