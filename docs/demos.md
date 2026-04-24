@@ -44,6 +44,23 @@ python -m demos.illustrative.demo_transition_filmstrip --config configs/demos/il
 ```
 Renders filmstrip visualizations of behavioral transitions captured by DM paths and cycles.
 
+### Feature-Space Projection Comparison (real vs. DM)
+```bash
+python -m demos.illustrative.demo_feature_space_projections
+python -m demos.illustrative.demo_feature_space_projections --config configs/demos/illustrative/demo_feature_space_projections.yaml
+```
+Six Nature-style figures comparing real vs. DM-selected frames under the
+three feature spaces (intention, qpos, ekp) and three projections (PCA,
+UMAP, t-SNE). Each figure is a 2-row × 3-column grid — top row is real
+frames (stride-subsampled from all 842 clips), bottom row is frames
+selected by the named DM method (DMC or DMP) loaded from
+`outputs/benchmark_experiment_transitions/w2_{dm}_{fs}_kmeans/results.pkl`.
+Points are colored by the GT transition each frame belongs to (via
+`find_all_transitions(window_frames=100)`); frames outside any transition
+span are grey. A single horizontal legend sits below the grid. File
+names: `proj_{dmc|dmp}_{pca|umap|tsne}.{png,pdf}` under
+`outputs/demos/feature_space_projections/`.
+
 ### DTW Metric Visualization
 ```bash
 python -m demos.illustrative.demo_dtw_metric
