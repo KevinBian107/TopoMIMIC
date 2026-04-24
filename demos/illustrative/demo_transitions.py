@@ -7,8 +7,8 @@ Each embedding shows up to 3 rows: GT transitions, DM cycles, DM paths —
 all colored by behavior transition labels looked up from the GT CSV.
 
 Usage:
-    python demos/demo_rodent_transitions.py
-    python demos/demo_rodent_transitions.py --config configs/demos/demo_rodent_transitions.yaml
+    python demos/demo_transitions.py
+    python demos/demo_transitions.py --config configs/demos/illustrative/demo_transitions.yaml
 """
 
 import os
@@ -1204,7 +1204,7 @@ def run_skeleton_analysis(
             )
 
         if qpos_clip is not None:
-            from demos.transition_demos.skeleton_filmstrip import (
+            from demos.illustrative.skeleton_filmstrip import (
                 plot_skeleton_filmstrip,
                 FilmstripSkeletonConfig,
             )
@@ -1582,7 +1582,7 @@ def main():
     parser = argparse.ArgumentParser(description="Rodent transition demo")
     parser.add_argument(
         "--config",
-        default="configs/demos/transition_demos/demo_rodent_transitions.yaml",
+        default="configs/demos/illustrative/demo_transitions.yaml",
         help="Path to demo config YAML",
     )
     args = parser.parse_args()

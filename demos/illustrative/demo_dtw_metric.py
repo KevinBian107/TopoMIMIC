@@ -92,7 +92,7 @@ def _render_filmstrip(
     tint_start: np.ndarray | None = None,
     tint_end: np.ndarray | None = None,
 ) -> np.ndarray:
-    from demos.transition_demos.skeleton_filmstrip import render_filmstrip_for_frames
+    from demos.illustrative.skeleton_filmstrip import render_filmstrip_for_frames
     return render_filmstrip_for_frames(
         qposes, frame_indices, xml_path, dataset,
         n_poses=n_poses, gap_fraction=gap_fraction,

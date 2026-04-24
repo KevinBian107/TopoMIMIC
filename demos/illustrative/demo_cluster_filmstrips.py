@@ -78,7 +78,7 @@ def _render_filmstrip(
     n_poses: int = 6,
     gap_fraction: float = 0.25,
 ) -> np.ndarray:
-    from demos.transition_demos.skeleton_filmstrip import render_filmstrip_for_frames
+    from demos.illustrative.skeleton_filmstrip import render_filmstrip_for_frames
     return render_filmstrip_for_frames(
         qposes, frame_indices, xml_path, dataset,
         n_poses=n_poses, gap_fraction=gap_fraction,
