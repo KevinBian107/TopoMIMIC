@@ -49,6 +49,10 @@ import pandas as pd
 import yaml
 
 from topo_mimic.analysis.feature_analysis.ground_truth import find_all_transitions
+from topo_mimic.extraction.skeletonization.dm_path import (
+    _parse_persistence_pairs,
+    _parse_sorted_weights,
+)
 from topo_mimic.extraction.utils.feature_transforms import (
     apply_dm_key_transform,
     get_hdf5_key_for_dm_key,
@@ -291,6 +295,62 @@ def _frame_label(
     return ""
 
 
+_PERS_CACHE: dict[tuple[str, int], float] = {}
+
+
+def clip_minima_persistence_score(extraction_dir: str, clip_id: int) -> float:
+    """Score a clip by how persistent its top-2 density minima are.
+
+    Reads the per-clip persistence pairs DiMoSC emits; ranks type-0 pairs
+    by |persistence| descending; takes the lower vertex (min-side) of each
+    pair as a minimum, deduped. Returns min(persistence of top-1 minimum,
+    persistence of top-2 minimum) -- the "limiting" persistence. Higher =
+    the clip has a clearer two-basin structure; paths between these minima
+    are more canonical A<->B transition skeletons.
+
+    inf values (immortal generators) are clipped to a large finite value
+    so they don't dominate min(); practically this only affects the top
+    minimum of each clip, which under DiMoSC's convention is immortal.
+    """
+    key = (extraction_dir, int(clip_id))
+    if key in _PERS_CACHE:
+        return _PERS_CACHE[key]
+    clip_dir = Path(extraction_dir) / "clips" / f"clip_{clip_id}"
+    pairs_path = clip_dir / "edge_for_morse_only.txt"
+    weights_path = clip_dir / "sorted-weights.txt"
+    if not pairs_path.exists() or not weights_path.exists():
+        _PERS_CACHE[key] = 0.0
+        return 0.0
+    try:
+        pairs = _parse_persistence_pairs(str(clip_dir))
+        weights = _parse_sorted_weights(str(clip_dir))
+    except Exception:
+        _PERS_CACHE[key] = 0.0
+        return 0.0
+    type0 = [(v0, v1, pers) for v0, v1, t, pers in pairs if t == 0]
+    type0.sort(key=lambda x: float("inf") if x[2] == float("inf") else abs(x[2]),
+               reverse=True)
+    seen: set[int] = set()
+    minima_pers: list[float] = []
+    for v0, v1, pers in type0:
+        w0 = weights.get(v0, float("inf"))
+        w1 = weights.get(v1, float("inf"))
+        min_v = v0 if w0 < w1 else v1
+        if min_v in seen:
+            continue
+        seen.add(min_v)
+        p = 1e9 if pers == float("inf") else abs(pers)
+        minima_pers.append(p)
+        if len(minima_pers) >= 2:
+            break
+    if len(minima_pers) < 2:
+        _PERS_CACHE[key] = 0.0
+        return 0.0
+    score = min(minima_pers[0], minima_pers[1])
+    _PERS_CACHE[key] = score
+    return score
+
+
 def _frame_direction(
     dir_segs: list[tuple[str, int, int]], frame: int,
 ) -> str:
@@ -307,15 +367,21 @@ def select_top_k_paths_with_direction(
     direction_segments: dict[int, list[tuple[str, int, int]]],
     A: str, B: str,
     dir_A: str, dir_B: str,
+    extraction_dir: str | None = None,
 ) -> list[tuple[int, list[int], str, str]]:
-    """Variant-aware path filter. Requires one endpoint to fall inside an
-    A-segment whose direction overlay is dir_A, and the other endpoint to
-    fall inside a B-segment whose direction overlay is dir_B.
+    """Variant-aware path filter, ranked by minima persistence (same as
+    ``select_top_k_paths``). Requires one endpoint to fall inside an
+    A-segment with direction ``dir_A`` and the other inside a B-segment
+    with direction ``dir_B``.
     """
-    flat: list[tuple[int, list[int], str, str, int]] = []
+    flat: list[tuple[float, int, list[int], str, str]] = []
     for cid, paths in paths_by_clip.items():
         beh_segs = segments.get(cid, [])
         dir_segs = direction_segments.get(cid, [])
+        pers_score = (
+            clip_minima_persistence_score(extraction_dir, cid)
+            if extraction_dir else float(len(paths))
+        )
         for path in paths:
             verts = list(path)
             if len(verts) < 2:
@@ -327,9 +393,10 @@ def select_top_k_paths_with_direction(
             dN = _frame_direction(dir_segs, fN) or "Straight"
             endpoints = {(lab0, d0), (labN, dN)}
             if endpoints == {(A, dir_A), (B, dir_B)}:
-                flat.append((cid, verts, lab0, labN, len(verts)))
-    flat.sort(key=lambda t: -t[4])
-    return [(c, v, fl, ll) for c, v, fl, ll, _ in flat[:k]]
+                score = pers_score if extraction_dir else float(len(verts))
+                flat.append((score, cid, verts, lab0, labN))
+    flat.sort(key=lambda t: -t[0])
+    return [(c, v, fl, ll) for _, c, v, fl, ll in flat[:k]]
 
 
 def select_top_k_paths(
@@ -337,19 +404,25 @@ def select_top_k_paths(
     k: int,
     segments: dict[int, list[tuple[str, int, int]]],
     A: str, B: str,
+    extraction_dir: str | None = None,
 ) -> list[tuple[int, list[int], str, str]]:
-    """Keep paths whose endpoint frames fall inside A-segment and B-segment.
+    """Keep paths whose endpoint frames fall inside A-segment and B-segment,
+    ranked by the persistence of the clip's top-2 density minima (descending).
 
-    A path's endpoints in all_path_dm are the two density minima that path
-    connects; requiring their GT labels to be {A, B} selects paths that
-    connect the two behavior basins we care about.
-
-    Returns (clip_id, vertices, label_of_first_endpoint, label_of_last_endpoint)
-    sorted by length desc, top-K.
+    If ``extraction_dir`` is given, paths are scored by
+    ``clip_minima_persistence_score(extraction_dir, clip_id)``: the min of
+    the two most persistent minima for that clip. Among clips with matching
+    {A, B} endpoint labels, paths from the clips with the deepest minima
+    come first.
+    If ``extraction_dir`` is None, falls back to ranking by path length.
     """
-    flat: list[tuple[int, list[int], str, str, int]] = []
+    flat: list[tuple[float, int, list[int], str, str]] = []
     for cid, paths in paths_by_clip.items():
         segs = segments.get(cid, [])
+        pers_score = (
+            clip_minima_persistence_score(extraction_dir, cid)
+            if extraction_dir else float(len(paths))
+        )
         for path in paths:
             verts = list(path)
             if len(verts) < 2:
@@ -358,9 +431,10 @@ def select_top_k_paths(
             last_lab  = _frame_label(segs, int(verts[-1]))
             if {first_lab, last_lab} != {A, B}:
                 continue
-            flat.append((cid, verts, first_lab, last_lab, len(verts)))
-    flat.sort(key=lambda t: -t[4])
-    return [(c, v, fl, ll) for c, v, fl, ll, _ in flat[:k]]
+            score = pers_score if extraction_dir else float(len(verts))
+            flat.append((score, cid, verts, first_lab, last_lab))
+    flat.sort(key=lambda t: -t[0])
+    return [(c, v, fl, ll) for _, c, v, fl, ll in flat[:k]]
 
 
 def project_together(
@@ -1032,6 +1106,7 @@ def main(config_path: str | None = None) -> None:
             paths_by_clip = load_paths_for_clips(extraction_dir, dominated)
             top_paths = select_top_k_paths(
                 paths_by_clip, cfg.k_paths, segments, A, B,
+                extraction_dir=extraction_dir,
             )
             n_paths_found = len(top_paths)
             print(f"  {n_paths_found} DM paths chosen "
@@ -1157,7 +1232,7 @@ def main(config_path: str | None = None) -> None:
             paths_by_clip = load_paths_for_clips(extraction_dir, clips_in_data)
             top_paths = select_top_k_paths_with_direction(
                 paths_by_clip, cfg.k_paths, segments, direction_segments,
-                A, B, dA, dB,
+                A, B, dA, dB, extraction_dir=extraction_dir,
             )
             n_paths_found = len(top_paths)
 
