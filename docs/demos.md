@@ -60,6 +60,23 @@ span are grey. A single horizontal legend sits below the grid. File
 names: `proj_{dmc|dmp}_{pca|umap|tsne}.{png,pdf}` under
 `outputs/demos/feature_space_projections/`.
 
+### Clip-Level Projection Comparison
+```bash
+python -m demos.illustrative.demo_clip_projections
+python -m demos.illustrative.demo_clip_projections --config configs/demos/illustrative/demo_clip_projections.yaml
+```
+Parallel to `demo_feature_space_projections` but aggregated one level up:
+each real clip becomes a single flattened `(500·D,)`-dim vector (842
+points per feature space), and each DM cluster member becomes a single
+flattened `(K·D,)`-dim vector (with `K = dm_resample_k`, default 100).
+Six Nature-style figures, 2 rows × 3 columns each — top row real clips,
+bottom row DM paths/cycles; columns = intention / qpos / ekp; file
+names `proj_clip_{dmc|dmp}_{pca|umap|tsne}.{png,pdf}` under
+`outputs/demos/clip_level_projections/`. Clip color = dominant GT
+transition in the clip (longest `(from, to)` span); DM member color =
+the cluster's auto-label with the trailing direction token stripped.
+Rows use separate projections (input dims differ: 500·D vs K·D).
+
 ### DTW Metric Visualization
 ```bash
 python -m demos.illustrative.demo_dtw_metric
