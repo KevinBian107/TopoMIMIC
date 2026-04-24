@@ -84,6 +84,8 @@ class DemoConfig:
     seed: int = 0
     majority_threshold: float = 0.5
     min_per_behavior_fraction: float = 0.15
+    min_clips_per_transition: int = 10
+    min_clips_per_direction_variant: int = 10
     n_transitions: int = 4
     k_paths: int = 2
     real_subsample_n: int = 4000
@@ -124,6 +126,55 @@ def load_feature_data(cfg: DemoConfig, feature_space: str) -> np.ndarray:
         raw, feature_space,
         xml_path=cfg.xml_path, stac_data_path=cfg.stac_data_path,
     )
+
+
+def load_direction_segments(csv_path: str) -> dict[int, list[tuple[str, int, int]]]:
+    """Return {clip_id: [(direction, start_frame, end_frame), ...]} (exclusive end).
+
+    Direction labels are overlays (Left, Right, Straight) that coexist with
+    behavior labels; a frame may have one of each.
+    """
+    DIRS = {"Left", "Right", "Straight"}
+    df = pd.read_csv(csv_path)
+    df = df[df["Label"].isin(DIRS)]
+    out: dict[int, list[tuple[str, int, int]]] = defaultdict(list)
+    for _, r in df.iterrows():
+        cid = parse_clip_id(r["Video"])
+        if cid is None:
+            continue
+        out[cid].append((r["Label"], int(r["Start_Frame"]), int(r["End_Frame"]) + 1))
+    return dict(out)
+
+
+def dominant_direction_for_behavior(
+    behavior_segs: list[tuple[str, int, int]],
+    direction_segs: list[tuple[str, int, int]],
+    behavior: str,
+    n_frames: int,
+) -> str:
+    """Return the direction that overlaps the majority of `behavior`-labeled
+    frames in the clip, or '' if behavior never appears."""
+    counts = {"Left": 0, "Right": 0, "Straight": 0}
+    any_beh_frames = False
+    for lab, s, e in behavior_segs:
+        if lab != behavior:
+            continue
+        any_beh_frames = True
+        lo, hi = max(s, 0), min(e, n_frames)
+        if lo >= hi:
+            continue
+        for dlab, ds, de in direction_segs:
+            if dlab not in counts:
+                continue
+            overlap = max(0, min(hi, de) - max(lo, ds))
+            if overlap > 0:
+                counts[dlab] += overlap
+    if not any_beh_frames:
+        return ""
+    total = sum(counts.values())
+    if total == 0:
+        return "Straight"  # behavior present but no direction overlay -> default
+    return max(counts, key=counts.get)
 
 
 def load_behavior_segments(csv_path: str) -> dict[int, list[tuple[str, int, int]]]:
@@ -240,6 +291,47 @@ def _frame_label(
     return ""
 
 
+def _frame_direction(
+    dir_segs: list[tuple[str, int, int]], frame: int,
+) -> str:
+    for lab, s, e in dir_segs:
+        if s <= frame < e:
+            return lab
+    return ""
+
+
+def select_top_k_paths_with_direction(
+    paths_by_clip: dict[int, list[list[int]]],
+    k: int,
+    segments: dict[int, list[tuple[str, int, int]]],
+    direction_segments: dict[int, list[tuple[str, int, int]]],
+    A: str, B: str,
+    dir_A: str, dir_B: str,
+) -> list[tuple[int, list[int], str, str]]:
+    """Variant-aware path filter. Requires one endpoint to fall inside an
+    A-segment whose direction overlay is dir_A, and the other endpoint to
+    fall inside a B-segment whose direction overlay is dir_B.
+    """
+    flat: list[tuple[int, list[int], str, str, int]] = []
+    for cid, paths in paths_by_clip.items():
+        beh_segs = segments.get(cid, [])
+        dir_segs = direction_segments.get(cid, [])
+        for path in paths:
+            verts = list(path)
+            if len(verts) < 2:
+                continue
+            f0, fN = int(verts[0]), int(verts[-1])
+            lab0 = _frame_label(beh_segs, f0)
+            labN = _frame_label(beh_segs, fN)
+            d0 = _frame_direction(dir_segs, f0) or "Straight"
+            dN = _frame_direction(dir_segs, fN) or "Straight"
+            endpoints = {(lab0, d0), (labN, dN)}
+            if endpoints == {(A, dir_A), (B, dir_B)}:
+                flat.append((cid, verts, lab0, labN, len(verts)))
+    flat.sort(key=lambda t: -t[4])
+    return [(c, v, fl, ll) for c, v, fl, ll, _ in flat[:k]]
+
+
 def select_top_k_paths(
     paths_by_clip: dict[int, list[list[int]]],
     k: int,
@@ -336,27 +428,36 @@ def nature_axis(ax):
     ax.set_yticks([])
 
 
-def scatter_real(ax, coords: np.ndarray, labels: np.ndarray, A: str, B: str,
-                 grey_background: bool = False):
+def scatter_real(
+    ax, coords: np.ndarray, labels: np.ndarray, A: str, B: str,
+    grey_background: bool = False,
+    alpha_ab: float = 1.0,
+    alpha_other: float = 1.0,
+    size_ab: float = 2.2,
+    size_other: float = 1.8,
+):
     mask_ok = ~np.isnan(coords[:, 0])
     coords = coords[mask_ok]
     labels = labels[mask_ok]
+    grey = (OTHER_COLOR[0], OTHER_COLOR[1], OTHER_COLOR[2], OTHER_COLOR[3] * alpha_other)
     if grey_background:
-        ax.scatter(coords[:, 0], coords[:, 1], s=2.0,
-                   c=[OTHER_COLOR], linewidths=0, rasterized=True, zorder=1)
+        ax.scatter(coords[:, 0], coords[:, 1], s=size_other * (alpha_other + 0.2),
+                   c=[grey], linewidths=0, rasterized=True, zorder=1)
         return
     m_other = labels == ""
     if m_other.any():
-        ax.scatter(coords[m_other, 0], coords[m_other, 1], s=1.8,
-                   c=[OTHER_COLOR], linewidths=0, rasterized=True, zorder=1)
+        ax.scatter(coords[m_other, 0], coords[m_other, 1], s=size_other,
+                   c=[grey], linewidths=0, rasterized=True, zorder=1)
     m_a = labels == A
     if m_a.any():
-        ax.scatter(coords[m_a, 0], coords[m_a, 1], s=2.2,
-                   c=A_COLOR, linewidths=0, rasterized=True, zorder=2)
+        ax.scatter(coords[m_a, 0], coords[m_a, 1], s=size_ab,
+                   c=A_COLOR, alpha=alpha_ab,
+                   linewidths=0, rasterized=True, zorder=2)
     m_b = labels == B
     if m_b.any():
-        ax.scatter(coords[m_b, 0], coords[m_b, 1], s=2.2,
-                   c=B_COLOR, linewidths=0, rasterized=True, zorder=2)
+        ax.scatter(coords[m_b, 0], coords[m_b, 1], s=size_ab,
+                   c=B_COLOR, alpha=alpha_ab,
+                   linewidths=0, rasterized=True, zorder=2)
 
 
 def overlay_path(ax, path_coords: np.ndarray, color: str, label: str | None = None):
@@ -457,6 +558,109 @@ def render_transition_row(
         f"{A} ↔ {B}\n(n clips={n_clips}, paths found={n_paths_found})",
         fontsize=9, fontweight="bold", labelpad=10,
     )
+
+
+def render_direction_panel_figure(
+    projection: str,
+    grid_data: dict,  # {fs: list[variant_row_dict]}
+    feature_spaces: list[str],
+    variant_specs: list[tuple[str, str, str, str, list[int]]],
+    cfg: DemoConfig,
+    out_path: Path,
+):
+    """Direction-conditioned panel. Rows = feature spaces, cols = kept
+    direction variants (A-dA <-> B-dB) across all transitions.
+    """
+    plt.rcParams.update({
+        "font.family": "sans-serif",
+        "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
+        "font.size": 8,
+    })
+
+    n_rows = len(feature_spaces)
+    n_cols = len(variant_specs)
+    if n_cols == 0:
+        print(f"  no direction variants survived filter; skipping {out_path}")
+        return
+
+    fig, axes = plt.subplots(
+        n_rows, n_cols,
+        figsize=(2.8 * n_cols, 2.9 * n_rows),
+        squeeze=False,
+    )
+
+    for col_idx, (A, B, dA, dB, cids) in enumerate(variant_specs):
+        axes[0, col_idx].set_title(
+            f"{A}-{dA}\n↔\n{B}-{dB}",
+            fontsize=9, fontweight="bold", pad=6,
+        )
+
+    for row_idx, fs in enumerate(feature_spaces):
+        axes[row_idx, 0].set_ylabel(
+            fs, fontsize=10, fontweight="bold", labelpad=12,
+        )
+        rows = grid_data.get(fs, [])
+        for col_idx, spec in enumerate(variant_specs):
+            A, B, dA, dB, _cids = spec
+            ax = axes[row_idx, col_idx]
+            nature_axis(ax)
+            if col_idx >= len(rows):
+                continue
+            row = rows[col_idx]
+            if row["real_coords"].shape[0] == 0:
+                ax.text(0.5, 0.5, "no data", ha="center", va="center",
+                        transform=ax.transAxes, fontsize=8, color="#777")
+                continue
+            scatter_real(
+                ax, row["real_coords"], row["real_labels"], A, B,
+                grey_background=False,
+                alpha_ab=0.38, alpha_other=0.35,
+                size_ab=2.0, size_other=1.5,
+            )
+            if row["path_coords"]:
+                import matplotlib.patheffects as PE
+                pc = row["path_coords"][0]
+                if pc.size > 0:
+                    ax.plot(
+                        pc[:, 0], pc[:, 1],
+                        linestyle=(0, (5, 3)),
+                        color="#0a0a0a", linewidth=1.8, alpha=1.0, zorder=5,
+                        path_effects=[PE.withStroke(linewidth=3.8, foreground="white")],
+                    )
+                    overlay_path_endpoints(
+                        ax, pc,
+                        row["paths_endpoint_labels"][0][0],
+                        row["paths_endpoint_labels"][0][1],
+                        A, B, star_size=180,
+                    )
+            ax.annotate(
+                f"n clips={row['n_clips']}, paths={row['n_paths_found']}",
+                xy=(0.02, 0.97), xycoords="axes fraction",
+                ha="left", va="top", fontsize=6.5, color="#555",
+            )
+
+    from matplotlib.patches import Patch
+    from matplotlib.lines import Line2D
+    handles = [
+        Patch(facecolor=A_COLOR, edgecolor="none", label="behavior A"),
+        Patch(facecolor=B_COLOR, edgecolor="none", label="behavior B"),
+        Patch(facecolor=OTHER_COLOR, edgecolor="none", label="other"),
+        Line2D([0], [0], marker="*", color="w", markerfacecolor="gold",
+               markeredgecolor="#222", markersize=10,
+               label="path endpoint (minimum)"),
+    ]
+    fig.legend(handles=handles, loc="lower center", ncol=len(handles),
+               frameon=False, fontsize=9, bbox_to_anchor=(0.5, -0.005))
+
+    fig.suptitle(
+        f"Transition x direction-variant panel — {PROJECTION_DISPLAY[projection]}",
+        fontsize=12, fontweight="bold", y=1.0,
+    )
+    fig.tight_layout(rect=(0, 0.03, 1, 0.95))
+    plt.savefig(out_path, bbox_inches="tight", dpi=220)
+    plt.savefig(out_path.with_suffix(".png"), bbox_inches="tight", dpi=220)
+    plt.close(fig)
+    print(f"  wrote {out_path} (+.png)")
 
 
 def _hex_to_rgb01(hex_str: str) -> np.ndarray:
@@ -612,19 +816,28 @@ def render_combined_panel_figure(
                 ax.text(0.5, 0.5, "no data", ha="center", va="center",
                         transform=ax.transAxes, fontsize=8, color="#777")
                 continue
-            scatter_real(ax, row["real_coords"], row["real_labels"], A, B,
-                         grey_background=False)
-            # Show just the single top path, rendered as a grey dashed line.
+            scatter_real(
+                ax, row["real_coords"], row["real_labels"], A, B,
+                grey_background=False,
+                alpha_ab=0.38, alpha_other=0.35,
+                size_ab=2.0, size_other=1.5,
+            )
+            # Single top path: dark dashed line with a white halo for contrast.
             if row["path_coords"]:
                 pc = row["path_coords"][0]
                 if pc.size > 0:
-                    ax.plot(pc[:, 0], pc[:, 1], linestyle="--",
-                            color="#555", linewidth=1.1, alpha=0.95, zorder=3)
+                    import matplotlib.patheffects as PE
+                    ax.plot(
+                        pc[:, 0], pc[:, 1],
+                        linestyle=(0, (5, 3)),
+                        color="#0a0a0a", linewidth=1.8, alpha=1.0, zorder=5,
+                        path_effects=[PE.withStroke(linewidth=3.8, foreground="white")],
+                    )
                     overlay_path_endpoints(
                         ax, pc,
                         row["paths_endpoint_labels"][0][0],
                         row["paths_endpoint_labels"][0][1],
-                        A, B, star_size=180,
+                        A, B, star_size=200,
                     )
             ax.annotate(
                 f"n clips={row['n_clips']}, paths={row['n_paths_found']}",
@@ -732,6 +945,7 @@ def main(config_path: str | None = None) -> None:
 
     print("Loading behavior segments...")
     segments = load_behavior_segments(cfg.behavior_labels_csv)
+    direction_segments = load_direction_segments(cfg.behavior_labels_csv)
     print(f"  {len(segments)} clips with GT labels")
 
     print("Ranking transitions...")
@@ -740,8 +954,58 @@ def main(config_path: str | None = None) -> None:
     )
     print(f"  top {cfg.n_transitions}: {transitions}")
 
-    # Accumulate per-projection panel data across all feature spaces.
+    # Drop transitions with too few dominated clips. We do this on the
+    # first feature space (intention); support is nearly identical across
+    # the three, so a single check is representative.
+    kept_transitions: list[tuple[str, str]] = []
+    for A, B in transitions:
+        # A lightweight check: dominance is a property of the GT CSV, not
+        # the feature space, so any T would give the same answer. Use
+        # T=500 (rodent clip length) as the representative.
+        dom_preview = find_dominated_clips(
+            segments, A, B, 500,
+            cfg.majority_threshold, cfg.min_per_behavior_fraction,
+            set(cfg.skip_clips), 842,
+        )
+        if len(dom_preview) < cfg.min_clips_per_transition:
+            print(f"  dropping {A}<->{B}: only {len(dom_preview)} clips "
+                  f"(<{cfg.min_clips_per_transition})")
+            continue
+        kept_transitions.append((A, B))
+    transitions = kept_transitions
+    print(f"  kept transitions: {transitions}")
+
     combined_grid: dict[str, dict[str, list]] = {p: {} for p in cfg.projections}
+
+    # Per-transition direction variants, same for all projections; we
+    # compute the set of kept (A, B, dir_A, dir_B) variants once.
+    direction_variants: list[tuple[str, str, str, str, list[int]]] = []
+    for A, B in transitions:
+        dom_clips = find_dominated_clips(
+            segments, A, B, 500,
+            cfg.majority_threshold, cfg.min_per_behavior_fraction,
+            set(cfg.skip_clips), 842,
+        )
+        # Group by (dominant dir during A, dominant dir during B).
+        by_variant: dict[tuple[str, str], list[int]] = defaultdict(list)
+        for cid in dom_clips:
+            beh_segs = segments.get(cid, [])
+            dir_segs = direction_segments.get(cid, [])
+            dA = dominant_direction_for_behavior(beh_segs, dir_segs, A, 500) or "Straight"
+            dB = dominant_direction_for_behavior(beh_segs, dir_segs, B, 500) or "Straight"
+            by_variant[(dA, dB)].append(cid)
+        for (dA, dB), cids in by_variant.items():
+            if len(cids) >= cfg.min_clips_per_direction_variant:
+                direction_variants.append((A, B, dA, dB, cids))
+                print(f"  variant kept: {A}-{dA} <-> {B}-{dB}  "
+                      f"({len(cids)} clips)")
+            else:
+                print(f"  variant dropped: {A}-{dA} <-> {B}-{dB}  "
+                      f"({len(cids)} clips < {cfg.min_clips_per_direction_variant})")
+
+    # Store per (projection, feature_space, variant) rendered rows for the
+    # direction-panel figure.
+    direction_grid: dict[str, dict[str, list]] = {p: {} for p in cfg.projections}
 
     for feature_space in cfg.feature_spaces:
         print(f"\n{'=' * 56}\nFeature space: {feature_space}\n{'=' * 56}")
@@ -861,13 +1125,85 @@ def main(config_path: str | None = None) -> None:
                     "row_title": f"{A} ↔ {B}",
                 })
 
-            out_path = (
-                Path(cfg.output_dir)
-                / f"transition_projections_{feature_space}_{projection}.pdf"
-            )
-            render_figure(projection, feature_space, rendered_rows,
-                          cfg.k_paths, cfg, out_path)
             combined_grid[projection][feature_space] = rendered_rows
+
+        # Direction-variant bundles for this feature space.
+        for projection in cfg.projections:
+            direction_grid[projection][feature_space] = []
+
+        for A, B, dA, dB, variant_clips in direction_variants:
+            variant_clips_set = set(variant_clips)
+            clips_in_data = [c for c in variant_clips if c < n_clips]
+            if not clips_in_data:
+                for projection in cfg.projections:
+                    direction_grid[projection][feature_space].append({
+                        "A": A, "B": B, "dA": dA, "dB": dB,
+                        "real_coords": np.zeros((0, 2)),
+                        "real_labels": np.array([], dtype=object),
+                        "path_coords": [],
+                        "paths_endpoint_labels": [],
+                        "n_clips": 0, "n_paths_found": 0,
+                    })
+                continue
+
+            labels_grid = build_frame_labels(segments, clips_in_data, T, A, B)
+            real_list, label_list = [], []
+            for i, cid in enumerate(clips_in_data):
+                real_list.append(feature_data[cid])
+                label_list.append(labels_grid[i])
+            real_X = np.concatenate(real_list, axis=0)
+            real_L = np.concatenate(label_list, axis=0)
+            if real_X.shape[0] > cfg.real_subsample_n:
+                step = real_X.shape[0] // cfg.real_subsample_n
+                keep_idx = np.arange(0, real_X.shape[0], step)[:cfg.real_subsample_n]
+                real_X = real_X[keep_idx]
+                real_L = real_L[keep_idx]
+
+            paths_by_clip = load_paths_for_clips(extraction_dir, clips_in_data)
+            top_paths = select_top_k_paths_with_direction(
+                paths_by_clip, cfg.k_paths, segments, direction_segments,
+                A, B, dA, dB,
+            )
+            n_paths_found = len(top_paths)
+
+            path_feature_list, path_lens, endpoint_labels = [], [], []
+            for cid, verts, first_lab, last_lab in top_paths:
+                verts_arr = np.asarray(verts, dtype=np.int64)
+                verts_arr = verts_arr[(verts_arr >= 0) & (verts_arr < T)]
+                if verts_arr.size == 0:
+                    path_feature_list.append(np.zeros((0, D), dtype=np.float32))
+                    path_lens.append(0)
+                    endpoint_labels.append((first_lab, last_lab))
+                    continue
+                path_feature_list.append(feature_data[cid, verts_arr])
+                path_lens.append(verts_arr.size)
+                endpoint_labels.append((first_lab, last_lab))
+
+            all_path_pts = (
+                np.concatenate(path_feature_list, axis=0)
+                if path_feature_list else np.zeros((0, real_X.shape[1]))
+            )
+            for projection in cfg.projections:
+                real_coords, path_coords_flat = project_together(
+                    real_X, all_path_pts, projection,
+                    cfg.tsne_subsample_n, rng,
+                )
+                per_path_coords = []
+                cursor = 0
+                for L in path_lens:
+                    per_path_coords.append(path_coords_flat[cursor:cursor + L])
+                    cursor += L
+                direction_grid[projection][feature_space].append({
+                    "A": A, "B": B, "dA": dA, "dB": dB,
+                    "real_coords": real_coords,
+                    "real_labels": real_L,
+                    "path_coords": per_path_coords,
+                    "paths_endpoint_labels": endpoint_labels,
+                    "n_clips": len(clips_in_data),
+                    "n_paths_found": n_paths_found,
+                })
+            print(f"  variant bundle {A}-{dA}<->{B}-{dB}: "
+                  f"n_clips={len(clips_in_data)}, paths={n_paths_found}")
 
         del feature_data
 
@@ -886,6 +1222,24 @@ def main(config_path: str | None = None) -> None:
             transitions=transitions,
             cfg=cfg,
             out_path=out_path,
+        )
+
+    # Direction-variant panel: one image per projection. Rows = feature
+    # spaces, cols = kept (A, B, dir_A, dir_B) variants across all kept
+    # transitions. Uses the same scatter+dashed-path rendering as the
+    # combined panel, with direction-filtered paths per variant.
+    for projection in cfg.projections:
+        out_dir_path = (
+            Path(cfg.output_dir)
+            / f"transition_directions_{projection}.pdf"
+        )
+        render_direction_panel_figure(
+            projection=projection,
+            grid_data=direction_grid[projection],
+            feature_spaces=cfg.feature_spaces,
+            variant_specs=direction_variants,
+            cfg=cfg,
+            out_path=out_dir_path,
         )
 
     # Filmstrip grid: one figure total. Rows = feature spaces, cols =
