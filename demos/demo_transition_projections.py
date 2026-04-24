@@ -459,6 +459,113 @@ def render_transition_row(
     )
 
 
+def _hex_to_rgb01(hex_str: str) -> np.ndarray:
+    h = hex_str.lstrip("#")
+    return np.array([int(h[i:i + 2], 16) / 255.0 for i in (0, 2, 4)])
+
+
+def render_transition_filmstrip_figure(
+    grid_data: dict,  # {fs: list[row_dict]} where each row carries top_paths + clip_ids
+    feature_spaces: list[str],
+    transitions: list[tuple[str, str]],
+    qpos_all: np.ndarray,          # (n_clips, T, qpos_dims) raw qpos for rendering
+    xml_path: str,
+    dataset: str,
+    cfg: DemoConfig,
+    out_path: Path,
+    n_poses: int = 6,
+):
+    """Grid of rendered MuJoCo pose filmstrips for the top-1 DM path per
+    (feature_space, transition) cell. Tinted from A-color (start) to
+    B-color (end) using the same style as demo_transitions_projections_single_clip.
+    """
+    from demos.skeleton_filmstrip import render_filmstrip_for_frames
+
+    n_rows = len(feature_spaces)
+    n_cols = len(transitions)
+    fig, axes = plt.subplots(
+        n_rows, n_cols,
+        figsize=(4.0 * n_cols, 1.3 * n_rows + 0.8),
+        squeeze=False,
+    )
+
+    for col_idx, (A, B) in enumerate(transitions):
+        axes[0, col_idx].set_title(
+            f"{A} ↔ {B}", fontsize=10, fontweight="bold", pad=6,
+        )
+
+    for row_idx, fs in enumerate(feature_spaces):
+        axes[row_idx, 0].set_ylabel(
+            fs, fontsize=10, fontweight="bold", labelpad=12,
+        )
+        rows = grid_data.get(fs, [])
+        for col_idx, (A, B) in enumerate(transitions):
+            ax = axes[row_idx, col_idx]
+            ax.set_xticks([]); ax.set_yticks([])
+            for s in ("top", "right", "left", "bottom"):
+                ax.spines[s].set_visible(False)
+            if col_idx >= len(rows):
+                continue
+            row = rows[col_idx]
+            top_paths = row.get("top_paths_raw") or []
+            if not top_paths:
+                ax.text(0.5, 0.5, "no path", ha="center", va="center",
+                        transform=ax.transAxes, fontsize=9, color="#777")
+                continue
+
+            # Top path = index 0.
+            cid, verts, first_lab, last_lab = top_paths[0]
+            verts_arr = np.asarray(verts, dtype=np.int64)
+            T = qpos_all.shape[1]
+            verts_arr = verts_arr[(verts_arr >= 0) & (verts_arr < T)]
+            if verts_arr.size < 2:
+                ax.text(0.5, 0.5, "path too short", ha="center", va="center",
+                        transform=ax.transAxes, fontsize=9, color="#777")
+                continue
+
+            # Ensure temporal ordering so the A->B color sweep reads L->R.
+            if first_lab == A:
+                frame_indices = sorted(verts_arr.tolist())
+                tint_start = _hex_to_rgb01(A_COLOR)
+                tint_end   = _hex_to_rgb01(B_COLOR)
+            else:
+                frame_indices = sorted(verts_arr.tolist(), reverse=True)
+                tint_start = _hex_to_rgb01(B_COLOR)
+                tint_end   = _hex_to_rgb01(A_COLOR)
+                # But since render_filmstrip_for_frames subsamples in order,
+                # keep frame_indices ascending; just swap tints so left = A.
+                frame_indices = sorted(verts_arr.tolist())
+
+            strip = render_filmstrip_for_frames(
+                qpos_all[cid], frame_indices, xml_path, dataset=dataset,
+                n_poses=n_poses, gap_fraction=0.25,
+                tint_start=tint_start, tint_end=tint_end,
+            )
+            ax.imshow(strip)
+            ax.text(
+                0.02, 0.98, f"clip {cid} · {len(verts_arr)} verts",
+                transform=ax.transAxes, ha="left", va="top",
+                fontsize=6.5, color="#555",
+            )
+
+    from matplotlib.patches import Patch
+    handles = [
+        Patch(facecolor=A_COLOR, edgecolor="none", label="behavior A tint (start)"),
+        Patch(facecolor=B_COLOR, edgecolor="none", label="behavior B tint (end)"),
+    ]
+    fig.legend(handles=handles, loc="lower center", ncol=len(handles),
+               frameon=False, fontsize=9, bbox_to_anchor=(0.5, -0.005))
+    fig.suptitle(
+        "Transition-path filmstrips (top-1 DM path per cell; tint = A start -> B end)",
+        fontsize=12, fontweight="bold", y=1.0,
+    )
+    fig.tight_layout(rect=(0, 0.03, 1, 0.96))
+    plt.savefig(out_path, bbox_inches="tight", dpi=220)
+    plt.savefig(out_path.with_suffix(".png"), bbox_inches="tight", dpi=220)
+    plt.close(fig)
+    print(f"  wrote {out_path} (+.png)")
+
+
 def render_combined_panel_figure(
     projection: str,
     grid_data: dict,  # {fs: list[row_dict]} where row_dict matches render_transition_row input
@@ -507,14 +614,18 @@ def render_combined_panel_figure(
                 continue
             scatter_real(ax, row["real_coords"], row["real_labels"], A, B,
                          grey_background=False)
-            for i, pc in enumerate(row["path_coords"]):
-                overlay_path(ax, pc, color=PATH_PALETTE[i % len(PATH_PALETTE)])
-                overlay_path_endpoints(
-                    ax, pc,
-                    row["paths_endpoint_labels"][i][0],
-                    row["paths_endpoint_labels"][i][1],
-                    A, B, star_size=180,
-                )
+            # Show just the single top path, rendered as a grey dashed line.
+            if row["path_coords"]:
+                pc = row["path_coords"][0]
+                if pc.size > 0:
+                    ax.plot(pc[:, 0], pc[:, 1], linestyle="--",
+                            color="#555", linewidth=1.1, alpha=0.95, zorder=3)
+                    overlay_path_endpoints(
+                        ax, pc,
+                        row["paths_endpoint_labels"][0][0],
+                        row["paths_endpoint_labels"][0][1],
+                        A, B, star_size=180,
+                    )
             ax.annotate(
                 f"n clips={row['n_clips']}, paths={row['n_paths_found']}",
                 xy=(0.02, 0.97), xycoords="axes fraction",
@@ -744,6 +855,7 @@ def main(config_path: str | None = None) -> None:
                     "real_labels": bundle["real_L"],
                     "path_coords": per_path_coords,
                     "paths_endpoint_labels": bundle["endpoint_labels"],
+                    "top_paths_raw": bundle["top_paths"],
                     "n_clips": len(bundle["dominated"]),
                     "n_paths_found": bundle["n_paths_found"],
                     "row_title": f"{A} ↔ {B}",
@@ -760,7 +872,8 @@ def main(config_path: str | None = None) -> None:
         del feature_data
 
     # Combined panel: one image per projection, rows = feature spaces,
-    # cols = transition types. Shows K paths with endpoint stars in each cell.
+    # cols = transition types. Shows the top-1 path as a grey dashed line
+    # with endpoint stars.
     for projection in cfg.projections:
         out_path = (
             Path(cfg.output_dir)
@@ -774,6 +887,29 @@ def main(config_path: str | None = None) -> None:
             cfg=cfg,
             out_path=out_path,
         )
+
+    # Filmstrip grid: one figure total. Rows = feature spaces, cols =
+    # transitions. Each cell = MuJoCo-rendered filmstrip of the top-1 DM
+    # path's frames, tinted A -> B.
+    print("\nLoading raw qpos for filmstrip rendering...")
+    with h5py.File(cfg.h5_path, "r") as f:
+        qpos_all = np.asarray(f["qpos_rollout"][:]) if "qpos_rollout" in f else np.asarray(f["qpos"][:])
+    print(f"  qpos shape: {qpos_all.shape}")
+
+    # grid_data for filmstrips can come from any projection's combined_grid
+    # (we only need top_paths_raw, not projection coords).
+    any_projection = cfg.projections[0]
+    filmstrip_path = Path(cfg.output_dir) / "transition_filmstrips.pdf"
+    render_transition_filmstrip_figure(
+        grid_data=combined_grid[any_projection],
+        feature_spaces=cfg.feature_spaces,
+        transitions=transitions,
+        qpos_all=qpos_all,
+        xml_path=cfg.xml_path,
+        dataset="rodent",
+        cfg=cfg,
+        out_path=filmstrip_path,
+    )
 
 
 if __name__ == "__main__":

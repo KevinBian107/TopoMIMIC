@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Skeleton filmstrip helper for Figure 2B/C.
-Called by demo_transitions.py when skeleton_analysis.enabled = true.
+Called by demo_transitions_projections_single_clip.py when skeleton_analysis.enabled = true.
 """
 
 import os

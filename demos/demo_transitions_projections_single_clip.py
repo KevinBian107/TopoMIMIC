@@ -7,8 +7,8 @@ Each embedding shows up to 3 rows: GT transitions, DM cycles, DM paths —
 all colored by behavior transition labels looked up from the GT CSV.
 
 Usage:
-    python demos/demo_transitions.py
-    python demos/demo_transitions.py --config configs/demos/demo_transitions.yaml
+    python demos/demo_transitions_projections_single_clip.py
+    python demos/demo_transitions_projections_single_clip.py --config configs/demos/demo_transitions_projections_single_clip.yaml
 """
 
 import os
@@ -1582,7 +1582,7 @@ def main():
     parser = argparse.ArgumentParser(description="Rodent transition demo")
     parser.add_argument(
         "--config",
-        default="configs/demos/demo_transitions.yaml",
+        default="configs/demos/demo_transitions_projections_single_clip.yaml",
         help="Path to demo config YAML",
     )
     args = parser.parse_args()

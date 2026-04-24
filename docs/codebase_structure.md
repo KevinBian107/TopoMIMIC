@@ -146,12 +146,12 @@ demo_torus.py                     synthetic torus, 6-stage SWR pipeline
 demo_saddle.py                    synthetic saddle, cycle vs path
 demo_behavior_overlap.py          synthetic behavior cluster reference panels
 demo_transition_filmstrip.py      GT transition filmstrips (rodent only)
-demo_transitions.py               rodent end-to-end transition analysis (was demo_rodent_transitions)
+demo_transitions_projections_single_clip.py               rodent end-to-end transition analysis (was demo_rodent_transitions)
 demo_cluster_filmstrips.py        cluster-label filmstrips
 demo_dtw_metric.py                DTW cost matrix + filmstrip (metric illustration)
 demo_feature_space_projections.py real vs DM-selected frames in PCA/UMAP/t-SNE
 demo_clip_projections.py          clip-level analogue of the above
-skeleton_filmstrip.py             helper (called by demo_transitions and global_manifold/filmstrip)
+skeleton_filmstrip.py             helper (called by demo_transitions_projections_single_clip and global_manifold/filmstrip)
 ```
 
 ## Data flow
