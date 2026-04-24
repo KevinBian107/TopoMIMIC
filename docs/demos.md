@@ -143,7 +143,7 @@ End-to-end transition analysis pipelines.
 ### Rodent Transition Demo (Figure 2C)
 ```bash
 python -m demos.transition_demos.demo_rodent_transitions
-python -m demos.demo_transitions --config configs/demos/demo_transitions.yaml
+python -m demos.demo_transitions_projections_single_clip --config configs/demos/demo_transitions_projections_single_clip.yaml
 ```
 Visualizes rodent behavioral transitions using PCA/UMAP/t-SNE with up to 3 rows per embedding plot: GT transitions, DM cycles, and DM paths. With `skeleton_analysis.enabled: true`, also produces skeleton filmstrip figures (Figure 2C) in `{output_dir}/skeleton_analysis_filmstrip/`.
 

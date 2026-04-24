@@ -37,7 +37,7 @@ from topo_mimic.analysis.feature_analysis.metrics import (
 EXPERIMENT_DIR = "outputs/experiment/transitions"
 DATA_PATH = "data/rodent_ar.h5"
 DATA_KEY = "qpos_rollout"
-BEHAVIOR_LABELS_CSV = "behavior_labels.csv"
+BEHAVIOR_LABELS_CSV = "behavior_labels/rodent_labels.csv"
 OUTPUT_DIR = "outputs/analysis/tables/warping_analysis"
 
 METHOD_ORDER = [
@@ -64,6 +64,104 @@ OURS = {"DMC-Int", "DMC-Qpos", "DMC-EKP", "DMP-Int", "DMP-Qpos", "DMP-EKP"}
 def load_data() -> np.ndarray:
     with h5py.File(DATA_PATH, "r") as f:
         return np.array(f[DATA_KEY])
+
+
+MAPPER_SCALE_ROOT = Path("outputs/analysis/scale_sweep/v1/v1")
+MAPPER_CFG_PREFERRED = "cfg_e6cef558"  # paper reference
+
+
+def discover_mapper_variants() -> list[dict]:
+    """Find every Mapper scale-sweep variant that has a cluster_dict.pkl.
+
+    Directory layout:
+      scale_sweep/v1/v1/<cfg_*>/mapper/<feature_space>/<lens_*>/<n_*>/cluster_dict.pkl
+    """
+    if not MAPPER_SCALE_ROOT.exists():
+        return []
+    cfg_candidates = sorted(
+        [d for d in MAPPER_SCALE_ROOT.iterdir()
+         if d.is_dir() and d.name.startswith("cfg_")],
+    )
+    if not cfg_candidates:
+        return []
+    cfg_dir = MAPPER_SCALE_ROOT / MAPPER_CFG_PREFERRED
+    if not cfg_dir.exists():
+        cfg_dir = cfg_candidates[-1]
+    mapper_root = cfg_dir / "mapper"
+    if not mapper_root.exists():
+        return []
+    variants = []
+    fs_abbrev = {"intention": "INT", "qpos": "Qpos", "ekp": "EKP"}
+    for fs_dir in sorted(mapper_root.iterdir()):
+        if not fs_dir.is_dir():
+            continue
+        fs = fs_dir.name
+        for lens_dir in sorted(fs_dir.iterdir()):
+            if not lens_dir.is_dir() or not lens_dir.name.startswith("lens_"):
+                continue
+            lens = lens_dir.name[len("lens_"):]
+            for n_dir in sorted(lens_dir.iterdir()):
+                if not n_dir.is_dir() or not n_dir.name.startswith("n_"):
+                    continue
+                n = int(n_dir.name[len("n_"):])
+                cd_path = n_dir / "cluster_dict.pkl"
+                if cd_path.exists():
+                    variants.append({
+                        "method_name": f"mapper_{fs}_{lens}_n{n}",
+                        "short_name": f"Mapper-{fs_abbrev.get(fs, fs)}-{lens}-n{n}",
+                        "cluster_dict_path": cd_path,
+                        "feature_space": fs,
+                        "lens": lens,
+                        "n_intervals": n,
+                    })
+    return variants
+
+
+_SEG_CACHE: dict = {"behav": None, "dir": None}
+
+
+def _get_split_segments(csv_path: str):
+    if _SEG_CACHE["behav"] is None:
+        from topo_mimic.experiment.auto_label import (
+            load_behavior_segments as _load_segs, split_segments_by_kind,
+        )
+        all_segs = _load_segs(csv_path)
+        behav, dirs = split_segments_by_kind(all_segs)
+        _SEG_CACHE["behav"] = behav
+        _SEG_CACHE["dir"] = dirs
+    return _SEG_CACHE["behav"], _SEG_CACHE["dir"]
+
+
+def run_mapper_variant(
+    variant: dict, data: np.ndarray, behavior_labels_csv: str,
+) -> list[WarpingResult]:
+    import pickle as _pickle
+    from topo_mimic.experiment.auto_label import auto_label_clusters_directional
+
+    with open(variant["cluster_dict_path"], "rb") as f:
+        cluster_dict = _pickle.load(f)
+    if not cluster_dict:
+        return []
+
+    behav_segs, dir_segs = _get_split_segments(behavior_labels_csv)
+    label_objs = auto_label_clusters_directional(
+        cluster_dict, behav_segs, dir_segs,
+    )
+    cluster_labels = {cid: lb.primary for cid, lb in label_objs.items()}
+    turn_directions: dict[int, str] = {}
+    for cid, lb in label_objs.items():
+        parts = (lb.primary or "").split()
+        if parts and parts[-1] in ("Left", "Right", "Straight"):
+            turn_directions[cid] = parts[-1]
+
+    return run_warping_analysis(
+        cluster_dict=cluster_dict,
+        cluster_labels=cluster_labels,
+        turn_directions=turn_directions,
+        behavior_labels_csv=behavior_labels_csv,
+        data=data,
+        method_name=variant["short_name"],
+    )
 
 
 def run_all_methods(data: np.ndarray) -> dict[str, list[WarpingResult]]:
@@ -117,6 +215,21 @@ def run_all_methods(data: np.ndarray) -> dict[str, list[WarpingResult]]:
                   f"ratio={r.mean_dtw_sync_ratio:.3f} "
                   f"non-diag={r.mean_non_diag_frac:.3f}")
 
+    mapper_variants = discover_mapper_variants()
+    print(f"\nFound {len(mapper_variants)} Mapper scale-sweep variants")
+    for v in mapper_variants:
+        short_name = v["short_name"]
+        try:
+            results = run_mapper_variant(v, data, BEHAVIOR_LABELS_CSV)
+        except Exception as e:
+            print(f"  {short_name}: FAILED ({type(e).__name__}: {e})")
+            continue
+        if not results:
+            print(f"  {short_name}: no transitions discovered, skipping")
+            continue
+        warping_results[short_name] = results
+        print(f"  {short_name}: {len(results)} transition entries")
+
     return warping_results
 
 
@@ -131,7 +244,9 @@ def build_full_table(
             all_keys.add((r.label, turn))
 
     all_keys = sorted(all_keys)
-    methods = [m for m in SHORT_NAMES.values() if m in warping_results]
+    ordered = [m for m in SHORT_NAMES.values() if m in warping_results]
+    mapper_names = sorted([m for m in warping_results if m.startswith("Mapper-")])
+    methods = ordered + mapper_names
 
     rows = []
     for label, turn in all_keys:
@@ -153,7 +268,9 @@ def build_simple_table(
     warping_results: dict[str, list[WarpingResult]],
     metric: str = "mean_non_diag_frac",
 ) -> pd.DataFrame:
-    methods = [m for m in SHORT_NAMES.values() if m in warping_results]
+    ordered = [m for m in SHORT_NAMES.values() if m in warping_results]
+    mapper_names = sorted([m for m in warping_results if m.startswith("Mapper-")])
+    methods = ordered + mapper_names
 
     method_by_label = {}
     for method in methods:

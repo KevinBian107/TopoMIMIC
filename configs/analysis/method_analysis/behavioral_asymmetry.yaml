@@ -1,0 +1,33 @@
+# Behavioral-asymmetry analysis: A -> B -> A triplet cycle-count sweep.
+# For every GT A -> B -> A triplet, count DM-cycles overlapping its frame
+# range. Compare symmetric (same direction on both A ends) vs asymmetric
+# (different direction). Paper claim: asymmetric motor programs force a
+# DM-cycle in the skeleton (Corollary 1).
+
+behavior_labels_csv: "behavior_labels/rodent_labels.csv"
+
+feature_spaces:
+  - intention
+  - qpos
+  - ekp
+
+extraction_dirs:
+  intention: "outputs/extraction/dm_pipeline_intention"
+  qpos:      "outputs/extraction/dm_pipeline_qpos"
+  ekp:       "outputs/extraction/dm_pipeline_ekp"
+
+output_dir: "outputs/analysis/method_analysis/behavioral_asymmetry"
+
+# Bootstrap over triplets (DM extraction itself is deterministic; "seed"
+# variation here is the sampling uncertainty on the per-category mean).
+n_bootstrap: 1000
+bootstrap_seed: 0
+
+# Per-pair panel: require at least this many samples in the LARGER arm
+# before including the pair. Pairs with zero asymmetric triplets (e.g.,
+# Immobile -> Rear -> Immobile) are kept as controls; their asymmetric
+# violin renders as an "n=0" placeholder.
+min_support: 3
+
+# Rodent preset's blacklisted clips (same as extraction config).
+skip_clips: [80, 187, 227, 246, 267, 392, 434, 456, 475, 491, 562, 610, 685]

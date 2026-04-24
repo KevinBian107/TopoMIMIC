@@ -45,6 +45,14 @@ $PYTHON -m topo_mimic.analysis.method_analysis.global_manifold.run \
 
 echo ""
 echo "=============================="
+echo "Method Analysis - Behavioral Asymmetry (Corollary 1)"
+echo "=============================="
+
+$PYTHON -m topo_mimic.analysis.method_analysis.behavioral_asymmetry.run \
+        configs/analysis/method_analysis/behavioral_asymmetry.yaml
+
+echo ""
+echo "=============================="
 echo "Method Analysis - Granularity (all feature spaces)"
 echo "=============================="
 

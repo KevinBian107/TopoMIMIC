@@ -936,15 +936,18 @@ def plot_stationary_vs_moving_line(
         stat_m, stat_s = np.array(stat_m), np.array(stat_s)
         mov_m, mov_s = np.array(mov_m), np.array(mov_s)
 
+        # Colors match the behavioral_asymmetry violin palette:
+        #   symmetric (less topological change) -> blue  -> stationary here
+        #   asymmetric (richer motor change)    -> orange-> moving here
         ax.fill_between(n_values, mov_m - mov_s, mov_m + mov_s,
-                         color='#4878CF', alpha=0.15, linewidth=0)
-        ax.plot(n_values, mov_m, 's-', color='#4878CF', linewidth=1.2,
+                         color='#DD8452', alpha=0.22, linewidth=0)
+        ax.plot(n_values, mov_m, 's-', color='#DD8452', linewidth=1.2,
                 markersize=5, markeredgecolor='white', markeredgewidth=0.5,
                 label='Moving (sum)', zorder=3)
 
         ax.fill_between(n_values, stat_m - stat_s, stat_m + stat_s,
-                         color='#C44E52', alpha=0.15, linewidth=0)
-        ax.plot(n_values, stat_m, 'o-', color='#C44E52', linewidth=1.2,
+                         color='#4C72B0', alpha=0.22, linewidth=0)
+        ax.plot(n_values, stat_m, 'o-', color='#4C72B0', linewidth=1.2,
                 markersize=5, markeredgecolor='white', markeredgewidth=0.5,
                 label='Stationary', zorder=3)
 

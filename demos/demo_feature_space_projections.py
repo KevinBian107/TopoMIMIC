@@ -62,7 +62,7 @@ class DemoConfig:
     tsne_subsample_n: int = 5000
     point_size: float = 2.0
     point_size_dm: float = 5.0
-    output_dir: str = "outputs/demos/feature_space_projections"
+    output_dir: str = "outputs/demos/illustrative/feature_space_projections"
 
 
 FEATURE_SPACE_DISPLAY = {"intention": "Intention", "qpos": "qpos", "ekp": "EKP"}
@@ -158,6 +158,33 @@ def load_dm_frames(
     return out
 
 
+def build_random_uniform_fraction_frames(
+    total_target: int,
+    n_clips: int,
+    n_frames_per_clip: int,
+    rng: np.random.Generator,
+) -> tuple[list[tuple[int, int]], float]:
+    """Uniform-fraction per-clip sample matching DM's total frame count.
+
+    Draws the SAME number of uniform-random frames from every clip (no
+    per-clip weighting by how many DM picked). The per-clip count is
+    round(total_target / n_clips) so the overall N matches DM's total
+    across 842 clips. Returns (frames, fraction_per_clip) where
+    fraction_per_clip = per_clip_k / n_frames_per_clip is the subsample
+    fraction used.
+    """
+    per_clip_k = int(round(total_target / max(1, n_clips)))
+    per_clip_k = max(0, min(per_clip_k, n_frames_per_clip))
+    fraction = per_clip_k / n_frames_per_clip if n_frames_per_clip else 0.0
+    out: list[tuple[int, int]] = []
+    if per_clip_k == 0:
+        return out, fraction
+    for cid in range(n_clips):
+        picks = rng.choice(n_frames_per_clip, size=per_clip_k, replace=False)
+        out.extend((cid, int(f)) for f in picks)
+    return out, fraction
+
+
 def project_points(
     X: np.ndarray,
     method: str,
@@ -238,10 +265,16 @@ def render_figure(
     dm_method: str,
     projection: str,
     feature_spaces: list[str],
-    real_coords: dict[str, np.ndarray],      # fs -> (n, 2)
-    real_labels: dict[str, np.ndarray],
-    dm_coords: dict[str, np.ndarray],
-    dm_labels: dict[str, np.ndarray],
+    top_coords: dict[str, np.ndarray],
+    top_labels: dict[str, np.ndarray],
+    top_row_title: str,
+    top_point_size: float,
+    top_empty_text: str,
+    bottom_coords: dict[str, np.ndarray],
+    bottom_labels: dict[str, np.ndarray],
+    bottom_row_title: str,
+    bottom_point_size: float,
+    bottom_empty_text: str,
     transitions: list[str],
     color_map: dict,
     cfg: DemoConfig,
@@ -258,28 +291,28 @@ def render_figure(
     if n_cols == 1:
         axes = np.asarray(axes).reshape(2, 1)
 
-    row_titles = ["Real frames", f"{DM_METHOD_DISPLAY[dm_method]} frames"]
+    row_titles = [top_row_title, bottom_row_title]
 
     for col, fs in enumerate(feature_spaces):
-        rc = real_coords.get(fs)
-        rl = real_labels.get(fs)
-        dc = dm_coords.get(fs)
-        dl = dm_labels.get(fs)
+        tc = top_coords.get(fs)
+        tl = top_labels.get(fs)
+        bc = bottom_coords.get(fs)
+        bl = bottom_labels.get(fs)
 
         ax_top = axes[0, col]
         ax_bot = axes[1, col]
 
-        if rc is not None and rc.size:
-            scatter_projection(ax_top, rc, rl, color_map, cfg.point_size)
+        if tc is not None and tc.size:
+            scatter_projection(ax_top, tc, tl, color_map, top_point_size)
         else:
-            ax_top.text(0.5, 0.5, "no data", ha="center", va="center",
+            ax_top.text(0.5, 0.5, top_empty_text, ha="center", va="center",
                         transform=ax_top.transAxes, fontsize=8, color="#777")
             nature_style_axis(ax_top)
 
-        if dc is not None and dc.size:
-            scatter_projection(ax_bot, dc, dl, color_map, cfg.point_size_dm)
+        if bc is not None and bc.size:
+            scatter_projection(ax_bot, bc, bl, color_map, bottom_point_size)
         else:
-            ax_bot.text(0.5, 0.5, "no DM frames", ha="center", va="center",
+            ax_bot.text(0.5, 0.5, bottom_empty_text, ha="center", va="center",
                         transform=ax_bot.transAxes, fontsize=8, color="#777")
             nature_style_axis(ax_bot)
 
@@ -392,9 +425,11 @@ def main(config_path: str | None = None) -> None:
 
     for dm_method in cfg.dm_methods:
         print(f"\nDM method: {dm_method}")
-        # DM frames per feature space
+        # DM frames + per-clip-matched random control, per feature space.
         dm_X: dict[str, np.ndarray] = {}
         dm_L: dict[str, np.ndarray] = {}
+        rand_X: dict[str, np.ndarray] = {}
+        rand_L: dict[str, np.ndarray] = {}
         for fs in cfg.feature_spaces:
             frames = load_dm_frames(cfg.experiment_dir, dm_method, fs, cfg.seed)
             X, L = prepare_dm_subset(
@@ -402,15 +437,36 @@ def main(config_path: str | None = None) -> None:
             )
             dm_X[fs] = X
             dm_L[fs] = L
-            print(f"  {fs}: DM subset N={X.shape[0]} D={X.shape[1]}")
+
+            n_clips = feature_data_cache[fs].shape[0]
+            n_frames_per_clip = feature_data_cache[fs].shape[1]
+            rand_frames, frac = build_random_uniform_fraction_frames(
+                total_target=X.shape[0],
+                n_clips=n_clips,
+                n_frames_per_clip=n_frames_per_clip,
+                rng=rng,
+            )
+            Xn, Ln = prepare_dm_subset(
+                feature_data_cache[fs], rand_frames, frame_label_cache[fs],
+            )
+            rand_X[fs] = Xn
+            rand_L[fs] = Ln
+
+            print(
+                f"  {fs}: DM N={X.shape[0]}  "
+                f"uniform-per-clip N={Xn.shape[0]}  "
+                f"(per-clip k={int(round(frac * n_frames_per_clip))} = "
+                f"{100 * frac:.2f}% of T={n_frames_per_clip})  D={X.shape[1]}"
+            )
 
         for projection in cfg.projections:
             print(f"  projection: {projection}")
-            # For t-SNE, subsample further.
             real_coords: dict[str, np.ndarray] = {}
             real_L_proj: dict[str, np.ndarray] = {}
             dm_coords: dict[str, np.ndarray] = {}
             dm_L_proj: dict[str, np.ndarray] = {}
+            rand_coords: dict[str, np.ndarray] = {}
+            rand_L_proj: dict[str, np.ndarray] = {}
             for fs in cfg.feature_spaces:
                 X_r = real_X[fs]
                 L_r = real_L[fs]
@@ -438,21 +494,63 @@ def main(config_path: str | None = None) -> None:
                     dm_coords[fs] = np.zeros((0, 2), dtype=np.float32)
                     dm_L_proj[fs] = np.array([], dtype=object)
 
-            out_png = os.path.join(
-                cfg.output_dir, f"proj_{dm_method}_{projection}.png",
+                X_n = rand_X[fs]
+                L_n = rand_L[fs]
+                if projection == "tsne" and X_n.shape[0] > cfg.tsne_subsample_n:
+                    nidx = rng.choice(X_n.shape[0], cfg.tsne_subsample_n, replace=False)
+                    X_n = X_n[nidx]
+                    L_n = L_n[nidx]
+                if X_n.shape[0] >= 2:
+                    rand_coords[fs] = project_points(X_n, projection, rng)
+                    rand_L_proj[fs] = L_n
+                else:
+                    rand_coords[fs] = np.zeros((0, 2), dtype=np.float32)
+                    rand_L_proj[fs] = np.array([], dtype=object)
+
+            real_vs_dm_path = os.path.join(
+                cfg.output_dir, f"proj_{dm_method}_{projection}_real_vs_dm.png",
             )
             render_figure(
                 dm_method=dm_method,
                 projection=projection,
                 feature_spaces=cfg.feature_spaces,
-                real_coords=real_coords,
-                real_labels=real_L_proj,
-                dm_coords=dm_coords,
-                dm_labels=dm_L_proj,
+                top_coords=real_coords,
+                top_labels=real_L_proj,
+                top_row_title="Real frames",
+                top_point_size=cfg.point_size,
+                top_empty_text="no data",
+                bottom_coords=dm_coords,
+                bottom_labels=dm_L_proj,
+                bottom_row_title=f"{DM_METHOD_DISPLAY[dm_method]} frames",
+                bottom_point_size=cfg.point_size_dm,
+                bottom_empty_text="no DM frames",
                 transitions=transitions_order,
                 color_map=color_map,
                 cfg=cfg,
-                out_path=out_png,
+                out_path=real_vs_dm_path,
+            )
+
+            rand_vs_dm_path = os.path.join(
+                cfg.output_dir, f"proj_{dm_method}_{projection}_random_vs_dm.png",
+            )
+            render_figure(
+                dm_method=dm_method,
+                projection=projection,
+                feature_spaces=cfg.feature_spaces,
+                top_coords=rand_coords,
+                top_labels=rand_L_proj,
+                top_row_title="Random (uniform % per clip, N matches DM)",
+                top_point_size=cfg.point_size_dm,
+                top_empty_text="no random frames",
+                bottom_coords=dm_coords,
+                bottom_labels=dm_L_proj,
+                bottom_row_title=f"{DM_METHOD_DISPLAY[dm_method]} frames",
+                bottom_point_size=cfg.point_size_dm,
+                bottom_empty_text="no DM frames",
+                transitions=transitions_order,
+                color_map=color_map,
+                cfg=cfg,
+                out_path=rand_vs_dm_path,
             )
 
 

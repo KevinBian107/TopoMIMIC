@@ -1,0 +1,59 @@
+# Per-transition projection with DM-path overlays.
+# For each of the top-N GT transition types, projects the real frames
+# of clips dominated by that transition into 2D and overlays K DM paths
+# extracted from those same clips.
+
+h5_path: "data/rodent_ar.h5"
+behavior_labels_csv: "behavior_labels/rodent_labels.csv"
+xml_path: "topo_mimic/extraction/xml/rodent.xml"
+stac_data_path: "data/rodent_reference_clips.h5"
+
+# Feature spaces to sweep over. One figure per (feature_space, projection).
+feature_spaces:
+  - intention
+  - qpos
+  - ekp
+
+extraction_dirs:
+  intention: "outputs/extraction/dm_pipeline_intention"
+  qpos:      "outputs/extraction/dm_pipeline_qpos"
+  ekp:       "outputs/extraction/dm_pipeline_ekp"
+
+seed: 0
+
+# Clip qualifies as "dominated by transition A<->B" if:
+#   A alone covers >= min_per_behavior_fraction of the clip AND
+#   B alone covers >= min_per_behavior_fraction of the clip AND
+#   A+B combined covers >= majority_threshold of the clip.
+# The per-behavior floor is essential because Immobile alone often
+# dominates most rodent clips; without it, any transition involving
+# Immobile matches nearly every clip.
+majority_threshold: 0.5
+min_per_behavior_fraction: 0.15
+
+# Drop transitions with fewer than this many dominated clips (e.g., Turn<->Walk
+# has ~4 clips in the rodent dataset and is dropped). Drop direction-variants
+# (L/R/S splits within a transition) with fewer than this many clips too.
+min_clips_per_transition: 10
+min_clips_per_direction_variant: 10
+
+# Top-N transition types (ranked by frequency across all clips) to showcase.
+n_transitions: 4
+
+# Number of DM paths to overlay per transition. Default 2 -> 5 cols.
+k_paths: 2
+
+real_subsample_n: 4000
+tsne_subsample_n: 3000
+
+projections:
+  - pca
+  - umap
+  - tsne
+
+# Same skip list as the extraction config.
+skip_clips: [80, 187, 227, 246, 267, 392, 434, 456, 475, 491, 562, 610, 685]
+
+merge_rear: true
+
+output_dir: "outputs/demos/illustrative/transition_projections"

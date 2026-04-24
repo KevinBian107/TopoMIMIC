@@ -1074,6 +1074,7 @@ def run_warping_analysis(
     merge_rear: bool = True,
     skip_root_dims: int = 7,
     min_seq_length: int = 3,
+    resample_K: int | None = None,
 ) -> list[WarpingResult]:
     """
     Compute DTW warping statistics for each (label, turn) group vs GT.
