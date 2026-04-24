@@ -245,15 +245,17 @@ def select_top_k_paths(
     k: int,
     segments: dict[int, list[tuple[str, int, int]]],
     A: str, B: str,
-) -> list[tuple[int, list[int]]]:
-    """Keep paths whose endpoint frames fall inside A-segment and B-segment
-    (one per end). Ranks by length desc and takes top-K.
+) -> list[tuple[int, list[int], str, str]]:
+    """Keep paths whose endpoint frames fall inside A-segment and B-segment.
 
-    A path's endpoints in all_path_dm are the two density minima the path
+    A path's endpoints in all_path_dm are the two density minima that path
     connects; requiring their GT labels to be {A, B} selects paths that
-    actually connect the two behavior basins we care about.
+    connect the two behavior basins we care about.
+
+    Returns (clip_id, vertices, label_of_first_endpoint, label_of_last_endpoint)
+    sorted by length desc, top-K.
     """
-    flat: list[tuple[int, list[int], int]] = []  # (cid, verts, length)
+    flat: list[tuple[int, list[int], str, str, int]] = []
     for cid, paths in paths_by_clip.items():
         segs = segments.get(cid, [])
         for path in paths:
@@ -264,9 +266,9 @@ def select_top_k_paths(
             last_lab  = _frame_label(segs, int(verts[-1]))
             if {first_lab, last_lab} != {A, B}:
                 continue
-            flat.append((cid, verts, len(verts)))
-    flat.sort(key=lambda t: -t[2])
-    return [(cid, verts) for cid, verts, _ in flat[:k]]
+            flat.append((cid, verts, first_lab, last_lab, len(verts)))
+    flat.sort(key=lambda t: -t[4])
+    return [(c, v, fl, ll) for c, v, fl, ll, _ in flat[:k]]
 
 
 def project_together(
@@ -366,28 +368,27 @@ def overlay_path(ax, path_coords: np.ndarray, color: str, label: str | None = No
                c=color, edgecolor="#222", linewidth=0.3, rasterized=True, zorder=4)
 
 
-def overlay_label_minima(
+def overlay_path_endpoints(
     ax,
-    real_coords: np.ndarray,
-    real_labels: np.ndarray,
+    path_coords: np.ndarray,
+    first_label: str,
+    last_label: str,
     A: str, B: str,
+    star_size: float = 240,
 ):
-    """Place one gold-star minimum at each label's centroid in the 2D map.
-
-    Two stars per panel: A-centroid (blue-edged) and B-centroid (red-edged).
-    Marks the representative location of each behavior in the projection;
-    together they're the two basin minima that DM paths connect.
+    """Place gold stars at the path's two endpoints. Star edge color
+    indicates which behavior each endpoint falls in (blue for A, red for B).
     """
-    ok = ~np.isnan(real_coords[:, 0])
-    coords = real_coords[ok]
-    labels = real_labels[ok]
-    for lab, edge in ((A, A_COLOR), (B, B_COLOR)):
-        mask = labels == lab
-        if not mask.any():
-            continue
-        centroid = coords[mask].mean(axis=0)
-        ax.scatter([centroid[0]], [centroid[1]], marker="*",
-                   s=260, c="gold", edgecolor=edge, linewidth=1.8, zorder=7)
+    if path_coords.shape[0] < 2:
+        return
+    for coord, lab in (
+        (path_coords[0],  first_label),
+        (path_coords[-1], last_label),
+    ):
+        edge = A_COLOR if lab == A else (B_COLOR if lab == B else "#222")
+        ax.scatter([coord[0]], [coord[1]], marker="*",
+                   s=star_size, c="gold",
+                   edgecolor=edge, linewidth=1.6, zorder=7)
 
 
 def overlay_path_temporal(ax, path_coords: np.ndarray, cmap_name: str = "viridis"):
@@ -408,6 +409,7 @@ def render_transition_row(
     A: str, B: str,
     real_coords: np.ndarray, real_labels: np.ndarray,
     paths_coords: list[np.ndarray],
+    paths_endpoint_labels: list[tuple[str, str]],
     k: int,
     n_clips: int,
     n_paths_found: int,
@@ -417,8 +419,8 @@ def render_transition_row(
     nature_axis(axes_row[0])
     scatter_real(axes_row[0], real_coords, real_labels, A, B, grey_background=False)
 
-    # Individual path overlays: real as grey background, path line,
-    # and label-centroid minima (two stars, one per behavior).
+    # Individual path overlays: real as grey background, path line + stars
+    # at the path's own endpoints (blue-edge for A, red-edge for B).
     for i in range(k):
         ax = axes_row[1 + i]
         nature_axis(ax)
@@ -426,15 +428,23 @@ def render_transition_row(
         if i < len(paths_coords):
             overlay_path(ax, paths_coords[i],
                          color=PATH_PALETTE[i % len(PATH_PALETTE)])
-        overlay_label_minima(ax, real_coords, real_labels, A, B)
+            overlay_path_endpoints(
+                ax, paths_coords[i],
+                paths_endpoint_labels[i][0], paths_endpoint_labels[i][1],
+                A, B,
+            )
 
-    # Col K+1: all paths on labeled background + label-centroid minima.
+    # Col K+1: all paths on labeled background + endpoint stars per path.
     ax_all = axes_row[1 + k]
     nature_axis(ax_all)
     scatter_real(ax_all, real_coords, real_labels, A, B, grey_background=False)
     for i, pc in enumerate(paths_coords):
         overlay_path(ax_all, pc, color=PATH_PALETTE[i % len(PATH_PALETTE)])
-    overlay_label_minima(ax_all, real_coords, real_labels, A, B)
+        overlay_path_endpoints(
+            ax_all, pc,
+            paths_endpoint_labels[i][0], paths_endpoint_labels[i][1],
+            A, B,
+        )
 
     # Col K+2: paths only, temporal coloring
     ax_temp = axes_row[2 + k]
@@ -447,6 +457,92 @@ def render_transition_row(
         f"{A} ↔ {B}\n(n clips={n_clips}, paths found={n_paths_found})",
         fontsize=9, fontweight="bold", labelpad=10,
     )
+
+
+def render_combined_panel_figure(
+    projection: str,
+    grid_data: dict,  # {fs: list[row_dict]} where row_dict matches render_transition_row input
+    feature_spaces: list[str],
+    transitions: list[tuple[str, str]],
+    cfg: DemoConfig,
+    out_path: Path,
+):
+    """One image per projection method. Rows = feature spaces, cols =
+    transition types. Each cell = compact scatter of real A/B background +
+    K DM paths + gold stars at path endpoints.
+    """
+    plt.rcParams.update({
+        "font.family": "sans-serif",
+        "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
+        "font.size": 8,
+    })
+
+    n_rows = len(feature_spaces)
+    n_cols = len(transitions)
+    fig, axes = plt.subplots(
+        n_rows, n_cols,
+        figsize=(3.0 * n_cols, 3.0 * n_rows),
+        squeeze=False,
+    )
+
+    for col_idx, (A, B) in enumerate(transitions):
+        axes[0, col_idx].set_title(
+            f"{A} ↔ {B}", fontsize=10, fontweight="bold", pad=6,
+        )
+
+    for row_idx, fs in enumerate(feature_spaces):
+        axes[row_idx, 0].set_ylabel(
+            fs, fontsize=10, fontweight="bold", labelpad=12,
+        )
+        rows = grid_data.get(fs, [])
+        for col_idx, (A, B) in enumerate(transitions):
+            ax = axes[row_idx, col_idx]
+            nature_axis(ax)
+            if col_idx >= len(rows):
+                continue
+            row = rows[col_idx]
+            if row["real_coords"].shape[0] == 0:
+                ax.text(0.5, 0.5, "no data", ha="center", va="center",
+                        transform=ax.transAxes, fontsize=8, color="#777")
+                continue
+            scatter_real(ax, row["real_coords"], row["real_labels"], A, B,
+                         grey_background=False)
+            for i, pc in enumerate(row["path_coords"]):
+                overlay_path(ax, pc, color=PATH_PALETTE[i % len(PATH_PALETTE)])
+                overlay_path_endpoints(
+                    ax, pc,
+                    row["paths_endpoint_labels"][i][0],
+                    row["paths_endpoint_labels"][i][1],
+                    A, B, star_size=180,
+                )
+            ax.annotate(
+                f"n clips={row['n_clips']}, paths={row['n_paths_found']}",
+                xy=(0.02, 0.97), xycoords="axes fraction",
+                ha="left", va="top", fontsize=6.5, color="#555",
+            )
+
+    from matplotlib.patches import Patch
+    from matplotlib.lines import Line2D
+    handles = [
+        Patch(facecolor=A_COLOR, edgecolor="none", label="behavior A"),
+        Patch(facecolor=B_COLOR, edgecolor="none", label="behavior B"),
+        Patch(facecolor=OTHER_COLOR, edgecolor="none", label="other"),
+        Line2D([0], [0], marker="*", color="w", markerfacecolor="gold",
+               markeredgecolor="#222", markersize=10,
+               label="path endpoint (minimum)"),
+    ]
+    fig.legend(handles=handles, loc="lower center", ncol=len(handles),
+               frameon=False, fontsize=9, bbox_to_anchor=(0.5, -0.005))
+
+    fig.suptitle(
+        f"Transition x feature-space panel — {PROJECTION_DISPLAY[projection]}",
+        fontsize=12, fontweight="bold", y=1.0,
+    )
+    fig.tight_layout(rect=(0, 0.04, 1, 0.96))
+    plt.savefig(out_path, bbox_inches="tight", dpi=220)
+    plt.savefig(out_path.with_suffix(".png"), bbox_inches="tight", dpi=220)
+    plt.close(fig)
+    print(f"  wrote {out_path} (+.png)")
 
 
 def render_figure(
@@ -486,6 +582,7 @@ def render_figure(
             real_coords=row_data["real_coords"],
             real_labels=row_data["real_labels"],
             paths_coords=row_data["path_coords"],
+            paths_endpoint_labels=row_data["paths_endpoint_labels"],
             k=k,
             n_clips=row_data["n_clips"],
             n_paths_found=row_data["n_paths_found"],
@@ -531,6 +628,9 @@ def main(config_path: str | None = None) -> None:
         cfg.behavior_labels_csv, cfg.n_transitions, cfg.merge_rear,
     )
     print(f"  top {cfg.n_transitions}: {transitions}")
+
+    # Accumulate per-projection panel data across all feature spaces.
+    combined_grid: dict[str, dict[str, list]] = {p: {} for p in cfg.projections}
 
     for feature_space in cfg.feature_spaces:
         print(f"\n{'=' * 56}\nFeature space: {feature_space}\n{'=' * 56}")
@@ -581,16 +681,18 @@ def main(config_path: str | None = None) -> None:
                 real_X = real_X[keep_idx]
                 real_L = real_L[keep_idx]
 
-            path_feature_list, path_lens = [], []
-            for cid, verts in top_paths:
+            path_feature_list, path_lens, endpoint_labels = [], [], []
+            for cid, verts, first_lab, last_lab in top_paths:
                 verts_arr = np.asarray(verts, dtype=np.int64)
                 verts_arr = verts_arr[(verts_arr >= 0) & (verts_arr < T)]
                 if verts_arr.size == 0:
                     path_feature_list.append(np.zeros((0, D), dtype=np.float32))
                     path_lens.append(0)
+                    endpoint_labels.append((first_lab, last_lab))
                     continue
                 path_feature_list.append(feature_data[cid, verts_arr])
                 path_lens.append(verts_arr.size)
+                endpoint_labels.append((first_lab, last_lab))
 
             row_bundles.append({
                 "A": A, "B": B,
@@ -600,6 +702,7 @@ def main(config_path: str | None = None) -> None:
                 "real_L": real_L,
                 "path_features": path_feature_list,
                 "path_lens": path_lens,
+                "endpoint_labels": endpoint_labels,
                 "n_paths_found": n_paths_found,
             })
 
@@ -613,6 +716,7 @@ def main(config_path: str | None = None) -> None:
                         "real_coords": np.zeros((0, 2)),
                         "real_labels": np.array([], dtype=object),
                         "path_coords": [],
+                        "paths_endpoint_labels": [],
                         "n_clips": 0, "n_paths_found": 0,
                         "row_title": f"{A} ↔ {B} (no dominated clips)",
                     })
@@ -639,6 +743,7 @@ def main(config_path: str | None = None) -> None:
                     "real_coords": real_coords,
                     "real_labels": bundle["real_L"],
                     "path_coords": per_path_coords,
+                    "paths_endpoint_labels": bundle["endpoint_labels"],
                     "n_clips": len(bundle["dominated"]),
                     "n_paths_found": bundle["n_paths_found"],
                     "row_title": f"{A} ↔ {B}",
@@ -650,9 +755,25 @@ def main(config_path: str | None = None) -> None:
             )
             render_figure(projection, feature_space, rendered_rows,
                           cfg.k_paths, cfg, out_path)
+            combined_grid[projection][feature_space] = rendered_rows
 
-        # Free the feature_data memory before loading the next one.
         del feature_data
+
+    # Combined panel: one image per projection, rows = feature spaces,
+    # cols = transition types. Shows K paths with endpoint stars in each cell.
+    for projection in cfg.projections:
+        out_path = (
+            Path(cfg.output_dir)
+            / f"transition_panel_{projection}.pdf"
+        )
+        render_combined_panel_figure(
+            projection=projection,
+            grid_data=combined_grid[projection],
+            feature_spaces=cfg.feature_spaces,
+            transitions=transitions,
+            cfg=cfg,
+            out_path=out_path,
+        )
 
 
 if __name__ == "__main__":
