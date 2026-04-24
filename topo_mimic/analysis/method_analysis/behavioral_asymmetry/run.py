@@ -260,21 +260,32 @@ def paired_violin_panel(
     else:
         ax.set_ylim(0, 1)
 
-    x_ticks = []
-    x_labels = []
+    per_violin_ticks = []
+    per_violin_labels = []
+    group_centers = []
+    group_names = []
     for i, (label, sym, asym, n_sym_obs, n_asym_obs) in enumerate(groups):
         x0 = 2.0 * i
         x1 = x0 + 0.9
         _draw_violin(ax, x0, sym, SYM_COLOR)
         _draw_violin(ax, x1, asym, ASYM_COLOR)
-        x_ticks.append((x0 + x1) / 2)
-        x_labels.append(f"{label}\n(sym n={n_sym_obs}, asym n={n_asym_obs})")
+        per_violin_ticks.extend([x0, x1])
+        per_violin_labels.extend(["symmetry", "asymmetry"])
+        group_centers.append((x0 + x1) / 2)
+        group_names.append(label)
 
-    ax.set_xticks(x_ticks)
-    ax.set_xticklabels(x_labels, rotation=20, ha="right", fontsize=7.5)
+    ax.set_xticks(per_violin_ticks)
+    ax.set_xticklabels(per_violin_labels, rotation=35, ha="right", fontsize=7)
     ax.set_ylabel(ylabel, fontsize=9)
     ax.set_title(title, fontsize=10, fontweight="bold", pad=4)
     ax.axhline(0, color="#bbb", linewidth=0.4, zorder=0)
+
+    trans = ax.get_xaxis_transform()
+    for xc, name in zip(group_centers, group_names):
+        ax.text(xc, -0.22, name, transform=trans,
+                ha="center", va="top", fontsize=8, fontweight="bold",
+                color="#222")
+
     if legend_handles:
         ax.legend(handles=legend_handles, frameon=False, fontsize=7.5,
                   loc="upper right")
