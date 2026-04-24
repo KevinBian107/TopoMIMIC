@@ -94,42 +94,42 @@ Demonstrations of model/method properties.
 ### Cycle Asymmetry Demo
 ```bash
 python -m topo_mimic.analysis.method_analysis.property.cycle_asymmetry
-python -m topo_mimic.analysis.method_analysis.property.cycle_asymmetry --config configs/demos/property/demo_cycle_asymmetry.yaml
+python -m topo_mimic.analysis.method_analysis.property.cycle_asymmetry --config configs/analysis/method_analysis/property/cycle_asymmetry.yaml
 ```
 Shows how DM cycles can reveal behavioral asymmetry: the motor program for entering a behavior is distinct from the motor program for exiting it. Demonstrates the endpoint matching condition for validating cycles.
 
 ### Transition Topology Demo
 ```bash
 python -m topo_mimic.analysis.method_analysis.property.transition_topology
-python -m topo_mimic.analysis.method_analysis.property.transition_topology --config configs/demos/property/demo_transition_topology.yaml
+python -m topo_mimic.analysis.method_analysis.property.transition_topology --config configs/analysis/method_analysis/property/transition_topology.yaml
 ```
 The primary demo for DM-path extraction. Compares DM paths (H0: edge-disjoint paths between density minima) with DM cycles (H1: fundamental loops) for behavioral transition recovery. `demo_transition_topology.py` is a comprehensive extension of `demo_cycle_asymmetry.py` — it adds edge-connectivity analysis, automatic clip discovery, and endpoint similarity.
 
 ### Theta-Graph Filmstrip
 ```bash
 python -m topo_mimic.analysis.method_analysis.property.theta_filmstrip
-python -m topo_mimic.analysis.method_analysis.property.theta_filmstrip --config configs/demos/property/demo_theta_filmstrip.yaml
+python -m topo_mimic.analysis.method_analysis.property.theta_filmstrip --config configs/analysis/method_analysis/property/theta_filmstrip.yaml
 ```
 Renders filmstrip visualizations of theta-graph structures (two edge-disjoint paths between density minima), showing the distinct forward and return transition trajectories.
 
 ### Stationary Behavior Demo (Appendix: DM-G Identifies Stationary Clips)
 ```bash
 python -m topo_mimic.analysis.method_analysis.property.stationary
-python -m topo_mimic.analysis.method_analysis.property.stationary --config configs/demos/property/demo_stationary.yaml
+python -m topo_mimic.analysis.method_analysis.property.stationary --config configs/analysis/method_analysis/property/stationary.yaml
 ```
 Compares clips with DM-G cycles (behaviorally rich) vs clips without cycles (stationary/simple topology). Produces: (1) `stationary_comparison.pdf` — Nature-style bar plots of root motion and body part variance for cycle vs no-cycle clips, (2) `stationary_filmstrip_grid.png` — grey-box chronophotography grid of representative no-cycle (stationary) clips. Used for the appendix section on stationary clip identification.
 
 ### Rear-Cycle Grid Demo
 ```bash
 python -m topo_mimic.analysis.method_analysis.property.rear_cycles
-python -m topo_mimic.analysis.method_analysis.property.rear_cycles --config configs/demos/property/demo_rear_cycles.yaml
+python -m topo_mimic.analysis.method_analysis.property.rear_cycles --config configs/analysis/method_analysis/property/rear_cycles.yaml
 python -m topo_mimic.analysis.method_analysis.property.rear_cycles --clip-ids 42 99 103
 ```
 Discovers N clips with X→rear→X pattern (z low→high→low), runs DM extraction on each, and produces four grid outputs: (1) `cycle_rotating_grid.gif` — rotating 3D PCA with synced video for DM cycles, (2) `cycle_filmstrip_grid.png` — chronophotography filmstrips for cycle segments, (3) `path_rotating_grid.gif` — rotating 3D PCA with synced video for DM paths, (4) `path_filmstrip_grid.png` — filmstrips for path segments.
 
 ### Topological Simplification (Figure 3)
 ```bash
-python -m topo_mimic.analysis.method_analysis.incompressibility.run configs/scripts/incompressibility.yaml
+python -m topo_mimic.analysis.method_analysis.incompressibility.run configs/analysis/method_analysis/incompressibility/incompressibility.yaml
 python -m topo_mimic.analysis.method_analysis.incompressibility.batch
 ```
 Validates topologically invariant simplification — that the DM skeleton retains only the minimal frames needed to preserve topological structure. `incompressibility.py` produces per-trial outputs including: (1) `static_intention_graph.png` — compact Nature-style plot of mean intention traces with DM-retained frames marked, (2) `dm_graph_visualization.png` — PCA/t-SNE/UMAP side-by-side with DM-cycle overlay and different markers for stationary vs moving clips, (3) `clip_filmstrips.png` — grey-box chronophotography filmstrips for each clip. `batch_incompressibility.py` produces the summary bar and line plots (Figure 3 top row). Use `--use-dm-path` to include DM path extraction alongside cycles.
@@ -143,7 +143,7 @@ End-to-end transition analysis pipelines.
 ### Rodent Transition Demo (Figure 2C)
 ```bash
 python -m demos.transition_demos.demo_rodent_transitions
-python -m demos.transition_demos.demo_rodent_transitions --config configs/demos/transition_demos/demo_rodent_transitions.yaml
+python -m demos.illustrative.demo_transitions --config configs/demos/illustrative/demo_transitions.yaml
 ```
 Visualizes rodent behavioral transitions using PCA/UMAP/t-SNE with up to 3 rows per embedding plot: GT transitions, DM cycles, and DM paths. With `skeleton_analysis.enabled: true`, also produces skeleton filmstrip figures (Figure 2C) in `{output_dir}/skeleton_analysis_filmstrip/`.
 
@@ -151,7 +151,7 @@ Visualizes rodent behavioral transitions using PCA/UMAP/t-SNE with up to 3 rows 
 
 ## Global-Manifold Demos
 
-Pool clips that share configured ground-truth transition types into a single point cloud, run DM on the *pooled* cloud per feature space, and visualize the global manifold structure. Entry points live in `demos/global_manifold/` with configs in `configs/demos/global_manifold/`. Two PDFs are produced per run:
+Pool clips that share configured ground-truth transition types into a single point cloud, run DM on the *pooled* cloud per feature space, and visualize the global manifold structure. Entry points live in `topo_mimic/analysis/method_analysis/global_manifold/` with configs in `configs/topo_mimic/analysis/method_analysis/global_manifold/`. Two PDFs are produced per run:
 
 1. `projection_grid.pdf` — per feature space × (DM-cycles, DM-paths) × (PCA, t-SNE, UMAP). Background points coloured by GT primitive behaviour (shape = turn direction for rodent). DM minima marked with gold stars, sampled paths/cycles overlaid with colour gradients.
 2. `filmstrip_grid.pdf` — one box per configured transition pair, `k_per_pair` rows of cross-clip stitched filmstrips. Each pose is annotated with its source clip id so the cross-clip nature of a global path is visible.
@@ -159,7 +159,7 @@ Pool clips that share configured ground-truth transition types into a single poi
 ### Rodent (3 feature spaces)
 ```bash
 python -m topo_mimic.analysis.method_analysis.global_manifold.run
-python -m topo_mimic.analysis.method_analysis.global_manifold.run --config configs/demos/global_manifold/rodent.yaml
+python -m topo_mimic.analysis.method_analysis.global_manifold.run --config configs/analysis/method_analysis/global_manifold/rodent.yaml
 python -m topo_mimic.analysis.method_analysis.global_manifold.run --only-feature-space intention --skip-filmstrip
 ```
 Defaults: dataset `rodent`, three transitions (`Rear↔Walking`, `Orienting↔Walking`, `Immobility↔Walking`), four primitives for label-minima selection (`Rear, Walking, Orienting, Immobility`), and feature spaces `intention / qpos / ekp`.

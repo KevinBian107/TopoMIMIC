@@ -17,7 +17,7 @@ for space in intention qpos ekp; do
   if [ -f "$pkl" ]; then
     echo "Results exist ($pkl), skipping."
   else
-    $PYTHON -m topo_mimic.extraction.dm_pipeline "configs/dmwk/dm_pipeline_${space}.yaml"
+    $PYTHON -m topo_mimic.extraction.dm_pipeline "configs/extraction/dm_pipeline_${space}.yaml"
   fi
 done
 
@@ -26,7 +26,7 @@ echo "=============================="
 echo "Benchmark Experiment"
 echo "=============================="
 
-$PYTHON -m topo_mimic.experiment.transitions configs/benchmark/experiment_transitions.yaml
+$PYTHON -m topo_mimic.experiment.transitions configs/experiment/transitions.yaml
 
 echo ""
 echo "DM pipeline + benchmark complete."

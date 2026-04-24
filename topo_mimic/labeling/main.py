@@ -155,7 +155,7 @@ def run_labeling(config: LabelingConfig) -> dict:
     }
 
 
-def main(config_path: str = "configs/benchmark/labeling.yaml"):
+def main(config_path: str = "configs/labeling/auto_label.yaml"):
     if os.path.exists(config_path):
         config = load_config(config_path)
     else:
@@ -170,5 +170,5 @@ def main(config_path: str = "configs/benchmark/labeling.yaml"):
 
 
 if __name__ == "__main__":
-    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/benchmark/labeling.yaml"
+    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/labeling/auto_label.yaml"
     main(config_path)

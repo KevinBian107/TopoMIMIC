@@ -160,7 +160,7 @@ def _outputs_for_clip(output_dir: str, clip_idx: int) -> tuple[str, str, str]:
     return video_path, track_csv_path, stac_csv_path
 
 
-def main(config_path: str = "configs/scripts/render_for_label.yaml"):
+def main(config_path: str = "configs/labeling/render_for_label.yaml"):
     cfg = load_config(config_path)
 
     if not is_consolidated_format(cfg.data_path):
@@ -217,5 +217,5 @@ def main(config_path: str = "configs/scripts/render_for_label.yaml"):
 
 
 if __name__ == "__main__":
-    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/scripts/render_for_label.yaml"
+    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/labeling/render_for_label.yaml"
     main(config_path)

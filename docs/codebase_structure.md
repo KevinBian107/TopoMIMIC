@@ -629,26 +629,26 @@ the relevant source files.
 
 **Step 1: Run DM Extraction** (per feature space, or use automation script)
 ```bash
-python -m topo_mimic.extraction.dm_pipeline configs/dmwk/dm_pipeline_intention.yaml
-python -m topo_mimic.extraction.dm_pipeline configs/dmwk/dm_pipeline_qpos.yaml
-python -m topo_mimic.extraction.dm_pipeline configs/dmwk/dm_pipeline_ekp.yaml
+python -m topo_mimic.extraction.dm_pipeline configs/extraction/dm_pipeline_intention.yaml
+python -m topo_mimic.extraction.dm_pipeline configs/extraction/dm_pipeline_qpos.yaml
+python -m topo_mimic.extraction.dm_pipeline configs/extraction/dm_pipeline_ekp.yaml
 # Or: bash bash_scripts/run_dm_pipeline.sh
 ```
 
 **Step 2: Run Benchmark Experiments**
 ```bash
-python -m topo_mimic.experiment.transitions configs/benchmark/experiment_transitions.yaml
+python -m topo_mimic.experiment.transitions configs/experiment/transitions.yaml
 # Or: bash bash_scripts/run_benchmark.sh
 ```
 
 **Step 3: Run Analysis**
 ```bash
-python -m topo_mimic.analysis.feature_analysis.main_transitions configs/benchmark/analysis_transitions.yaml
+python -m topo_mimic.analysis.feature_analysis.main_transitions configs/analysis/feature_analysis/analysis_transitions.yaml
 ```
 
 **Step 4: Run Granularity Analysis** (Optional)
 ```bash
-python -m topo_mimic.analysis.method_analysis.granularity.main configs/dmwk/granularity.yaml
+python -m topo_mimic.analysis.method_analysis.granularity.main configs/analysis/method_analysis/granularity/granularity_intention.yaml
 # Or: bash bash_scripts/run_granularity.sh
 ```
 

@@ -596,7 +596,7 @@ def plot_diagnostics_from_pickle(
     return tau_star, m_star
 
 
-def main(config_path: str = "configs/dmwkc/dm_pipeline.yaml"):
+def main(config_path: str = "configs/extraction/dm_pipeline_intention.yaml"):
     if os.path.exists(config_path):
         cfg = load_config(config_path)
     else:
@@ -606,5 +606,5 @@ def main(config_path: str = "configs/dmwkc/dm_pipeline.yaml"):
 
 
 if __name__ == "__main__":
-    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/dmwkc/dm_pipeline.yaml"
+    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/extraction/dm_pipeline_intention.yaml"
     main(config_path)

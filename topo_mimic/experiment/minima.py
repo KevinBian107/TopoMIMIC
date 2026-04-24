@@ -652,7 +652,7 @@ def run_experiment(config: MinimaExperimentConfig) -> None:
     print(f"Results saved to: {config.output_dir}")
 
 
-def main(config_path: str = "configs/benchmark/experiment_minima.yaml"):
+def main(config_path: str = "configs/experiment/minima.yaml"):
     if os.path.exists(config_path):
         cfg = load_config(config_path)
     else:
@@ -662,5 +662,5 @@ def main(config_path: str = "configs/benchmark/experiment_minima.yaml"):
 
 
 if __name__ == "__main__":
-    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/benchmark/experiment_minima.yaml"
+    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/experiment/minima.yaml"
     main(config_path)

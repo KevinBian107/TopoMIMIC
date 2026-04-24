@@ -34,5 +34,5 @@ command:
   - python
   - ${program}
   - --config
-  - configs/benchmark/hyperparam_sweep/vae_sweep.yaml
+  - configs/hyperparam_sweep/vae_sweep.yaml
   - --sweep

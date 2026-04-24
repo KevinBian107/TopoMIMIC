@@ -1,7 +1,7 @@
 """CLI entrypoint for scale-sweep.
 
 Usage:
-    python -m topo_mimic.analysis.scale_sweep configs/benchmark/scale_sweep.yaml
+    python -m topo_mimic.analysis.scale_sweep configs/analysis/scale_sweep/scale_sweep.yaml
 """
 
 from __future__ import annotations

@@ -7,7 +7,7 @@ produces a projection overlay figure + a cross-clip filmstrip figure.
 
 Usage:
     python -m topo_mimic.analysis.method_analysis.global_manifold.run
-    python -m topo_mimic.analysis.method_analysis.global_manifold.run --config configs/demos/global_manifold/rodent.yaml
+    python -m topo_mimic.analysis.method_analysis.global_manifold.run --config configs/analysis/method_analysis/global_manifold/rodent.yaml
     python -m topo_mimic.analysis.method_analysis.global_manifold.run --skip-filmstrip
 """
 
@@ -35,7 +35,7 @@ from topo_mimic.analysis.method_analysis.global_manifold.common import (
 )
 from topo_mimic.analysis.method_analysis.global_manifold.filmstrip import render_filmstrip_grid
 
-DEFAULT_CONFIG = "configs/demos/global_manifold/rodent.yaml"
+DEFAULT_CONFIG = "configs/analysis/method_analysis/global_manifold/rodent.yaml"
 
 
 def _resolve_path(p: str) -> str:

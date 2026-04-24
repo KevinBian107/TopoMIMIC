@@ -15,7 +15,7 @@ Theory (from proof.pdf and insight.md):
 Usage:
     python scripts/incompressibility.py [config_path]
 
-    Default config: configs/scripts/incompressibility.yaml
+    Default config: configs/analysis/method_analysis/incompressibility/incompressibility.yaml
 
 Outputs:
     - intention_divergence.png: Visualizes divergence in intention space
@@ -1868,7 +1868,7 @@ def run_experiment(config: IncompressibilityConfig) -> dict:
     return summary
 
 
-def main(config_path: str = "configs/scripts/incompressibility.yaml"):
+def main(config_path: str = "configs/analysis/method_analysis/incompressibility/incompressibility.yaml"):
     import argparse
     parser = argparse.ArgumentParser(description="Incompressibility experiment")
     parser.add_argument("--config", type=str, default=config_path)
@@ -1888,6 +1888,6 @@ def main(config_path: str = "configs/scripts/incompressibility.yaml"):
 
 if __name__ == "__main__":
     config_path = (
-        sys.argv[1] if len(sys.argv) > 1 else "configs/scripts/incompressibility.yaml"
+        sys.argv[1] if len(sys.argv) > 1 else "configs/analysis/method_analysis/incompressibility/incompressibility.yaml"
     )
     main(config_path)

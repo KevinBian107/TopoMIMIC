@@ -7,7 +7,7 @@ grid of representative no-cycle clips.
 
 Usage:
     python -m topo_mimic.analysis.method_analysis.property.stationary
-    python -m topo_mimic.analysis.method_analysis.property.stationary --config configs/demos/property/demo_stationary.yaml
+    python -m topo_mimic.analysis.method_analysis.property.stationary --config configs/analysis/method_analysis/property/stationary.yaml
 """
 
 import os

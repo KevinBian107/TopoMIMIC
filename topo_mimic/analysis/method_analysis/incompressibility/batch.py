@@ -13,7 +13,7 @@ Theory (from topomimic.pdf):
 
 Usage:
     python demos/incompressibility/batch_incompressibility.py [config_path]
-    Default config: configs/scripts/batch_incompressibility.yaml
+    Default config: configs/analysis/method_analysis/incompressibility/batch.yaml
 
 Outputs:
     - moving_vs_moving_bar.pdf: Bar graph for k=2 moving comparison
@@ -1179,7 +1179,7 @@ def run_experiment(config: BatchIncompressibilityConfig) -> dict:
     return summary
 
 
-def main(config_path: str = "configs/scripts/batch_incompressibility.yaml"):
+def main(config_path: str = "configs/analysis/method_analysis/incompressibility/batch.yaml"):
     if os.path.exists(config_path):
         cfg = load_config(config_path)
     else:
@@ -1192,6 +1192,6 @@ def main(config_path: str = "configs/scripts/batch_incompressibility.yaml"):
 
 if __name__ == "__main__":
     config_path = (
-        sys.argv[1] if len(sys.argv) > 1 else "configs/scripts/batch_incompressibility.yaml"
+        sys.argv[1] if len(sys.argv) > 1 else "configs/analysis/method_analysis/incompressibility/batch.yaml"
     )
     main(config_path)

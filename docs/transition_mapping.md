@@ -119,12 +119,12 @@ alphabetical base transition so both directions of a pair map to one row.
 
 **Full benchmark run** (fits methods + labels results):
 ```bash
-python3 -m topo_mimic.experiment.transitions configs/benchmark/experiment_transitions.yaml
+python3 -m topo_mimic.experiment.transitions configs/experiment/transitions.yaml
 ```
 
 **Relabel only** (reuses cached `results.pkl` per method, does NOT refit):
 ```bash
-python3 -m topo_mimic.experiment.transitions configs/benchmark/experiment_transitions.yaml --only-relabel
+python3 -m topo_mimic.experiment.transitions configs/experiment/transitions.yaml --only-relabel
 ```
 Use this when the labeling logic changes but the clusters themselves are
 still valid. Requires a previous non-`--only-relabel` run to have written
@@ -132,11 +132,11 @@ still valid. Requires a previous non-`--only-relabel` run to have written
 
 **Labeling GUI**:
 ```yaml
-# In configs/benchmark/labeling.yaml
+# In configs/labeling/auto_label.yaml
 launch_gui: true
 ```
 ```bash
-python3 -m topo_mimic.labeling.main configs/benchmark/labeling.yaml
+python3 -m topo_mimic.labeling.main configs/labeling/auto_label.yaml
 ```
 The GUI reads `labels_seed_{seed}.yaml` from the method's output directory
 (written by either the full benchmark run or the `--only-relabel` pass) and
@@ -159,7 +159,7 @@ the label and in `ParsedLabel.from_turn` / `to_turn` for display.
 
 ## Configuration
 
-`configs/benchmark/labeling.yaml` knobs that affect labeling:
+`configs/labeling/auto_label.yaml` knobs that affect labeling:
 
 ```yaml
 behavior_labels_csv: "behavior_labels/rodent_labels.csv"

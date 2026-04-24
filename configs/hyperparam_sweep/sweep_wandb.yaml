@@ -28,5 +28,5 @@ command:
   - python
   - ${program}
   - --config
-  - configs/benchmark/hyperparam_sweep/kpms_sweep.yaml
+  - configs/hyperparam_sweep/kpms_sweep.yaml
   - --sweep

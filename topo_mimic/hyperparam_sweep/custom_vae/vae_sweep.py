@@ -495,7 +495,7 @@ def main():
     parser.add_argument(
         "--config",
         type=str,
-        default="configs/benchmark/hyperparam_sweep/vae_sweep.yaml",
+        default="configs/hyperparam_sweep/vae_sweep.yaml",
         help="Path to sweep config YAML",
     )
     parser.add_argument(
@@ -506,7 +506,7 @@ def main():
     parser.add_argument(
         "--sweep-config",
         type=str,
-        default="configs/benchmark/hyperparam_sweep/vae_sweep_wandb.yaml",
+        default="configs/hyperparam_sweep/vae_sweep_wandb.yaml",
         help="Path to WandB sweep config YAML",
     )
     parser.add_argument(

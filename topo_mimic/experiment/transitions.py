@@ -1694,7 +1694,7 @@ def regenerate_labels(config: ExperimentConfig) -> None:
     print(f"[only-relabel] done ({rewritten} labels YAMLs rewritten).")
 
 
-def main(config_path: str = "configs/benchmark/experiment_transitions.yaml",
+def main(config_path: str = "configs/experiment/transitions.yaml",
          only_relabel: bool = False):
     if os.path.exists(config_path):
         cfg = load_config(config_path)
@@ -1712,7 +1712,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Unified benchmark runner.")
     parser.add_argument(
         "config", nargs="?",
-        default="configs/benchmark/experiment_transitions.yaml",
+        default="configs/experiment/transitions.yaml",
         help="Path to experiment YAML.",
     )
     parser.add_argument(

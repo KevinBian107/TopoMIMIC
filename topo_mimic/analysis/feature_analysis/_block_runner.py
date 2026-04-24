@@ -45,6 +45,6 @@ def run_single_block(config_path: str | Path, active_flag: str) -> None:
 
 
 def cli(active_flag: str) -> None:
-    default = "configs/benchmark/analysis_transitions.yaml"
+    default = "configs/analysis/feature_analysis/analysis_transitions.yaml"
     config_path = sys.argv[1] if len(sys.argv) > 1 else default
     run_single_block(config_path, active_flag)

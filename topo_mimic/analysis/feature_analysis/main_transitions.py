@@ -550,7 +550,7 @@ def run_analysis(config: AnalysisConfig) -> None:
     print(f"Results saved to: {config.output_dir}")
 
 
-def main(config_path: str = "configs/benchmark/analysis_transitions.yaml"):
+def main(config_path: str = "configs/analysis/feature_analysis/analysis_transitions.yaml"):
     if os.path.exists(config_path):
         cfg = load_config(config_path)
     else:
@@ -560,5 +560,5 @@ def main(config_path: str = "configs/benchmark/analysis_transitions.yaml"):
 
 
 if __name__ == "__main__":
-    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/benchmark/analysis_transitions.yaml"
+    config_path = sys.argv[1] if len(sys.argv) > 1 else "configs/analysis/feature_analysis/analysis_transitions.yaml"
     main(config_path)
