@@ -1,0 +1,39 @@
+output_dir: "outputs/cycle_asymmetry"
+data:
+  rodent_rollout_dir: "data/rodent_ar.h5"
+  xml_path: "topo_mimic/extraction/xml/rodent.xml"
+  stac_data_path: "data/rodent_reference_clips.h5"
+feature_spaces:
+  - dm_key: intention
+    pca_dims: null
+    takens_m: 3
+    takens_tau: 6
+    pers_delta: 0.75
+  - dm_key: qpos
+    pca_dims: 10
+    takens_m: 3
+    takens_tau: 9
+    pers_delta: 0.2
+  - dm_key: ekp
+    pca_dims: 10
+    takens_m: 3
+    takens_tau: 8
+    pers_delta: 0.15
+clip_sets:
+  - name: cycle_candidates
+    clip_ids: [29, 81, 93]
+    expect_cycles: true
+  - name: sustained_walking
+    clip_ids: [779, 418, 139]
+    expect_cycles: false
+  - name: straight_walking
+    clip_ids: [605, 499, 478]
+    expect_cycles: false
+dm:
+  k_neighbors: 3
+  epsilon: 0.99
+visualization:
+  dpi: 150
+  gif_n_frames: 120
+  gif_fps: 15
+  segment_gap_limit: 50

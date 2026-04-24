@@ -1,0 +1,37 @@
+output_dir: outputs/analysis/method_analysis/rear_cycles
+
+data:
+  rodent_rollout_dir: data/rodent_ar.h5
+  xml_path: topo_mimic/extraction/xml/rodent.xml
+  stac_data_path: data/rodent_reference_clips.h5
+
+feature_space:
+  dm_key: intention
+  takens_m: 3
+  takens_tau: 6
+  pers_delta: 0.75
+
+dm:
+  k_neighbors: 3
+  epsilon: 0.99
+
+discovery:
+  reference_clip: 335
+  n_clips: 3
+  max_paths: 3
+  clip_ids: []
+
+visualization:
+  gif_n_frames: 120
+  gif_fps: 15
+  dpi: 400
+  segment_gap_limit: 50
+
+filmstrip:
+  n_poses: 5
+  camera_elevation: -55.0
+  camera_distance_margin: 2.5
+  render_height: 720
+  render_width: 1280
+  min_segment_length: 30
+  gap_threshold: 10

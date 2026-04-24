@@ -5,7 +5,7 @@ back to GT transitions for the analysis pipeline.
 
 The labeler uses the directional `"A -> B Direction"` format. A legacy
 canonical `"A <-> B"` labeler is still callable for the scale-sweep
-discovery logic (see `topo_mimic/benchmark/auto_label.py`). The
+discovery logic (see `topo_mimic/experiment/auto_label.py`). The
 discovered-cluster side and the GT side use the same per-window frame-count
 rule for direction assignment (`direction_tag_from_window` on the cluster
 side, `compute_window_turn` on the GT side); the discovered side adds a
@@ -91,7 +91,7 @@ tag.
 | Empty (no GT coverage) | `""` | skipped |
 
 Downstream consumers parse the label via
-`topo_mimic/benchmark/analysis/behavior_parsing.parse_cluster_label`, which
+`topo_mimic/analysis/feature_analysis/behavior_parsing.parse_cluster_label`, which
 whitespace-splits and buckets tokens into `primitives`
 ({`Immobile`, `Turn`, `Rear`, `Walk`}) and `compositional` ({`Left`,
 `Right`, `Straight`}). The `->` arrow token is not a behavior and is
@@ -101,7 +101,7 @@ Left"` and `"A B Left"`.
 ## Legacy canonical labeler
 
 `auto_label.auto_label_clusters` is the older format and remains active for
-`topo_mimic/benchmark/scale_sweep/discovery.py`. It:
+`topo_mimic/analysis/scale_sweep/discovery.py`. It:
 
 - Takes only behavior segments (direction segments must be filtered out
   upstream, which `scale_sweep/data.py` now does via
@@ -119,12 +119,12 @@ alphabetical base transition so both directions of a pair map to one row.
 
 **Full benchmark run** (fits methods + labels results):
 ```bash
-python3 -m topo_mimic.benchmark.experiment_transitions configs/benchmark/experiment_transitions.yaml
+python3 -m topo_mimic.experiment.transitions configs/experiment/transitions.yaml
 ```
 
 **Relabel only** (reuses cached `results.pkl` per method, does NOT refit):
 ```bash
-python3 -m topo_mimic.benchmark.experiment_transitions configs/benchmark/experiment_transitions.yaml --only-relabel
+python3 -m topo_mimic.experiment.transitions configs/experiment/transitions.yaml --only-relabel
 ```
 Use this when the labeling logic changes but the clusters themselves are
 still valid. Requires a previous non-`--only-relabel` run to have written
@@ -132,11 +132,11 @@ still valid. Requires a previous non-`--only-relabel` run to have written
 
 **Labeling GUI**:
 ```yaml
-# In configs/benchmark/labeling.yaml
+# In configs/labeling/auto_label.yaml
 launch_gui: true
 ```
 ```bash
-python3 -m topo_mimic.benchmark.labeling.main configs/benchmark/labeling.yaml
+python3 -m topo_mimic.labeling.main configs/labeling/auto_label.yaml
 ```
 The GUI reads `labels_seed_{seed}.yaml` from the method's output directory
 (written by either the full benchmark run or the `--only-relabel` pass) and
@@ -159,7 +159,7 @@ the label and in `ParsedLabel.from_turn` / `to_turn` for display.
 
 ## Configuration
 
-`configs/benchmark/labeling.yaml` knobs that affect labeling:
+`configs/labeling/auto_label.yaml` knobs that affect labeling:
 
 ```yaml
 behavior_labels_csv: "behavior_labels/rodent_labels.csv"
@@ -295,13 +295,13 @@ distributions truly coincide (estimator variance, not a bug).
 
 ### Files
 
-- `topo_mimic/benchmark/analysis/mmd_kid.py` — `compute_mmd_kid(X, Y)`,
+- `topo_mimic/analysis/feature_analysis/mmd_kid.py` — `compute_mmd_kid(X, Y)`,
   `polynomial_kernel`, `rbf_kernel`, `median_heuristic_sigma`,
   `mmd2_unbiased`.
-- `topo_mimic/benchmark/analysis/metrics.py::run_mmd_analysis` —
+- `topo_mimic/analysis/feature_analysis/metrics.py::run_mmd_analysis` —
   per-`(method, seed)` entrypoint mirroring `run_dtw_analysis`.
 - Enabled via `AnalysisConfig.run_mmd_analysis: bool = True`.
-- Per-run output: `outputs/benchmark_analysis/{method}/seed_{N}/mmd/{method}_seed{N}_mmd_results.csv`
+- Per-run output: `outputs/analysis/feature_analysis/{method}/seed_{N}/mmd/{method}_seed{N}_mmd_results.csv`
   with columns `Label, Turn_Direction, Cluster_IDs, KID, MMD_RBF, Sigma,
   N_Cluster_Seqs, N_GT_Seqs`.
 - Aggregation: `generate_results_table` loads those CSVs, pivots to
@@ -330,7 +330,7 @@ KID/MMD² is strong evidence that cluster and real truly coincide.
 
 An independent metric that measures how faithfully a cluster's members
 actually match its auto-assigned label. Lives in
-`topo_mimic/benchmark/analysis/purity.py`.
+`topo_mimic/analysis/feature_analysis/purity.py`.
 
 ### Definition
 
@@ -358,10 +358,10 @@ almost entirely inside the right GT region.
 
 ### Files
 
-- `topo_mimic/benchmark/analysis/purity.py` — `run_purity_analysis(...)`,
+- `topo_mimic/analysis/feature_analysis/purity.py` — `run_purity_analysis(...)`,
   `compute_cluster_purity(...)`, `_parse_cluster_label(...)`.
 - Enabled via `AnalysisConfig.run_purity_analysis: bool = True`.
-- Per-run output: `outputs/benchmark_analysis/{method}/seed_{N}/purity/{method}_seed{N}_purity.csv`.
+- Per-run output: `outputs/analysis/feature_analysis/{method}/seed_{N}/purity/{method}_seed{N}_purity.csv`.
 - Aggregation: `generate_results_table._load_individual_purity_results` →
   `create_purity_pivot_table` → `purity_table.{csv,png,pdf}` with mean ± std
   across seeds and 1-seed annotations, rendered with `higher_is_better=True`.
@@ -369,7 +369,7 @@ almost entirely inside the right GT region.
 ## Files
 
 ```
-topo_mimic/benchmark/
+topo_mimic/experiment/
 ├── auto_label.py                  # BEHAVIOR_LABELS, DIRECTION_LABELS,
 │                                  # direction_tag_from_window (shared rule),
 │                                  # auto_label_clusters_directional (new),

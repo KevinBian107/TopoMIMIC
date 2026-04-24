@@ -1,0 +1,29 @@
+# Density Basin DM Demonstration Configuration
+# Three experiments demonstrating cycle vs path detection:
+# 1. Two basins with two routes -> cycle (theta-graph)
+# 2. Two basins with one route -> path only
+# 3. Multi-basin landscape -> mixed cycle + path
+
+output_dir: "outputs/demos/saddle_dm_demo"
+
+path:
+  n_steps: 800
+  noise_std: 0.04
+  seed: 42
+
+dm:
+  k_neighbors: 8
+  pers_delta: 0.05
+  epsilon: 0.99
+
+visualization:
+  dpi: 200
+  surface_alpha: 0.3
+  contour_levels: 15
+  contour_alpha: 0.4
+  path_linewidth: 2.0
+  density_cmap: "plasma"
+  cycle_color: "lime"
+  cycle_linewidth: 4.0
+  path_color: "cyan"
+  path_marker_color: "deepskyblue"

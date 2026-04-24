@@ -1,0 +1,41 @@
+# Discrete Morse Pipeline Configuration — Intention Space
+
+output_dir: "outputs/extraction/dm_pipeline_intention"
+
+data:
+  dm_key: "intention"
+  rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
+  split: "all"
+  pca_dims: null
+  xml_path: "topo_mimic/extraction/xml/rodent.xml"
+  stac_data_path: "data/rodent_reference_clips.h5"
+
+takens:
+  auto_estimate: false
+  m: 3
+  tau: 6
+  max_tau: 200
+  bins: 64
+  m_max: 15
+  R_tol: 15.0
+  A_tol: 2.0
+  fnn_thr: 0.05
+  theiler: "auto"
+  max_points: 20000
+
+dm:
+  pers_delta: 1.0
+  k_neighbors: 3
+  epsilon: 0.99
+  skip: false
+  results_dir: null
+  segment_gap_limit: 50
+  min_segment_len: 50
+  use_dm_path: true
+
+rendering:
+  enabled: true
+  pad: 0
+  max_samples: 5
+  framerate: 50
+  target_size: [320, 240]

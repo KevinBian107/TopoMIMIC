@@ -1,0 +1,29 @@
+output_dir: "outputs/analysis/method_analysis/transition_topology"
+data:
+  rodent_rollout_dir: "data/rodent_ar.h5"
+  xml_path: "topo_mimic/extraction/xml/rodent.xml"
+  stac_data_path: "data/rodent_reference_clips.h5"
+feature_spaces:
+  - dm_key: intention
+    pca_dims: null
+    takens_m: 3
+    takens_tau: 6
+    pers_delta: 0.75
+clip_ids: []
+min_segment_frames: 10
+clip_discovery:
+  enabled: true
+  top_k: 10
+  z_high: 0.06
+  z_low: 0.02
+  min_peak_frames: 15
+  min_valley_frames: 10
+  smooth_window: 5
+dm:
+  k_neighbors: 3
+  epsilon: 0.99
+visualization:
+  dpi: 150
+  gif_n_frames: 120
+  gif_fps: 15
+  segment_gap_limit: 10

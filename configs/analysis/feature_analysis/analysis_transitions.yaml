@@ -1,0 +1,108 @@
+# Unified Analysis Configuration
+# Run after experiment.py to analyze results
+
+experiment_dir: "outputs/experiment/transitions"
+output_dir: "outputs/analysis/feature_analysis"
+
+rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
+behavior_labels_csv: "behavior_labels/rodent_labels.csv"
+
+# Filter to specific methods and seeds (null = all)
+# Example: methods: ["gw_kmeans", "w2_kmeans"]
+# Example: seeds: [0, 123]
+methods: ["w2_dmc_int_kmeans", "w2_dmc_ekp_kmeans", "w2_dmc_qpos_kmeans", "w2_dmp_int_kmeans", "w2_dmp_qpos_kmeans", "w2_dmp_ekp_kmeans", "w2_unif_kmeans", "kpms_intention", "kpms_keypoint", "custom_vae", "mapper_int", "mapper_qpos", "mapper_ekp"]
+seeds: [0, 1, 2]
+
+# =============================================================================
+# Global settings (used across multiple analyses)
+# =============================================================================
+short_behavior_threshold: 50  # Max frames for intermediate behavior to be bridged
+merge_rear: true  # Merge Supported Rear and Unsupported Rear into single "Rear" category
+max_gap_between_segments: 10  # Max gap between consecutive behavior segments to count as transition
+
+
+# =============================================================================
+# GT Sanity Check (run at start of analysis)
+# =============================================================================
+# Compares movement sequences between top GT transition clusters using DTW
+# to verify they represent distinct behavioral states (different movement patterns)
+run_gt_sanity_check: false
+gt_sanity_top_k: 5  # Number of top GT transition types to compare
+gt_sanity_data_key: "qpos_rollout"  # Feature to use: "qpos_rollout" or "intention"
+gt_sanity_figsize: [12, 10]  # [width, height] for heatmaps
+gt_sanity_skip_root_dims: 7  # Skip first N dims of qpos (root pos + quat)
+
+# =============================================================================
+# MDS settings
+# =============================================================================
+run_mds_analysis: false  # MDS already computed and unchanged by directional fix
+mds_k_cycles: 50
+mds_s_top: 10
+mds_figsize: [10, 9]  # [width, height]
+# Behaviors to show separately in MDS (null = all behaviors from behavior_labels_csv)
+# Available: Walking, Immobility, Grooming, Orienting, Supported Rear, Unsupported Rear, Left Turn, Right Turn
+mds_behaviors: null
+
+# =============================================================================
+# GT rendering settings
+# =============================================================================
+render_gt_transitions: false  # Render GT transition videos in grid format
+gt_render_max_samples: 5  # Max samples per transition for video rendering
+gt_render_framerate: 30  # Framerate for GT transition videos
+gt_render_target_size: [320, 240]  # Target tile size for GT rendering
+
+# =============================================================================
+# Transition comparison settings
+# =============================================================================
+run_transition_comparison: false  # already computed and unchanged by directional fix
+run_transition_ranking: false     # already computed
+max_transition_points: 500  # Max points to display per cluster
+
+# =============================================================================
+# Transition graph settings
+# =============================================================================
+run_transition_graph: false  # disabled for classifier-only rerun
+transition_graph_k: 3  # k for k-NN graph
+transition_graph_gt_top_k: 10  # Number of top GT transition types to include (by frequency)
+transition_graph_layout: "spring"  # Layout algorithm: spring, kamada_kawai, spectral
+transition_graph_figsize: [16, 7]  # [width, height]
+
+# =============================================================================
+# DTW Metrics (Discovered vs Corresponding GT comparison)
+# =============================================================================
+# Compares movement SEQUENCES using Dynamic Time Warping
+# Each discovered cluster is compared to its corresponding GT transition type
+# Turn direction (left/right) is used to filter GT sequences
+# Lower DTW = more similar transition dynamics (how joints move over time)
+run_dtw_metrics: true  # re-enabled after directional-DTW fix 2026-04-22
+dtw_data_key: "qpos_rollout"  # Data to use: "qpos_rollout" or "intention"
+dtw_max_seqs: 50  # Max sequences per cluster
+dtw_max_comparisons: 100  # Max pairwise DTW comparisons per cluster pair
+dtw_min_seq_length: 3  # Minimum sequence length to include
+dtw_skip_root_dims: 7  # Skip first N dims of qpos (root pos + quat)
+consistency_n_samples: 5  # Sequences to sample per cluster for internal consistency
+
+# =============================================================================
+# DTW Visualization (detailed alignment visualization)
+# =============================================================================
+# Generates per-cluster visualizations showing DTW alignment details
+# For each cluster: warping path on cost matrix, aligned joint trajectories, and video
+run_dtw_visualization: false  # Enable detailed DTW visualization (slower)
+
+# =============================================================================
+# C2ST cluster evaluation (replaces KID and the single-classifier pipeline)
+# =============================================================================
+# For each (method, seed, cluster) trains a binary classifier on
+# (cluster windows, GT transition windows of the same label) and reports
+# held-out CV accuracy. 0.5 = indistinguishable from real; 1.0 = trivially
+# separable. Three model types per cluster (LogReg / RandomForest / MLP).
+# Real-GT windows are subsampled to match the cluster size; the cluster's
+# own source clips are excluded from the real pool to avoid clip-level
+# leakage.
+run_c2st_analysis: true
+c2st_raw_h5_path: "data/rodent_ar.h5"
+c2st_window_frames: 200
+c2st_min_cluster_size: 20  # below this, skip the cluster; at n=20 a 5-fold CV gets 4 per class per fold
+c2st_n_folds: 5
+c2st_models: ["logreg", "rf", "mlp"]
+

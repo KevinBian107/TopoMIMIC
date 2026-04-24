@@ -1,0 +1,26 @@
+# Feature-space projection comparison (real vs. DM frames).
+# Produces 6 figures: (DMC, DMP) x (PCA, UMAP, t-SNE). Each figure is
+# 2 rows (real, DM) x 3 cols (intention, qpos, ekp).
+
+h5_path: "data/rodent_ar.h5"
+behavior_labels_csv: "behavior_labels/rodent_labels.csv"
+experiment_dir: "outputs/experiment/transitions"
+xml_path: "topo_mimic/extraction/xml/rodent.xml"
+stac_data_path: "data/rodent_reference_clips.h5"
+
+seed: 0
+window_frames: 100
+
+feature_spaces: ["intention", "qpos", "ekp"]
+dm_methods: ["dmc", "dmp"]
+projections: ["pca", "umap", "tsne"]
+
+# Real data is stride-subsampled to this many frames before projection.
+# t-SNE gets a smaller subsample because of its O(N^2) cost.
+real_subsample_n: 10000
+tsne_subsample_n: 5000
+
+point_size: 2.0
+point_size_dm: 5.0
+
+output_dir: "outputs/demos/feature_space_projections"

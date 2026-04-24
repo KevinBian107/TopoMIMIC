@@ -1,0 +1,71 @@
+# Incompressibility Experiment Configuration
+# Tests the theory that DM-G preserves divergent paths in intention space
+#
+# Theory (from proof.pdf):
+# - DM-G detects changes through incompressibility
+# - Steady-state behavior has H_p = 0, so it collapses
+# - Transitions create H_1 != 0 (loops) that cannot be paired away
+# - This experiment finds divergent trajectories and verifies DM-G captures them
+
+output_dir: "outputs/analysis/method_analysis/incompressibility"
+
+data:
+  rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
+  split: "train"
+  intention_key: "intention"
+  qpos_key: "qpos_rollout"
+  skip_clips: [80, 187, 227, 246, 267, 392, 434, 456, 491, 562, 610, 685]
+
+divergence:
+  # Number of trajectories to compare (K from the experiment description)
+  k_trajectories: 5
+  # How many frames define "similar past"
+  past_frames: 100
+  # How many frames to check for divergence
+  future_frames: 400
+  # Cosine similarity threshold for past (higher = more similar)
+  similarity_threshold: 0.5
+  # Euclidean distance threshold for future divergence (higher = more divergent)
+  divergence_threshold: 2.0
+  # Number of candidate pairs to consider
+  n_candidates: 500
+  seed: 42
+  # Minimum root displacement (x,y) to consider a clip as "moving"
+  min_displacement: 0.5
+  # Filter only moving clips (ignored if moving_vs_stationary is true)
+  require_movement: true
+  # Mode: find one moving clip vs one stationary clip
+  moving_vs_stationary: true
+  # Maximum intention variance for a clip to be considered "stationary"
+  max_intention_variance: 0.1
+
+dm:
+  # Takens embedding parameters (from dm_pipeline.yaml)
+  m: 3
+  tau: 6
+  # Persistence threshold - higher keeps fewer cycles
+  pers_delta: 0.9
+  k_neighbors: 7
+  epsilon: 0.99
+
+visualization:
+  # Key joints to plot in 2D panels
+  # qpos layout: [root_xyz(3), root_quat(4), joints...]
+  key_joints:
+    - name: "root_x"
+      indices: [0]
+    - name: "root_y"
+      indices: [1]
+    - name: "root_z"
+      indices: [2]
+    - name: "spine_bend"
+      indices: [7, 8, 9]
+    - name: "hip_L"
+      indices: [10, 11, 12]
+    - name: "hip_R"
+      indices: [17, 18, 19]
+
+rendering:
+  framerate: 30
+  target_size: [320, 240]
+  camera_name: "close_profile"

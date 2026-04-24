@@ -1,0 +1,55 @@
+# Batch Incompressibility Experiment Configuration
+#
+# Tests the DM-G incompressibility theory across multiple trials:
+# 1. Moving vs Moving (k=2): Bar graph comparing high-motion vs low-motion clips
+# 2. Stationary vs Moving (n=2,3,4,5,6): Line plot showing compressibility
+#
+# Theory (from topomimic.pdf):
+# - DM-G detects changes through incompressibility
+# - Steady-state behavior (H_p = 0) collapses - compressible
+# - Behavioral transitions create H_1 != 0 (loops) - incompressible
+# - Weak Morse Inequalities (m_p >= beta_p) guarantee critical cell retention
+
+output_dir: "outputs/analysis/method_analysis/batch_incompressibility"
+
+data:
+  rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
+  split: "train"
+  intention_key: "intention"
+  qpos_key: "qpos_rollout"
+  skip_clips: [80, 187, 227, 246, 267, 392, 434, 456, 491, 562, 610, 685]
+
+clip_selection:
+  # Minimum root displacement (x,y) to consider a clip as "moving"
+  min_displacement: 0.5
+  # Maximum intention variance for a clip to be considered "stationary"
+  max_intention_variance: 0.3
+  # Base seed for random clip selection (each trial uses base_seed + trial_idx)
+  base_seed: 42
+  # Fallback: if no clips meet strict criteria, use bottom X% by intention variance
+  stationary_percentile: 20.0
+
+dm:
+  # Takens embedding parameters
+  m: 3
+  tau: 6
+  # Persistence threshold - higher keeps fewer cycles
+  pers_delta: 0.9
+  # Number of neighbors for graph construction
+  k_neighbors: 7
+  # Epsilon parameter for DM-G
+  epsilon: 0.99
+
+experiment:
+  # Number of trials to run for each experiment (for error bars)
+  n_trials: 10
+  # Values of n (number of trajectories) for stationary vs moving experiment
+  # Each n uses 1 stationary + (n-1) moving clips
+  n_values: [2, 3, 4, 5]
+
+rendering:
+  framerate: 30
+  target_size: [320, 240]
+  camera_name: "close_profile"
+  # Save intermediate videos for each trial (set to false to speed up)
+  save_videos: false

@@ -1,0 +1,40 @@
+# Automatic Label Assignment Configuration
+# Run after experiment.py to generate label recommendations
+
+# Experiment location
+experiment_dir: "outputs/experiment/transitions"
+rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
+behavior_labels_csv: "behavior_labels/rodent_labels.csv"
+
+# Method and seed to label (can be overridden via CLI)
+method: "w2_dmp_qpos_kmeans"
+seed: 0
+
+# GT extraction parameters
+gt_extraction:
+  target_len: 100           # Normalize GT transitions to this length
+  short_threshold: 10       # Max frames for intermediate behavior bridging
+  max_gap: 10               # Max gap between consecutive segments
+  merge_rear: true          # Merge Supported/Unsupported Rear into Rear
+  # Non-transition behaviors to include (e.g., grooming involves movement but isn't a transition)
+  include_non_transitions:
+    - "Grooming"
+  non_transition_min_length: 30  # Minimum segment length for non-transition behaviors
+
+# Distance computation parameters
+distance:
+  max_cycles_per_cluster: 100   # Sample cycles from each cluster
+  max_gt_samples: 100           # Sample GT transitions per type
+
+# Recommendation parameters
+recommendations:
+  top_k: 10                     # Number of recommendations per cluster
+
+# Output options
+save_csv: true                 # Save recommendations and statistics to CSV
+launch_gui: true              # Launch Gradio GUI after computing recommendations
+
+# GUI parameters (if launch_gui: true)
+gui:
+  port: 7860                   # Gradio server port
+  share: true                 # Create public URL

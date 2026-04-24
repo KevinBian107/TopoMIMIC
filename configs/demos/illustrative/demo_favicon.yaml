@@ -1,8 +1,0 @@
-output_dir: "outputs/favicon"
-surface_fn: "two_basin"
-elev: 30
-azim: -60
-resolution: 200
-sizes: [512, 64, 32]
-cmap: "coolwarm"
-alpha: 0.9
