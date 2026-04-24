@@ -74,10 +74,7 @@ class TripletRecord:
 
     @property
     def short_key(self) -> str:
-        abbrev = {"Immobile": "Im", "Turn": "Tu", "Rear": "Re", "Walk": "Wk"}
-        a = abbrev.get(self.a_label, self.a_label[:2])
-        b = abbrev.get(self.b_label, self.b_label[:2])
-        return f"{a}-{b}-{a}"
+        return f"{self.a_label}→{self.b_label}→{self.a_label}"
 
     @property
     def is_symmetric(self) -> bool:
@@ -231,10 +228,8 @@ def _nature_axis(ax):
     ax.tick_params(labelsize=8, width=0.8, length=3)
 
 
-def _draw_violin(ax, pos: float, vals: np.ndarray, color: str, label_below: str):
+def _draw_violin(ax, pos: float, vals: np.ndarray, color: str):
     if vals.size == 0:
-        ax.text(pos, 0, "n=0", ha="center", va="bottom", fontsize=6,
-                color="#777", rotation=0)
         return
     vp = ax.violinplot([vals], positions=[pos], widths=0.8, showextrema=False)
     for body in vp["bodies"]:
@@ -247,8 +242,6 @@ def _draw_violin(ax, pos: float, vals: np.ndarray, color: str, label_below: str)
     ax.errorbar([pos], [mu], yerr=[[mu - lo], [hi - mu]],
                 fmt="o", markersize=3.5, color="#222",
                 capsize=2.5, linewidth=0.9, zorder=5)
-    ax.text(pos, ax.get_ylim()[0], label_below, ha="center", va="top",
-            fontsize=6, color="#444")
 
 
 def paired_violin_panel(
@@ -260,7 +253,6 @@ def paired_violin_panel(
     legend_handles: list | None = None,
 ):
     _nature_axis(ax)
-    # Collect all values to set a sensible y lim before drawing n=0 text.
     all_vals = [v for _, s, a, *_ in groups for v in (list(s) + list(a))]
     if all_vals:
         ymax = max(all_vals) * 1.12
@@ -273,13 +265,13 @@ def paired_violin_panel(
     for i, (label, sym, asym, n_sym_obs, n_asym_obs) in enumerate(groups):
         x0 = 2.0 * i
         x1 = x0 + 0.9
-        _draw_violin(ax, x0, sym, SYM_COLOR, f"n={n_sym_obs}")
-        _draw_violin(ax, x1, asym, ASYM_COLOR, f"n={n_asym_obs}")
+        _draw_violin(ax, x0, sym, SYM_COLOR)
+        _draw_violin(ax, x1, asym, ASYM_COLOR)
         x_ticks.append((x0 + x1) / 2)
-        x_labels.append(label)
+        x_labels.append(f"{label}\n(sym n={n_sym_obs}, asym n={n_asym_obs})")
 
     ax.set_xticks(x_ticks)
-    ax.set_xticklabels(x_labels, rotation=30, ha="right", fontsize=7.5)
+    ax.set_xticklabels(x_labels, rotation=20, ha="right", fontsize=7.5)
     ax.set_ylabel(ylabel, fontsize=9)
     ax.set_title(title, fontsize=10, fontweight="bold", pad=4)
     ax.axhline(0, color="#bbb", linewidth=0.4, zorder=0)
@@ -304,13 +296,13 @@ def render_figure_for_space(
     sym_all = df[df["symmetry"] == "symmetric"]
     asym_all = df[df["symmetry"] == "asymmetric"]
     agg_abs = [(
-        "All A->B->A",
+        "All A→B→A",
         boot(sym_all, "cycle_count_abs"),
         boot(asym_all, "cycle_count_abs"),
         len(sym_all), len(asym_all),
     )]
     agg_norm = [(
-        "All A->B->A",
+        "All A→B→A",
         boot(sym_all, "cycle_count_norm"),
         boot(asym_all, "cycle_count_norm"),
         len(sym_all), len(asym_all),
@@ -402,7 +394,7 @@ def render_combined_normalized_figure(
         s_all = df[df["symmetry"] == "symmetric"]
         a_all = df[df["symmetry"] == "asymmetric"]
         groups.append((
-            "All",
+            "All A→B→A",
             boot(s_all, "cycle_count_norm"),
             boot(a_all, "cycle_count_norm"),
             len(s_all), len(a_all),
@@ -474,7 +466,7 @@ def render_combined_aggregated_figure(
         s_all = df[df["symmetry"] == "symmetric"]
         a_all = df[df["symmetry"] == "asymmetric"]
         per_space_group[fs] = [(
-            "All A->B->A",
+            "All A→B→A",
             boot(s_all, "cycle_count_norm"),
             boot(a_all, "cycle_count_norm"),
             len(s_all), len(a_all),
