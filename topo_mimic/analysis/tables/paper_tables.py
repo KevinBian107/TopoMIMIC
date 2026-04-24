@@ -18,7 +18,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from topo_mimic.analysis._tmp_tables import METHOD_DISPLAY_NAMES
+from topo_mimic.analysis.tables.results_table import METHOD_DISPLAY_NAMES
 
 ANALYSIS_DIR = "outputs/benchmark_analysis"
 OUTPUT_DIR = "tables"

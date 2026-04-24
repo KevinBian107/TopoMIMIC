@@ -127,7 +127,7 @@ launch_gui: true
 Generate variance heatmaps, cross-method comparison, and seed stability analysis:
 ```bash
 python -m topo_mimic.analysis.feature_analysis.main_transitions configs/benchmark/analysis_transitions.yaml
-python -m topo_mimic.analysis._tmp_tables
+python -m topo_mimic.analysis.tables.results_table
 ```
 
 ### Step 5: Baseline Scale Sweep (Fairness Check)
