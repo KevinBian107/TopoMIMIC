@@ -101,7 +101,7 @@ run_dtw_visualization: false  # Enable detailed DTW visualization (slower)
 # leakage.
 run_c2st_analysis: true
 c2st_raw_h5_path: "data/rodent_ar.h5"
-c2st_window_frames: 100
+c2st_window_frames: 200
 c2st_min_cluster_size: 20  # below this, skip the cluster; at n=20 a 5-fold CV gets 4 per class per fold
 c2st_n_folds: 5
 c2st_models: ["logreg", "rf", "mlp"]
