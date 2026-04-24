@@ -376,6 +376,91 @@ def render_figure_for_space(
     print(f"  wrote {out_path} (+.png)")
 
 
+def render_combined_normalized_figure(
+    dfs: dict[str, pd.DataFrame],
+    cfg: AsymmetryConfig,
+    out_path: Path,
+) -> None:
+    """One figure, normalized only, 1 row x 3 cols (one column per feature space)."""
+    feature_spaces = list(dfs.keys())
+    n_cols = len(feature_spaces)
+
+    rng = np.random.default_rng(cfg.bootstrap_seed)
+
+    def boot(sub: pd.DataFrame, col: str) -> np.ndarray:
+        return bootstrap_means(sub[col].to_numpy(dtype=float),
+                               cfg.n_bootstrap, rng)
+
+    # Pair ordering fixed across panels, based on pooled support.
+    pooled = pd.concat(list(dfs.values()), ignore_index=True)
+    totals = pooled.groupby("pair_short").size().sort_values(ascending=False)
+
+    per_space_groups: dict[str, list[tuple[str, np.ndarray, np.ndarray, int, int]]] = {}
+    for fs, df in dfs.items():
+        groups = []
+        # Aggregated as the first group in each panel.
+        s_all = df[df["symmetry"] == "symmetric"]
+        a_all = df[df["symmetry"] == "asymmetric"]
+        groups.append((
+            "All",
+            boot(s_all, "cycle_count_norm"),
+            boot(a_all, "cycle_count_norm"),
+            len(s_all), len(a_all),
+        ))
+        for pair in totals.index:
+            sub = df[df["pair_short"] == pair]
+            s_sub = sub[sub["symmetry"] == "symmetric"]
+            a_sub = sub[sub["symmetry"] == "asymmetric"]
+            if max(len(s_sub), len(a_sub)) < cfg.min_support:
+                continue
+            groups.append((
+                pair,
+                boot(s_sub, "cycle_count_norm"),
+                boot(a_sub, "cycle_count_norm"),
+                len(s_sub), len(a_sub),
+            ))
+        per_space_groups[fs] = groups
+
+    n_groups = max(len(g) for g in per_space_groups.values())
+    fig_w = n_cols * max(4.5, n_groups * 0.85)
+    fig, axes = plt.subplots(1, n_cols, figsize=(fig_w, 5.0), squeeze=False)
+    axes = axes[0]
+
+    legend_handles = [
+        Patch(facecolor=SYM_COLOR, alpha=0.55, edgecolor="#222",
+              label="symmetric (same direction)"),
+        Patch(facecolor=ASYM_COLOR, alpha=0.55, edgecolor="#222",
+              label="asymmetric (different direction)"),
+    ]
+
+    y_tops = []
+    for ax, fs in zip(axes, feature_spaces):
+        paired_violin_panel(
+            ax, per_space_groups[fs],
+            ylabel="Cycles per 100 frames" if fs == feature_spaces[0] else "",
+            title=f"{fs}",
+            legend_handles=None,
+        )
+        y_tops.append(ax.get_ylim()[1])
+
+    shared_top = max(y_tops) if y_tops else 1.0
+    for ax in axes:
+        ax.set_ylim(0, shared_top)
+
+    fig.suptitle(
+        "Behavioral asymmetry vs DM-cycle count (normalized, per 100 frames)",
+        fontsize=12, fontweight="bold", y=1.02,
+    )
+    fig.legend(handles=legend_handles, loc="upper center", ncol=2,
+               frameon=False, fontsize=9, bbox_to_anchor=(0.5, 0.98))
+
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    plt.savefig(out_path, bbox_inches="tight", dpi=220)
+    plt.savefig(out_path.with_suffix(".png"), bbox_inches="tight", dpi=220)
+    plt.close(fig)
+    print(f"  wrote {out_path} (+.png)")
+
+
 def _per_pair_summary(df: pd.DataFrame, feature_space: str) -> pd.DataFrame:
     rows = []
     for pair, sub in df.groupby("pair"):
@@ -407,6 +492,7 @@ def main(config_path: str | None = None) -> None:
 
     per_space_summaries = []
     per_pair_summaries = []
+    dfs_by_space: dict[str, pd.DataFrame] = {}
     for fs in cfg.feature_spaces:
         print(f"\nFeature space: {fs}")
         ext_dir = cfg.extraction_dirs[fs]
@@ -426,6 +512,7 @@ def main(config_path: str | None = None) -> None:
 
         fig_path = out_dir / f"asymmetry_violins_{fs}.pdf"
         render_figure_for_space(df, fs, cfg, fig_path)
+        dfs_by_space[fs] = df
 
         per_space_summaries.append({
             "feature_space": fs,
@@ -442,6 +529,10 @@ def main(config_path: str | None = None) -> None:
     pd.concat(per_pair_summaries, ignore_index=True).to_csv(
         out_dir / "summary_by_pair.csv", index=False,
     )
+
+    combined_path = out_dir / "asymmetry_violins_combined_normalized.pdf"
+    render_combined_normalized_figure(dfs_by_space, cfg, combined_path)
+
     print(f"\nAll results written to {out_dir}")
 
 
