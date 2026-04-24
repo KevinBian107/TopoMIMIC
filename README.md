@@ -6,7 +6,7 @@ Behaviors are spatially and topologically meaningful. They can be "decomposed" i
 
 Classical manifold learning methods (PCA, UMAP, t-SNE) learn a low-dimensional **embedding** of high-dimensional data. We take a different approach: instead of projecting to a coordinate space, we learn the **topological skeleton** of the data manifold itself.
 
-Each behavioral clip from a deep RL policy ([Mimic-mjx](https://github.com/talmolab/Mimic-mjx)) is a trajectory in a high-dimensional temporal space (e.g. 500 frames × 16D = a point in R<sup>8000</sup>). We reconstruct the discrete Morse graph of this point cloud to extract two types of structural primitives:
+Each behavioral clip from a deep RL policy ([Mimic-mjx](https://mimic-mjx.talmolab.org/)) is a trajectory in a high-dimensional temporal space (e.g. 500 frames × 16D = a point in R<sup>8000</sup>). We reconstruct the discrete Morse graph of this point cloud to extract two types of structural primitives:
 
 - **DM Cycles (H₁)**: loops in the graph skeleton, capturing periodic or recurrent behavioral motifs
 - **DM Paths (H₀)**: edge-disjoint paths between persistent density minima, capturing transition corridors

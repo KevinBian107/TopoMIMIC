@@ -753,6 +753,7 @@ def create_consistency_pivot_table(
 
 def _enumerate_all_gt_transitions(
     behavior_labels_csv: str | None = None,
+    window_frames: int = 200,
 ) -> pd.Series:
     """Return a Series of GT instance counts indexed by "A -> B [turn]" keys
     covering EVERY directional transition × turn direction that appears at
@@ -766,7 +767,9 @@ def _enumerate_all_gt_transitions(
     from topo_mimic.benchmark.analysis.ground_truth import find_all_transitions
     from topo_mimic.benchmark.analysis.behavior_parsing import TurnDirection
 
-    tx = find_all_transitions(behavior_labels_csv, merge_rear=True)
+    tx = find_all_transitions(
+        behavior_labels_csv, merge_rear=True, window_frames=int(window_frames),
+    )
     from collections import Counter
     c: Counter = Counter()
     for t in tx:

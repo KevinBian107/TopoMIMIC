@@ -392,6 +392,7 @@ def run_dtw_analysis(
         behavior_labels_csv,
         short_threshold=short_threshold,
         merge_rear=merge_rear,
+        window_frames=int(resample_K) if resample_K else 100,
     )
     print(f"    Found {len(all_transitions)} total GT transitions")
 
@@ -648,7 +649,7 @@ def run_mmd_analysis(
         behavior_labels_csv,
         short_threshold=short_threshold,
         merge_rear=merge_rear,
-        window_frames=resample_K,
+        window_frames=int(resample_K) if resample_K else 100,
     )
     print(f"    Found {len(all_transitions)} total GT transitions")
 
