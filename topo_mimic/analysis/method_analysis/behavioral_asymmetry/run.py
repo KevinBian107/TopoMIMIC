@@ -433,7 +433,6 @@ def render_combined_normalized_figure(
               label="asymmetric (different direction)"),
     ]
 
-    y_tops = []
     for ax, fs in zip(axes, feature_spaces):
         paired_violin_panel(
             ax, per_space_groups[fs],
@@ -441,11 +440,6 @@ def render_combined_normalized_figure(
             title=f"{fs}",
             legend_handles=None,
         )
-        y_tops.append(ax.get_ylim()[1])
-
-    shared_top = max(y_tops) if y_tops else 1.0
-    for ax in axes:
-        ax.set_ylim(0, shared_top)
 
     fig.suptitle(
         "Behavioral asymmetry vs DM-cycle count (normalized, per 100 frames)",
@@ -497,7 +491,6 @@ def render_combined_aggregated_figure(
               label="asymmetric (different direction)"),
     ]
 
-    y_tops = []
     for ax, fs in zip(axes, feature_spaces):
         paired_violin_panel(
             ax, per_space_group[fs],
@@ -505,11 +498,6 @@ def render_combined_aggregated_figure(
             title=f"{fs}",
             legend_handles=None,
         )
-        y_tops.append(ax.get_ylim()[1])
-
-    shared_top = max(y_tops) if y_tops else 1.0
-    for ax in axes:
-        ax.set_ylim(0, shared_top)
 
     fig.suptitle(
         "Behavioral asymmetry vs DM-cycle count (aggregated, normalized)",
