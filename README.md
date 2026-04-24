@@ -30,6 +30,12 @@ These sub-trajectories are the learned manifold coordinates. The natural metric 
 bash bash_scripts/run_all.sh
 ```
 
+## Acknowledgements
+
+- Adapted from the [MIMIC-MJX](https://mimic-mjx.talmolab.org/) package.
+- DM-graph backend: [PCD-Graph-Recon-DM](https://github.com/lucasjmagee/PCD-Graph-Recon-DM/tree/main).
+- Annotation tooling: [TopoMimic-annotation](https://github.com/KevinBian107/TopoMimic-annotation).
+
 ## Citation
 
 ```bibtex
@@ -44,9 +50,3 @@ bash bash_scripts/run_all.sh
   year={2026}
 }
 ```
-
-## Acknowledgements
-
-- Adapted from the [MIMIC-MJX](https://mimic-mjx.talmolab.org/) package.
-- DM-graph backend: [PCD-Graph-Recon-DM](https://github.com/lucasjmagee/PCD-Graph-Recon-DM/tree/main).
-- Annotation tooling: [TopoMimic-annotation](https://github.com/KevinBian107/TopoMimic-annotation).
