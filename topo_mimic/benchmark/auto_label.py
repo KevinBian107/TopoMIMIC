@@ -91,8 +91,6 @@ def load_behavior_segments(csv_path: str) -> dict[int, list[BehaviorSegment]]:
     Supports the following schemas (columns detected by name):
       - New rodent schema (behavior_labels/rodent_labels.csv):
           columns Video, Track, Label, Start_Time, End_Time, Start_Frame, End_Frame
-      - Walker schema (behavior_labels/walker_*.csv):
-          columns Clip, Behavior, Start_Frame, End_Frame
       - Legacy rodent schema (columns Video, Behavior, Start_Frame, End_Frame)
 
     End is EXCLUSIVE on return (End_Frame in the CSV is inclusive).
@@ -139,8 +137,8 @@ def split_segments_by_kind(
     """Split a mixed segments dict into (behavior_segments, direction_segments).
 
     Segments whose label is in neither ``BEHAVIOR_LABELS`` nor
-    ``DIRECTION_LABELS`` (e.g. old walker labels like "walk_slow") are treated
-    as behaviors so legacy CSVs still work unchanged.
+    ``DIRECTION_LABELS`` are treated as behaviors so legacy CSVs still work
+    unchanged.
     """
     behav: dict[int, list[BehaviorSegment]] = {}
     dirs: dict[int, list[BehaviorSegment]] = {}

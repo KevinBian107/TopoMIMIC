@@ -1,4 +1,4 @@
-"""Classification metrics for walker clusters with GT labels."""
+"""Classification metrics for clusters against ground-truth behavior labels."""
 
 from __future__ import annotations
 

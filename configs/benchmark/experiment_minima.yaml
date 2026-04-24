@@ -1,7 +1,7 @@
 # Minima Experiment Configuration
 # Extracts behavioral minima from DM graphs and state-space methods
 
-dataset: "rodent"  # "rodent" or "walker_long"
+dataset: "rodent"
 output_dir: "outputs/benchmark_experiment_minima"
 data_path: "data/rodent_ar.h5"
 behavior_labels_csv: "behavior_labels/rodent_labels.csv"

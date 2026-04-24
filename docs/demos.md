@@ -40,7 +40,6 @@ Demonstrates saddle point detection in the density landscape — the transition 
 ```bash
 python -m demos.illustrative.demo_transition_filmstrip
 python -m demos.illustrative.demo_transition_filmstrip --config configs/demos/illustrative/demo_transition_filmstrip.yaml
-python -m demos.illustrative.demo_transition_filmstrip --config configs/demos/illustrative/demo_transition_filmstrip_walker.yaml
 ```
 Renders filmstrip visualizations of behavioral transitions captured by DM paths and cycles.
 
@@ -124,13 +123,6 @@ Validates topologically invariant simplification — that the DM skeleton retain
 
 End-to-end transition analysis pipelines.
 
-### Walker Transitions — Path Analysis (Figure 2B)
-```bash
-python -m demos.transition_demos.demo_walker_transitions_path
-python -m demos.transition_demos.demo_walker_transitions_path --config configs/demos/transition_demos/demo_walker_transitions_path.yaml
-```
-Analysis pipeline for long walker clips (~5000 frames) with multiple behavior transitions per clip. DM all-pairs-path extraction discovers behavior segments without relying on ground-truth labels. With `skeleton_analysis.enabled: true`, also produces skeleton filmstrip figures (Figure 2B) in `{output_dir}/skeleton_analysis_filmstrip/`.
-
 ### Rodent Transition Demo (Figure 2C)
 ```bash
 python -m demos.transition_demos.demo_rodent_transitions
@@ -155,14 +147,6 @@ python -m demos.global_manifold.demo_rodent_global --only-feature-space intentio
 ```
 Defaults: dataset `rodent`, three transitions (`Rear↔Walking`, `Orienting↔Walking`, `Immobility↔Walking`), four primitives for label-minima selection (`Rear, Walking, Orienting, Immobility`), and feature spaces `intention / qpos / ekp`.
 
-### Walker (2 feature spaces — walker_short)
-```bash
-python -m demos.global_manifold.demo_walker_global
-python -m demos.global_manifold.demo_walker_global --config configs/demos/global_manifold/walker.yaml
-python -m demos.global_manifold.demo_walker_global --only-feature-space intention --skip-filmstrip
-```
-Defaults: dataset `walker_short` (1 transition per clip, ~600 clips total), two transitions (`tiptoe↔walk_slow`, `hop↔walk_slow`), three primitives (`tiptoe, walk_slow, hop`), feature spaces `intention / qpos`. The walker dataset preset does not include `ekp`, so the walker figure has 4 rows (2 spaces × 2 primitives) vs 6 rows for rodent.
-
 ### Config knobs
 - `transition_types`: list of `[A, B]` primitive pairs to select clips by and to sample paths for.
 - `feature_spaces[].subsample_n`: legacy shortcut — stride-N subsample on the Takens pool before DM (default 3). Smaller = denser but slower DM. Equivalent to `subsample: {method: stride, n: N}`.
@@ -174,12 +158,3 @@ Defaults: dataset `walker_short` (1 transition per clip, ~600 clips total), two 
 - `path_sampling.k_per_pair`: paths sampled per `(A, B)` pair; edge-disjoint paths first, then shortest-simple-path fill.
 - Caches: `{cache_dir}/{feature_space}/{pool.npz, dm_output/, dm_bundle.pkl, projections.pkl}` — re-runs skip the expensive DM step.
 
----
-
-## Walker Data Generation
-
-```bash
-python3 -m walker_generation configs/walker_generation/path_sequence.yaml
-```
-
-See [walker_generation.md](walker_generation.md) for full documentation.

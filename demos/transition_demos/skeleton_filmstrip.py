@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
 Skeleton filmstrip helper for Figure 2B/C.
-Called by demo_walker_transitions_path.py and demo_rodent_transitions.py
-when skeleton_analysis.enabled = true.
+Called by demo_rodent_transitions.py when skeleton_analysis.enabled = true.
 """
 
 import os
@@ -178,25 +177,14 @@ def _tile_cropped_poses(
 
 
 def _get_camera_params(dataset: str):
-    if dataset in ("walker", "walker_long", "walker_short"):
-        fovy_rad = math.radians(45.0)
-        view_h = 2.4
-        dist = (view_h / 2.0) / math.tan(fovy_rad / 2.0) * 1.15
+    fovy_rad = math.radians(45.0)
+    view_h = 0.35
+    dist = (view_h / 2.0) / math.tan(fovy_rad / 2.0) * 1.3
 
-        def lookat_fn(qpos):
-            return [qpos[1], 0.0, 0.65]
+    def lookat_fn(qpos):
+        return [qpos[0], qpos[1], qpos[2] + 0.02]
 
-        fixed_crop = (60, 660, 60, 340)
-        return -10.0, 90.0, dist, lookat_fn, 720, 400, fixed_crop
-    else:
-        fovy_rad = math.radians(45.0)
-        view_h = 0.35
-        dist = (view_h / 2.0) / math.tan(fovy_rad / 2.0) * 1.3
-
-        def lookat_fn(qpos):
-            return [qpos[0], qpos[1], qpos[2] + 0.02]
-
-        return -35.0, 90.0, dist, lookat_fn, 800, 800, None
+    return -35.0, 90.0, dist, lookat_fn, 800, 800, None
 
 
 def render_filmstrip_for_frames(

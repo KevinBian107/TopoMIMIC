@@ -38,7 +38,7 @@ keypoint:
 clustering:
   min_len: 0
   max_len: 500
-  target_len: 100 # 50 for walker_long, 100 for rodent
+  target_len: 100
   only_max: true
   skip_clips: [80, 187, 227, 246, 267, 392, 434, 456, 475, 491, 562, 610, 685]
 
