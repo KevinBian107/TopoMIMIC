@@ -461,6 +461,70 @@ def render_combined_normalized_figure(
     print(f"  wrote {out_path} (+.png)")
 
 
+def render_combined_aggregated_figure(
+    dfs: dict[str, pd.DataFrame],
+    cfg: AsymmetryConfig,
+    out_path: Path,
+) -> None:
+    """1 row x 3 cols, normalized, aggregated only (one sym+asym pair per panel)."""
+    feature_spaces = list(dfs.keys())
+    n_cols = len(feature_spaces)
+    rng = np.random.default_rng(cfg.bootstrap_seed)
+
+    def boot(sub: pd.DataFrame, col: str) -> np.ndarray:
+        return bootstrap_means(sub[col].to_numpy(dtype=float),
+                               cfg.n_bootstrap, rng)
+
+    per_space_group: dict[str, list[tuple[str, np.ndarray, np.ndarray, int, int]]] = {}
+    for fs, df in dfs.items():
+        s_all = df[df["symmetry"] == "symmetric"]
+        a_all = df[df["symmetry"] == "asymmetric"]
+        per_space_group[fs] = [(
+            "All A->B->A",
+            boot(s_all, "cycle_count_norm"),
+            boot(a_all, "cycle_count_norm"),
+            len(s_all), len(a_all),
+        )]
+
+    fig_w = 3.2 * n_cols
+    fig, axes = plt.subplots(1, n_cols, figsize=(fig_w, 4.2), squeeze=False)
+    axes = axes[0]
+
+    legend_handles = [
+        Patch(facecolor=SYM_COLOR, alpha=0.55, edgecolor="#222",
+              label="symmetric (same direction)"),
+        Patch(facecolor=ASYM_COLOR, alpha=0.55, edgecolor="#222",
+              label="asymmetric (different direction)"),
+    ]
+
+    y_tops = []
+    for ax, fs in zip(axes, feature_spaces):
+        paired_violin_panel(
+            ax, per_space_group[fs],
+            ylabel="Cycles per 100 frames" if fs == feature_spaces[0] else "",
+            title=f"{fs}",
+            legend_handles=None,
+        )
+        y_tops.append(ax.get_ylim()[1])
+
+    shared_top = max(y_tops) if y_tops else 1.0
+    for ax in axes:
+        ax.set_ylim(0, shared_top)
+
+    fig.suptitle(
+        "Behavioral asymmetry vs DM-cycle count (aggregated, normalized)",
+        fontsize=12, fontweight="bold", y=1.03,
+    )
+    fig.legend(handles=legend_handles, loc="upper center", ncol=2,
+               frameon=False, fontsize=9, bbox_to_anchor=(0.5, 0.97))
+
+    fig.tight_layout(rect=(0, 0, 1, 0.92))
+    plt.savefig(out_path, bbox_inches="tight", dpi=220)
+    plt.savefig(out_path.with_suffix(".png"), bbox_inches="tight", dpi=220)
+    plt.close(fig)
+    print(f"  wrote {out_path} (+.png)")
+
+
 def _per_pair_summary(df: pd.DataFrame, feature_space: str) -> pd.DataFrame:
     rows = []
     for pair, sub in df.groupby("pair"):
@@ -532,6 +596,9 @@ def main(config_path: str | None = None) -> None:
 
     combined_path = out_dir / "asymmetry_violins_combined_normalized.pdf"
     render_combined_normalized_figure(dfs_by_space, cfg, combined_path)
+
+    aggregated_path = out_dir / "asymmetry_violins_combined_aggregated.pdf"
+    render_combined_aggregated_figure(dfs_by_space, cfg, aggregated_path)
 
     print(f"\nAll results written to {out_dir}")
 
