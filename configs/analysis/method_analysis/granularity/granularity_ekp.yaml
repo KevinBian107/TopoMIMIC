@@ -1,6 +1,6 @@
 # Granularity Analysis Configuration — Egocentric Keypoint Space
 
-output_dir: "outputs/granularity_ekp"
+output_dir: "outputs/analysis/method_analysis/granularity_ekp"
 
 data:
   dm_key: "ekp"

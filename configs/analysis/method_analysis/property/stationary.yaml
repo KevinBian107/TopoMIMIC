@@ -1,9 +1,9 @@
 # Stationary Clip Analysis (Appendix: DM-G Identifies Stationary Clips)
 
-dm_results_dir: "outputs/dm_pipeline_intention"
+dm_results_dir: "outputs/extraction/dm_pipeline_intention"
 rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
 xml_path: "topo_mimic/extraction/xml/rodent.xml"
-output_dir: "outputs/stationary_clips"
+output_dir: "outputs/analysis/method_analysis/stationary_clips"
 num_clips: 500
 
 filmstrip_n_clips: 8

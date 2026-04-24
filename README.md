@@ -131,7 +131,7 @@ python -m topo_mimic.analysis.tables.results_table
 ```
 
 ### Step 5: Baseline Scale Sweep (Fairness Check)
-Sweeps KPMS (κ × num_states) and Mapper (lens × n_intervals × feature_space), then reports which real transitions each variant discovers. Addresses "baseline under-tuned" reviewer concerns. Outputs `discovery_long.csv` under `outputs/scale_sweep/v1/cfg_{hash}/`.
+Sweeps KPMS (κ × num_states) and Mapper (lens × n_intervals × feature_space), then reports which real transitions each variant discovers. Addresses "baseline under-tuned" reviewer concerns. Outputs `discovery_long.csv` under `outputs/analysis/scale_sweep/v1/cfg_{hash}/`.
 ```bash
 python3 -m topo_mimic.analysis.scale_sweep configs/analysis/scale_sweep/scale_sweep.yaml
 ```

@@ -69,7 +69,7 @@ def get_transition_label(trans_key: tuple[str, str]) -> str:
 class Config:
     data_source: str = "data/rodent_ar_latest.h5"
     labels_path: str = "data/behavior_labels.csv"
-    output_path: str = "outputs/behavior_clusters.png"
+    output_path: str = "outputs/demos/illustrative/behavior_clusters.png"
     n_clips: int = 200
     max_points_per_behavior: int = 1000
     max_transition_points: int = 500

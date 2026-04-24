@@ -103,7 +103,7 @@ class VisualizationCfg:
 
 @dataclass
 class IoCfg:
-    output_dir: str = "outputs/scale_sweep/v1"
+    output_dir: str = "outputs/analysis/scale_sweep/v1"
     log_level: str = "info"
     save_checkpoints: bool = True
 

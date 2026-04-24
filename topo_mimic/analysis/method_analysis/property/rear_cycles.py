@@ -84,7 +84,7 @@ class DiscoveryConfig:
 
 @dataclass
 class Config:
-    output_dir: str = "outputs/rear_cycles"
+    output_dir: str = "outputs/analysis/method_analysis/rear_cycles"
     data: DataConfig = field(default_factory=DataConfig)
     feature_space: FeatureSpaceConfig = field(default_factory=FeatureSpaceConfig)
     dm: DMConfig = field(default_factory=DMConfig)
@@ -97,7 +97,7 @@ def load_config(config_path: str) -> Config:
     with open(config_path, "r") as f:
         raw = yaml.safe_load(f)
     return Config(
-        output_dir=raw.get("output_dir", "outputs/rear_cycles"),
+        output_dir=raw.get("output_dir", "outputs/analysis/method_analysis/rear_cycles"),
         data=DataConfig(**raw.get("data", {})),
         feature_space=FeatureSpaceConfig(**raw.get("feature_space", {})),
         dm=DMConfig(**raw.get("dm", {})),

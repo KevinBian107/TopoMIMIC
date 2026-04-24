@@ -122,7 +122,7 @@ class RenderingConfig:
 
 @dataclass
 class IncompressibilityConfig:
-    output_dir: str = "outputs/incompressibility"
+    output_dir: str = "outputs/analysis/method_analysis/incompressibility"
     data: DataConfig = None
     divergence: DivergenceConfig = None
     dm: DMConfig = None
@@ -162,7 +162,7 @@ def load_config(config_path: str) -> IncompressibilityConfig:
     render_cfg = RenderingConfig(**render_dict)
 
     return IncompressibilityConfig(
-        output_dir=cfg.get("output_dir", "outputs/incompressibility"),
+        output_dir=cfg.get("output_dir", "outputs/analysis/method_analysis/incompressibility"),
         data=data_cfg,
         divergence=divergence_cfg,
         dm=dm_cfg,

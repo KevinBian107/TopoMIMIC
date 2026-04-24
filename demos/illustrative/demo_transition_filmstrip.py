@@ -55,7 +55,7 @@ class DataConfig:
 @dataclass
 class Config:
     dataset: str = "rodent"
-    output_dir: str = "outputs/transition_filmstrip"
+    output_dir: str = "outputs/demos/illustrative/transition_filmstrip"
     behavior_labels_csv: str = "behavior_labels.csv"
     data: DataConfig = field(default_factory=DataConfig)
     filmstrip: FilmstripConfig = field(default_factory=FilmstripConfig)
@@ -78,7 +78,7 @@ def load_config(config_path: str) -> Config:
 
     return Config(
         dataset=cfg_dict.get("dataset", "rodent"),
-        output_dir=cfg_dict.get("output_dir", "outputs/transition_filmstrip"),
+        output_dir=cfg_dict.get("output_dir", "outputs/demos/illustrative/transition_filmstrip"),
         behavior_labels_csv=cfg_dict.get("behavior_labels_csv", "behavior_labels.csv"),
         data=data_cfg,
         filmstrip=film_cfg,

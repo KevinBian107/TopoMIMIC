@@ -164,7 +164,7 @@ class ClipDiscoveryConfig:
 
 @dataclass
 class Config:
-    output_dir: str = "outputs/transition_topology"
+    output_dir: str = "outputs/analysis/method_analysis/transition_topology"
     data: DataConfig = field(default_factory=DataConfig)
     feature_spaces: list[FeatureSpaceConfig] = field(default_factory=list)
     clip_ids: list[int] = field(default_factory=list)
@@ -189,7 +189,7 @@ def load_config(config_path: str) -> Config:
     disc_cfg = ClipDiscoveryConfig(**cfg_dict.get("clip_discovery", {}))
 
     return Config(
-        output_dir=cfg_dict.get("output_dir", "outputs/transition_topology"),
+        output_dir=cfg_dict.get("output_dir", "outputs/analysis/method_analysis/transition_topology"),
         data=data_cfg,
         feature_spaces=feature_spaces,
         clip_ids=cfg_dict.get("clip_ids", []),

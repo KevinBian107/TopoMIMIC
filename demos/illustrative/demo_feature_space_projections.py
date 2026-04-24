@@ -14,7 +14,7 @@ inside any transition span are greyed out as "other".
 Real rows are stride-subsampled before fitting/plotting so t-SNE and UMAP
 stay tractable (N ≈ 10k for UMAP/PCA, N ≈ 5k for t-SNE). DM rows use all
 DM-selected frames for the (dm_method, feature_space) method reading
-``outputs/benchmark_experiment_transitions/w2_{dm}_{fs}_kmeans/results.pkl``
+``outputs/experiment/transitions/w2_{dm}_{fs}_kmeans/results.pkl``
 for the configured seed.
 
 Usage:
@@ -50,7 +50,7 @@ from topo_mimic.extraction.utils.feature_transforms import (
 class DemoConfig:
     h5_path: str = "data/rodent_ar.h5"
     behavior_labels_csv: str = "behavior_labels/rodent_labels.csv"
-    experiment_dir: str = "outputs/benchmark_experiment_transitions"
+    experiment_dir: str = "outputs/experiment/transitions"
     xml_path: str = "topo_mimic/extraction/xml/rodent.xml"
     stac_data_path: str = "data/rodent_reference_clips.h5"
     seed: int = 0
@@ -62,7 +62,7 @@ class DemoConfig:
     tsne_subsample_n: int = 5000
     point_size: float = 2.0
     point_size_dm: float = 5.0
-    output_dir: str = "outputs/demos/feature_space_projections"
+    output_dir: str = "outputs/demos/illustrative/feature_space_projections"
 
 
 FEATURE_SPACE_DISPLAY = {"intention": "Intention", "qpos": "qpos", "ekp": "EKP"}

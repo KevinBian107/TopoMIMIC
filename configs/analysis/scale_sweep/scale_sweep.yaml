@@ -1,5 +1,5 @@
 io:
-  output_dir: outputs/scale_sweep/v1
+  output_dir: outputs/analysis/scale_sweep/v1
   log_level: info
   save_checkpoints: true
 

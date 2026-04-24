@@ -32,7 +32,7 @@ FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 @dataclass
 class RenderConfig:
     data_path: str = "data/rodent_label.h5"
-    output_dir: str = "outputs/rendered_for_label"
+    output_dir: str = "outputs/labeling/rendered_for_label"
     start_clip: int = 0
     end_clip: int = 642
     camera_name: str = "close_profile"

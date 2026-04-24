@@ -1,4 +1,4 @@
-output_dir: "outputs/transition_topology"
+output_dir: "outputs/analysis/method_analysis/transition_topology"
 data:
   rodent_rollout_dir: "data/rodent_ar.h5"
   xml_path: "topo_mimic/extraction/xml/rodent.xml"

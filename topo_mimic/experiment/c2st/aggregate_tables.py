@@ -1,6 +1,6 @@
 """Build the 3 undirected transition × method_family tables.
 
-Reads every cluster_c2st_seed_{N}.csv under outputs/benchmark_analysis/ and
+Reads every cluster_c2st_seed_{N}.csv under outputs/analysis/feature_analysis/ and
 emits, for each model in {logreg, rf, mlp}, a pivot where:
   - rows = UNDIRECTED_PAIRS (6 canonical A↔B)
   - cols = method families (6)
@@ -223,7 +223,7 @@ def main(analysis_dir: str, out_dir: str) -> None:
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
-    p.add_argument("--analysis-dir", default="outputs/benchmark_analysis")
-    p.add_argument("--out-dir", default="outputs/benchmark_analysis/tables")
+    p.add_argument("--analysis-dir", default="outputs/analysis/feature_analysis")
+    p.add_argument("--out-dir", default="outputs/analysis/feature_analysis/tables")
     a = p.parse_args()
     main(a.analysis_dir, a.out_dir)

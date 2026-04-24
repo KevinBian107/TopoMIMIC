@@ -71,10 +71,10 @@ class DistributionConfig:
 
 @dataclass
 class Config:
-    dm_results_dir: str = "outputs/dm_pipeline_intention"
+    dm_results_dir: str = "outputs/extraction/dm_pipeline_intention"
     rodent_rollout_dir: str = "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
     xml_path: str = "topo_mimic/extraction/xml/rodent.xml"
-    output_dir: str = "outputs/stationary_clips"
+    output_dir: str = "outputs/analysis/method_analysis/stationary_clips"
     num_clips: int = 500
     filmstrip_n_clips: int = 8
     filmstrip_n_poses: int = 6

@@ -4,8 +4,8 @@ labels_csv: behavior_labels/rodent_labels.csv
 xml_path: topo_mimic/extraction/xml/rodent.xml
 stac_data_path: data/rodent_reference_clips.h5
 
-output_dir: outputs/global_manifold/rodent
-cache_dir: outputs/global_manifold/rodent/cache
+output_dir: outputs/analysis/method_analysis/global_manifold/rodent
+cache_dir: outputs/analysis/method_analysis/global_manifold/rodent/cache
 
 transition_types:
   - [Rear, Walking]

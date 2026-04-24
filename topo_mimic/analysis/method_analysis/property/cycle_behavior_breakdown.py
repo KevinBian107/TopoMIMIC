@@ -16,9 +16,9 @@ Outputs per category (no_cycle, many_cycle):
 
 Usage:
     python -m topo_mimic.analysis.method_analysis.property.cycle_behavior_breakdown \
-        --dm_results_dir outputs/dm_pipeline_intention \
+        --dm_results_dir outputs/extraction/dm_pipeline_intention \
         --labels_csv behavior_labels/rodent_labels.csv \
-        --output_dir outputs/cycle_behavior_breakdown \
+        --output_dir outputs/analysis/method_analysis/cycle_behavior_breakdown \
         --many_cycle_threshold 2
 """
 
@@ -269,9 +269,9 @@ def plot_category_table(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Clip-level behavior signature by cycle category.")
-    parser.add_argument("--dm_results_dir", default="outputs/dm_pipeline_intention")
+    parser.add_argument("--dm_results_dir", default="outputs/extraction/dm_pipeline_intention")
     parser.add_argument("--labels_csv", default="behavior_labels/rodent_labels.csv")
-    parser.add_argument("--output_dir", default="outputs/cycle_behavior_breakdown")
+    parser.add_argument("--output_dir", default="outputs/analysis/method_analysis/cycle_behavior_breakdown")
     parser.add_argument("--many_cycle_threshold", type=int, default=2)
     args = parser.parse_args()
 

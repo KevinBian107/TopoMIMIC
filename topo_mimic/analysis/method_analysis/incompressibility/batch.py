@@ -170,7 +170,7 @@ class RenderingConfig:
 
 @dataclass
 class BatchIncompressibilityConfig:
-    output_dir: str = "outputs/batch_incompressibility"
+    output_dir: str = "outputs/analysis/method_analysis/batch_incompressibility"
     data: DataConfig = None
     clip_selection: ClipSelectionConfig = None
     dm: DMConfig = None
@@ -205,7 +205,7 @@ def load_config(config_path: str) -> BatchIncompressibilityConfig:
     render_cfg = RenderingConfig(**render_dict)
 
     return BatchIncompressibilityConfig(
-        output_dir=cfg.get("output_dir", "outputs/batch_incompressibility"),
+        output_dir=cfg.get("output_dir", "outputs/analysis/method_analysis/batch_incompressibility"),
         data=data_cfg,
         clip_selection=clip_selection_cfg,
         dm=dm_cfg,

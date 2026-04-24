@@ -1,6 +1,6 @@
 # Discrete Morse Pipeline Configuration — Intention Space
 
-output_dir: "outputs/dm_pipeline_intention"
+output_dir: "outputs/extraction/dm_pipeline_intention"
 
 data:
   dm_key: "intention"

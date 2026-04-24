@@ -42,7 +42,7 @@ class AutoLabelConfig:
 
 @dataclass
 class LabelingConfig:
-    experiment_dir: str = "outputs/benchmark_experiment_transitions"
+    experiment_dir: str = "outputs/experiment/transitions"
     behavior_labels_csv: str = "behavior_labels/rodent_labels.csv"
     method: str = "w2_dmp_qpos_kmeans"
     seed: int = 0

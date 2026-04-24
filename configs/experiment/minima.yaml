@@ -2,21 +2,21 @@
 # Extracts behavioral minima from DM graphs and state-space methods
 
 dataset: "rodent"
-output_dir: "outputs/benchmark_experiment_minima"
+output_dir: "outputs/experiment/minima"
 data_path: "data/rodent_ar.h5"
 behavior_labels_csv: "behavior_labels/rodent_labels.csv"
 
 # DM sources (direct from dm_pipeline output, NOT from experiment_transitions)
 dm_sources:
   intention:
-    results_dir: "outputs/dm_pipeline_intention"
+    results_dir: "outputs/extraction/dm_pipeline_intention"
   qpos:
-    results_dir: "outputs/dm_pipeline_qpos"
+    results_dir: "outputs/extraction/dm_pipeline_qpos"
 
 # State-space methods (loads labels from experiment_transitions output)
 state_space_sources:
   kpms_keypoint:
-    experiment_dir: "outputs/benchmark_experiment_train"
+    experiment_dir: "outputs/experiment/transitions"
 
 # Per-clip rendering
 per_clip_n: 3

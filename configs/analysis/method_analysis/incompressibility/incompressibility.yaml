@@ -7,7 +7,7 @@
 # - Transitions create H_1 != 0 (loops) that cannot be paired away
 # - This experiment finds divergent trajectories and verifies DM-G captures them
 
-output_dir: "outputs/incompressibility"
+output_dir: "outputs/analysis/method_analysis/incompressibility"
 
 data:
   rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"

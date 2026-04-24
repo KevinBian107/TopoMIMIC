@@ -301,7 +301,7 @@ distributions truly coincide (estimator variance, not a bug).
 - `topo_mimic/analysis/feature_analysis/metrics.py::run_mmd_analysis` —
   per-`(method, seed)` entrypoint mirroring `run_dtw_analysis`.
 - Enabled via `AnalysisConfig.run_mmd_analysis: bool = True`.
-- Per-run output: `outputs/benchmark_analysis/{method}/seed_{N}/mmd/{method}_seed{N}_mmd_results.csv`
+- Per-run output: `outputs/analysis/feature_analysis/{method}/seed_{N}/mmd/{method}_seed{N}_mmd_results.csv`
   with columns `Label, Turn_Direction, Cluster_IDs, KID, MMD_RBF, Sigma,
   N_Cluster_Seqs, N_GT_Seqs`.
 - Aggregation: `generate_results_table` loads those CSVs, pivots to
@@ -361,7 +361,7 @@ almost entirely inside the right GT region.
 - `topo_mimic/analysis/feature_analysis/purity.py` — `run_purity_analysis(...)`,
   `compute_cluster_purity(...)`, `_parse_cluster_label(...)`.
 - Enabled via `AnalysisConfig.run_purity_analysis: bool = True`.
-- Per-run output: `outputs/benchmark_analysis/{method}/seed_{N}/purity/{method}_seed{N}_purity.csv`.
+- Per-run output: `outputs/analysis/feature_analysis/{method}/seed_{N}/purity/{method}_seed{N}_purity.csv`.
 - Aggregation: `generate_results_table._load_individual_purity_results` →
   `create_purity_pivot_table` → `purity_table.{csv,png,pdf}` with mean ± std
   across seeds and 1-seed annotations, rendered with `higher_is_better=True`.

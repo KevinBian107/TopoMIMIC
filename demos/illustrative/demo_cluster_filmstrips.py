@@ -46,14 +46,14 @@ from topo_mimic.analysis.feature_analysis.behavior_parsing import (
 
 @dataclass
 class ClusterFilmstripConfig:
-    experiment_dir: str = "outputs/benchmark_experiment_transitions"
+    experiment_dir: str = "outputs/experiment/transitions"
     method: str = "w2_dmp_qpos_kmeans"
     seed: int = 0
     data_path: str = "data/rodent_ar.h5"
     data_key: str = "qpos_rollout"
     xml_path: str = "topo_mimic/extraction/xml/rodent.xml"
     dataset: str = "rodent"
-    output_dir: str = "outputs/cluster_filmstrips"
+    output_dir: str = "outputs/demos/illustrative/cluster_filmstrips"
     k_samples: int = 5
     n_poses: int = 6
     filmstrip_gap_fraction: float = 0.25

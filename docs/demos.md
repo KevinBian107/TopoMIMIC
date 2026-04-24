@@ -53,12 +53,12 @@ three feature spaces (intention, qpos, ekp) and three projections (PCA,
 UMAP, t-SNE). Each figure is a 2-row × 3-column grid — top row is real
 frames (stride-subsampled from all 842 clips), bottom row is frames
 selected by the named DM method (DMC or DMP) loaded from
-`outputs/benchmark_experiment_transitions/w2_{dm}_{fs}_kmeans/results.pkl`.
+`outputs/experiment/transitions/w2_{dm}_{fs}_kmeans/results.pkl`.
 Points are colored by the GT transition each frame belongs to (via
 `find_all_transitions(window_frames=100)`); frames outside any transition
 span are grey. A single horizontal legend sits below the grid. File
 names: `proj_{dmc|dmp}_{pca|umap|tsne}.{png,pdf}` under
-`outputs/demos/feature_space_projections/`.
+`outputs/demos/illustrative/feature_space_projections/`.
 
 ### Clip-Level Projection Comparison
 ```bash
@@ -72,7 +72,7 @@ flattened `(K·D,)`-dim vector (with `K = dm_resample_k`, default 100).
 Six Nature-style figures, 2 rows × 3 columns each — top row real clips,
 bottom row DM paths/cycles; columns = intention / qpos / ekp; file
 names `proj_clip_{dmc|dmp}_{pca|umap|tsne}.{png,pdf}` under
-`outputs/demos/clip_level_projections/`. Clip color = dominant GT
+`outputs/demos/illustrative/clip_level_projections/`. Clip color = dominant GT
 transition in the clip (longest `(from, to)` span); DM member color =
 the cluster's auto-label with the trailing direction token stripped.
 Rows use separate projections (input dims differ: 500·D vs K·D).

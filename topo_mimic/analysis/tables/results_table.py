@@ -12,8 +12,8 @@ import pandas as pd
 
 @dataclass
 class TableConfig:
-    analysis_dir: str = "outputs/benchmark_analysis"
-    output_dir: str = "outputs/benchmark_analysis/tables"
+    analysis_dir: str = "outputs/analysis/feature_analysis"
+    output_dir: str = "outputs/analysis/feature_analysis/tables"
     table_name: str = "dtw_results_table"
     dpi: int = 300
     font_size: int = 10
@@ -1229,13 +1229,13 @@ def main():
     parser.add_argument(
         "--analysis-dir",
         type=str,
-        default="outputs/benchmark_analysis",
+        default="outputs/analysis/feature_analysis",
         help="Directory containing analysis results",
     )
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="outputs/benchmark_analysis/tables",
+        default="outputs/analysis/feature_analysis/tables",
         help="Directory to save output tables",
     )
     parser.add_argument(

@@ -2,7 +2,7 @@
 # Run after experiment.py to generate label recommendations
 
 # Experiment location
-experiment_dir: "outputs/benchmark_experiment_transitions"
+experiment_dir: "outputs/experiment/transitions"
 rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
 behavior_labels_csv: "behavior_labels/rodent_labels.csv"
 

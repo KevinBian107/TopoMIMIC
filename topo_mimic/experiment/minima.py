@@ -33,7 +33,7 @@ class SSSourceEntry:
 @dataclass
 class MinimaExperimentConfig:
     dataset: str = "rodent"
-    output_dir: str = "outputs/benchmark_experiment_minima"
+    output_dir: str = "outputs/experiment/minima"
     data_path: str = ""
     rodent_rollout_dir: str = ""
     behavior_labels_csv: str = ""
@@ -89,7 +89,7 @@ def load_config(config_path: str) -> MinimaExperimentConfig:
 
     return MinimaExperimentConfig(
         dataset=cfg.get("dataset", "rodent"),
-        output_dir=cfg.get("output_dir", "outputs/benchmark_experiment_minima"),
+        output_dir=cfg.get("output_dir", "outputs/experiment/minima"),
         data_path=data_path,
         behavior_labels_csv=cfg.get("behavior_labels_csv", ""),
         dm_sources=dm_sources,

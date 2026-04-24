@@ -1,6 +1,6 @@
 # Discrete Morse Pipeline Configuration — Egocentric Keypoint Space
 
-output_dir: "outputs/dm_pipeline_ekp"
+output_dir: "outputs/extraction/dm_pipeline_ekp"
 
 data:
   dm_key: "ekp"

@@ -66,7 +66,7 @@ class VisualizationConfig:
 
 @dataclass
 class Config:
-    output_dir: str = "outputs/saddle_dm_demo"
+    output_dir: str = "outputs/demos/illustrative/saddle_dm_demo"
     path: PathConfig = field(default_factory=PathConfig)
     dm: MorseConfig = field(default_factory=MorseConfig)
     visualization: VisualizationConfig = field(default_factory=VisualizationConfig)
@@ -86,7 +86,7 @@ def load_config(config_path: str) -> Config:
     vis_cfg = VisualizationConfig(**{k: v for k, v in vis_d.items() if k in VisualizationConfig.__dataclass_fields__})
 
     return Config(
-        output_dir=cfg_dict.get("output_dir", "outputs/saddle_dm_demo"),
+        output_dir=cfg_dict.get("output_dir", "outputs/demos/illustrative/saddle_dm_demo"),
         path=path_cfg,
         dm=dm_cfg,
         visualization=vis_cfg,

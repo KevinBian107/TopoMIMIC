@@ -1,4 +1,4 @@
-output_dir: "outputs/theta_filmstrip"
+output_dir: "outputs/analysis/method_analysis/theta_filmstrip"
 data:
   rodent_rollout_dir: "data/rodent_ar.h5"
   xml_path: "topo_mimic/extraction/xml/rodent.xml"

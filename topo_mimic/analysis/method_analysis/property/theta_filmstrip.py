@@ -97,7 +97,7 @@ class FilmstripConfig:
 
 @dataclass
 class Config:
-    output_dir: str = "outputs/theta_filmstrip"
+    output_dir: str = "outputs/analysis/method_analysis/theta_filmstrip"
     data: DataConfig = field(default_factory=DataConfig)
     feature_spaces: list[FeatureSpaceConfig] = field(default_factory=list)
     clip_ids: list[int] = field(default_factory=list)
@@ -137,7 +137,7 @@ def load_config(config_path: str) -> Config:
     film_cfg = FilmstripConfig(**cfg_dict.get("filmstrip", {}))
 
     return Config(
-        output_dir=cfg_dict.get("output_dir", "outputs/theta_filmstrip"),
+        output_dir=cfg_dict.get("output_dir", "outputs/analysis/method_analysis/theta_filmstrip"),
         data=data_cfg,
         feature_spaces=feature_spaces,
         clip_ids=cfg_dict.get("clip_ids", []),

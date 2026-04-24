@@ -12,7 +12,7 @@ single (500·D,)-dim vector. Clip color = dominant GT transition in that
 clip (longest ``(from_behavior, to_behavior)`` span).
 
 Bottom row: every DM cluster member from
-``outputs/benchmark_experiment_transitions/w2_{dm}_{fs}_kmeans/results.pkl``.
+``outputs/experiment/transitions/w2_{dm}_{fs}_kmeans/results.pkl``.
 Each member's native frame span is linearly resampled to K=100 and
 flattened to (100·D,)-dim vector. Color = the cluster's auto-label with the
 trailing direction token stripped (so a cluster labeled "Rear -> Immobile
@@ -50,7 +50,7 @@ from topo_mimic.extraction.utils.feature_transforms import (
 class DemoConfig:
     h5_path: str = "data/rodent_ar.h5"
     behavior_labels_csv: str = "behavior_labels/rodent_labels.csv"
-    experiment_dir: str = "outputs/benchmark_experiment_transitions"
+    experiment_dir: str = "outputs/experiment/transitions"
     xml_path: str = "topo_mimic/extraction/xml/rodent.xml"
     stac_data_path: str = "data/rodent_reference_clips.h5"
     seed: int = 0
@@ -61,7 +61,7 @@ class DemoConfig:
     projections: list[str] = field(default_factory=lambda: ["pca", "umap", "tsne"])
     point_size_clip: float = 18.0
     point_size_dm: float = 8.0
-    output_dir: str = "outputs/demos/clip_level_projections"
+    output_dir: str = "outputs/demos/illustrative/clip_level_projections"
 
 
 FEATURE_SPACE_DISPLAY = {"intention": "Intention", "qpos": "qpos", "ekp": "EKP"}

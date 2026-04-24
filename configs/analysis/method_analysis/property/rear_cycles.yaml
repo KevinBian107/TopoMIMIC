@@ -1,4 +1,4 @@
-output_dir: outputs/rear_cycles
+output_dir: outputs/analysis/method_analysis/rear_cycles
 
 data:
   rodent_rollout_dir: data/rodent_ar.h5

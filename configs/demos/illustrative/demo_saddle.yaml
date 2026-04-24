@@ -4,7 +4,7 @@
 # 2. Two basins with one route -> path only
 # 3. Multi-basin landscape -> mixed cycle + path
 
-output_dir: "outputs/saddle_dm_demo"
+output_dir: "outputs/demos/illustrative/saddle_dm_demo"
 
 path:
   n_steps: 800

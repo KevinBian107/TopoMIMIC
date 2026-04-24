@@ -1,6 +1,6 @@
 # Granularity Analysis Configuration — Intention Space
 
-output_dir: "outputs/granularity_intention"
+output_dir: "outputs/analysis/method_analysis/granularity_intention"
 
 data:
   dm_key: "intention"

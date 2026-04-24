@@ -8,7 +8,7 @@ to match postures at wrong timepoints.
 Outputs:
   tables/appendix_warping_*.tex        — LaTeX tables (full + simplified)
   tables/appendix_warping_*.{pdf,png}  — Rendered table images
-  outputs/warping_analysis/*.csv       — Raw data
+  outputs/analysis/tables/warping_analysis/*.csv       — Raw data
 """
 
 import os
@@ -34,11 +34,11 @@ from topo_mimic.analysis.feature_analysis.metrics import (
     WarpingResult,
 )
 
-EXPERIMENT_DIR = "outputs/benchmark_experiment_transitions"
+EXPERIMENT_DIR = "outputs/experiment/transitions"
 DATA_PATH = "data/rodent_ar.h5"
 DATA_KEY = "qpos_rollout"
 BEHAVIOR_LABELS_CSV = "behavior_labels.csv"
-OUTPUT_DIR = "outputs/warping_analysis"
+OUTPUT_DIR = "outputs/analysis/tables/warping_analysis"
 
 METHOD_ORDER = [
     "w2_dmc_int_kmeans", "w2_dmc_qpos_kmeans", "w2_dmc_ekp_kmeans",

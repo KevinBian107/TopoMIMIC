@@ -2,7 +2,7 @@
 # Single entry point for all clustering methods
 
 dataset: "rodent"
-output_dir: "outputs/benchmark_experiment_transitions"
+output_dir: "outputs/experiment/transitions"
 data_path: "data/rodent_ar.h5"
 behavior_labels_csv: "behavior_labels/rodent_labels.csv"
 split: "all"
@@ -15,18 +15,18 @@ data:
 
 # DM results directory (legacy field, used as fallback when dm_sources not set)
 dm:
-  results_dir: "outputs/dm_pipeline_intention"
+  results_dir: "outputs/extraction/dm_pipeline_intention"
 
 # Multi-feature-space DM sources
 dm_sources:
   intention:
-    results_dir: "outputs/dm_pipeline_intention"
+    results_dir: "outputs/extraction/dm_pipeline_intention"
     dm_key: "intention"
   qpos:
-    results_dir: "outputs/dm_pipeline_qpos"
+    results_dir: "outputs/extraction/dm_pipeline_qpos"
     dm_key: "qpos"
   ekp:
-    results_dir: "outputs/dm_pipeline_ekp"
+    results_dir: "outputs/extraction/dm_pipeline_ekp"
     dm_key: "ekp"
 
 # Keypoint configuration (for kpms_keypoint method)

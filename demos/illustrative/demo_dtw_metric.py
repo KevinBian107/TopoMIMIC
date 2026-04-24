@@ -51,7 +51,7 @@ from topo_mimic.analysis.feature_analysis.dtw_visualization import compute_dtw_w
 
 @dataclass
 class DTWDemoConfig:
-    experiment_dir: str = "outputs/benchmark_experiment_transitions"
+    experiment_dir: str = "outputs/experiment/transitions"
     method: str = "w2_dmp_qpos_kmeans"
     seed: int = 0
     behavior_labels_csv: str = "behavior_labels.csv"
@@ -59,7 +59,7 @@ class DTWDemoConfig:
     data_key: str = "qpos_rollout"
     xml_path: str = "topo_mimic/extraction/xml/rodent.xml"
     dataset: str = "rodent"
-    output_dir: str = "outputs/dtw_metric"
+    output_dir: str = "outputs/demos/illustrative/dtw_metric"
     skip_root_dims: int = 7
     short_threshold: int = 50
     merge_rear: bool = True

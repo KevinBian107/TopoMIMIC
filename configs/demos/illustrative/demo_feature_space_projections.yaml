@@ -4,7 +4,7 @@
 
 h5_path: "data/rodent_ar.h5"
 behavior_labels_csv: "behavior_labels/rodent_labels.csv"
-experiment_dir: "outputs/benchmark_experiment_transitions"
+experiment_dir: "outputs/experiment/transitions"
 xml_path: "topo_mimic/extraction/xml/rodent.xml"
 stac_data_path: "data/rodent_reference_clips.h5"
 
@@ -23,4 +23,4 @@ tsne_subsample_n: 5000
 point_size: 2.0
 point_size_dm: 5.0
 
-output_dir: "outputs/demos/feature_space_projections"
+output_dir: "outputs/demos/illustrative/feature_space_projections"

@@ -1,4 +1,4 @@
-experiment_dir: "outputs/benchmark_experiment_transitions"
+experiment_dir: "outputs/experiment/transitions"
 method: "w2_dmp_qpos_kmeans"
 seed: 0
 
@@ -8,7 +8,7 @@ data_key: "qpos_rollout"
 xml_path: "/home/jovyan/vast/kaiwen/TopoVNL/topo_mimic/extraction/xml/rodent.xml"
 dataset: "rodent"
 
-output_dir: "outputs/dtw_metric"
+output_dir: "outputs/demos/illustrative/dtw_metric"
 
 skip_root_dims: 7
 short_threshold: 50

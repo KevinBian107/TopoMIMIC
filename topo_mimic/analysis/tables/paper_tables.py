@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from topo_mimic.analysis.tables.results_table import METHOD_DISPLAY_NAMES
 
-ANALYSIS_DIR = "outputs/benchmark_analysis"
+ANALYSIS_DIR = "outputs/analysis/feature_analysis"
 OUTPUT_DIR = "tables"
 
 METHOD_ORDER = [

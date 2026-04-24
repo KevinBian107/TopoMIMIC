@@ -86,7 +86,7 @@ class Config:
     data_path: str = "data/rodent_ar.h5"
     labels_csv: str = "behavior_labels.csv"
     dm_key: str = "intention"
-    output_dir: str = "outputs/rodent_transitions"
+    output_dir: str = "outputs/demos/illustrative/rodent_transitions"
     window_size: int = 100
     min_transition_frames: int = 20
     short_threshold: int = 10
