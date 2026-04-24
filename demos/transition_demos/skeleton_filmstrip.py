@@ -39,7 +39,7 @@ def _render_poses_individually(
     render_w: int = 480,
     fixed_crop: tuple[int, int, int, int] | None = None,
 ) -> list[tuple[np.ndarray, np.ndarray]]:
-    from demos.property.demo_theta_filmstrip import _load_mujoco_model
+    from topo_mimic.analysis.method_analysis.property.theta_filmstrip import _load_mujoco_model
     import mujoco
 
     mj_model, mj_data = _load_mujoco_model(xml_path)

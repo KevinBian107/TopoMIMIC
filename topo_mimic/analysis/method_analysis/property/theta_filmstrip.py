@@ -40,7 +40,7 @@ sys.path.append("/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM")
 
 import mujoco
 
-from demos.property.demo_cycle_asymmetry import (
+from topo_mimic.analysis.method_analysis.property.cycle_asymmetry import (
     load_single_clip,
     run_dm_extraction,
     order_cycle_vertices,
@@ -50,7 +50,7 @@ from demos.property.demo_cycle_asymmetry import (
     VisualizationConfig,
     DMResult,
 )
-from demos.property.demo_transition_topology import (
+from topo_mimic.analysis.method_analysis.property.transition_topology import (
     discover_rear_walk_rear_clips,
     find_dm_minima,
     analyze_edge_connectivity,

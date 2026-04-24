@@ -6,8 +6,8 @@ Compares clips with DM-G cycles (behaviorally rich) vs clips without cycles
 grid of representative no-cycle clips.
 
 Usage:
-    python -m demos.property.demo_stationary
-    python -m demos.property.demo_stationary --config configs/demos/property/demo_stationary.yaml
+    python -m topo_mimic.analysis.method_analysis.property.stationary
+    python -m topo_mimic.analysis.method_analysis.property.stationary --config configs/demos/property/demo_stationary.yaml
 """
 
 import os

@@ -32,7 +32,7 @@ from collections import defaultdict
 
 sys.path.insert(0, "/home/jovyan/vast/kaiwen/TopoVNL")
 
-from demos.property.demo_theta_filmstrip import (
+from topo_mimic.analysis.method_analysis.property.theta_filmstrip import (
     FilmstripConfig,
     FilmstripResult,
     compute_filmstrip_camera,

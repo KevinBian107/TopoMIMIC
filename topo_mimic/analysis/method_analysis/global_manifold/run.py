@@ -6,9 +6,9 @@ on the pooled point cloud per feature space (intention / qpos / ekp), and
 produces a projection overlay figure + a cross-clip filmstrip figure.
 
 Usage:
-    python -m demos.global_manifold.demo_rodent_global
-    python -m demos.global_manifold.demo_rodent_global --config configs/demos/global_manifold/rodent.yaml
-    python -m demos.global_manifold.demo_rodent_global --skip-filmstrip
+    python -m topo_mimic.analysis.method_analysis.global_manifold.run
+    python -m topo_mimic.analysis.method_analysis.global_manifold.run --config configs/demos/global_manifold/rodent.yaml
+    python -m topo_mimic.analysis.method_analysis.global_manifold.run --skip-filmstrip
 """
 
 from __future__ import annotations
@@ -26,14 +26,14 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from demos.global_manifold.common import (
+from topo_mimic.analysis.method_analysis.global_manifold.common import (
     build_frame_labels,
     load_config,
     process_feature_space,
     render_projection_grid,
     select_clips_for_transitions,
 )
-from demos.global_manifold.filmstrip import render_filmstrip_grid
+from topo_mimic.analysis.method_analysis.global_manifold.filmstrip import render_filmstrip_grid
 
 DEFAULT_CONFIG = "configs/demos/global_manifold/rodent.yaml"
 

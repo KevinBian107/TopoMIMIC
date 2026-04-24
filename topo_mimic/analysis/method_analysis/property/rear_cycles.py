@@ -43,7 +43,7 @@ from collections import OrderedDict
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent / "PCD-Graph-Recon-DM"))
 
-from demos.property.demo_cycle_asymmetry import (
+from topo_mimic.analysis.method_analysis.property.cycle_asymmetry import (
     load_single_clip,
     run_dm_extraction,
     order_cycle_vertices,
@@ -53,11 +53,11 @@ from demos.property.demo_cycle_asymmetry import (
     VisualizationConfig,
     DMResult,
 )
-from demos.property.demo_transition_topology import (
+from topo_mimic.analysis.method_analysis.property.transition_topology import (
     find_dm_minima,
     analyze_edge_connectivity,
 )
-from demos.property.demo_theta_filmstrip import (
+from topo_mimic.analysis.method_analysis.property.theta_filmstrip import (
     FilmstripConfig,
     create_filmstrip_composite,
     FilmstripResult,

@@ -15,7 +15,7 @@ Outputs per category (no_cycle, many_cycle):
   - <cat>_signature_table.png  — bar chart of the same
 
 Usage:
-    python -m demos.property.demo_cycle_behavior_breakdown \
+    python -m topo_mimic.analysis.method_analysis.property.cycle_behavior_breakdown \
         --dm_results_dir outputs/dm_pipeline_intention \
         --labels_csv behavior_labels/rodent_labels.csv \
         --output_dir outputs/cycle_behavior_breakdown \
