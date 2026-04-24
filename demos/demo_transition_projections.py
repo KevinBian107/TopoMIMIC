@@ -75,8 +75,12 @@ class DemoConfig:
     behavior_labels_csv: str = "behavior_labels/rodent_labels.csv"
     xml_path: str = "topo_mimic/extraction/xml/rodent.xml"
     stac_data_path: str = "data/rodent_reference_clips.h5"
-    feature_space: str = "ekp"
-    extraction_dir: str = "outputs/extraction/dm_pipeline_ekp"
+    feature_spaces: list[str] = field(default_factory=lambda: ["intention", "qpos", "ekp"])
+    extraction_dirs: dict[str, str] = field(default_factory=lambda: {
+        "intention": "outputs/extraction/dm_pipeline_intention",
+        "qpos":      "outputs/extraction/dm_pipeline_qpos",
+        "ekp":       "outputs/extraction/dm_pipeline_ekp",
+    })
     seed: int = 0
     majority_threshold: float = 0.5
     min_per_behavior_fraction: float = 0.15
@@ -112,12 +116,12 @@ def parse_clip_id(video: str) -> int | None:
     return None
 
 
-def load_feature_data(cfg: DemoConfig) -> np.ndarray:
-    hdf5_key = get_hdf5_key_for_dm_key(cfg.feature_space)
+def load_feature_data(cfg: DemoConfig, feature_space: str) -> np.ndarray:
+    hdf5_key = get_hdf5_key_for_dm_key(feature_space)
     with h5py.File(cfg.h5_path, "r") as f:
         raw = np.asarray(f[hdf5_key][:])
     return apply_dm_key_transform(
-        raw, cfg.feature_space,
+        raw, feature_space,
         xml_path=cfg.xml_path, stac_data_path=cfg.stac_data_path,
     )
 
@@ -227,18 +231,42 @@ def load_paths_for_clips(
     return {cid: full.get(cid, []) for cid in clip_ids}
 
 
+def _frame_label(
+    segs: list[tuple[str, int, int]], frame: int,
+) -> str:
+    for lab, s, e in segs:
+        if s <= frame < e:
+            return lab
+    return ""
+
+
 def select_top_k_paths(
     paths_by_clip: dict[int, list[list[int]]],
     k: int,
+    segments: dict[int, list[tuple[str, int, int]]],
+    A: str, B: str,
 ) -> list[tuple[int, list[int]]]:
-    flat: list[tuple[int, list[int]]] = []
+    """Keep paths whose endpoint frames fall inside A-segment and B-segment
+    (one per end). Ranks by length desc and takes top-K.
+
+    A path's endpoints in all_path_dm are the two density minima the path
+    connects; requiring their GT labels to be {A, B} selects paths that
+    actually connect the two behavior basins we care about.
+    """
+    flat: list[tuple[int, list[int], int]] = []  # (cid, verts, length)
     for cid, paths in paths_by_clip.items():
+        segs = segments.get(cid, [])
         for path in paths:
             verts = list(path)
-            if len(verts) > 0:
-                flat.append((cid, verts))
-    flat.sort(key=lambda cp: -len(cp[1]))
-    return flat[:k]
+            if len(verts) < 2:
+                continue
+            first_lab = _frame_label(segs, int(verts[0]))
+            last_lab  = _frame_label(segs, int(verts[-1]))
+            if {first_lab, last_lab} != {A, B}:
+                continue
+            flat.append((cid, verts, len(verts)))
+    flat.sort(key=lambda t: -t[2])
+    return [(cid, verts) for cid, verts, _ in flat[:k]]
 
 
 def project_together(
@@ -338,12 +366,28 @@ def overlay_path(ax, path_coords: np.ndarray, color: str, label: str | None = No
                c=color, edgecolor="#222", linewidth=0.3, rasterized=True, zorder=4)
 
 
-def overlay_minima(ax, path_coords: np.ndarray, color: str):
-    if path_coords.size == 0:
-        return
-    ends = np.vstack([path_coords[0], path_coords[-1]])
-    ax.scatter(ends[:, 0], ends[:, 1], marker="*", s=120, c="gold",
-               edgecolor=color, linewidth=1.2, zorder=6)
+def overlay_label_minima(
+    ax,
+    real_coords: np.ndarray,
+    real_labels: np.ndarray,
+    A: str, B: str,
+):
+    """Place one gold-star minimum at each label's centroid in the 2D map.
+
+    Two stars per panel: A-centroid (blue-edged) and B-centroid (red-edged).
+    Marks the representative location of each behavior in the projection;
+    together they're the two basin minima that DM paths connect.
+    """
+    ok = ~np.isnan(real_coords[:, 0])
+    coords = real_coords[ok]
+    labels = real_labels[ok]
+    for lab, edge in ((A, A_COLOR), (B, B_COLOR)):
+        mask = labels == lab
+        if not mask.any():
+            continue
+        centroid = coords[mask].mean(axis=0)
+        ax.scatter([centroid[0]], [centroid[1]], marker="*",
+                   s=260, c="gold", edgecolor=edge, linewidth=1.8, zorder=7)
 
 
 def overlay_path_temporal(ax, path_coords: np.ndarray, cmap_name: str = "viridis"):
@@ -373,7 +417,8 @@ def render_transition_row(
     nature_axis(axes_row[0])
     scatter_real(axes_row[0], real_coords, real_labels, A, B, grey_background=False)
 
-    # Individual path overlays
+    # Individual path overlays: real as grey background, path line,
+    # and label-centroid minima (two stars, one per behavior).
     for i in range(k):
         ax = axes_row[1 + i]
         nature_axis(ax)
@@ -381,16 +426,15 @@ def render_transition_row(
         if i < len(paths_coords):
             overlay_path(ax, paths_coords[i],
                          color=PATH_PALETTE[i % len(PATH_PALETTE)])
-            overlay_minima(ax, paths_coords[i],
-                           color=PATH_PALETTE[i % len(PATH_PALETTE)])
+        overlay_label_minima(ax, real_coords, real_labels, A, B)
 
-    # Col K+1: all paths + minima on real-labeled background
+    # Col K+1: all paths on labeled background + label-centroid minima.
     ax_all = axes_row[1 + k]
     nature_axis(ax_all)
     scatter_real(ax_all, real_coords, real_labels, A, B, grey_background=False)
     for i, pc in enumerate(paths_coords):
         overlay_path(ax_all, pc, color=PATH_PALETTE[i % len(PATH_PALETTE)])
-        overlay_minima(ax_all, pc, color=PATH_PALETTE[i % len(PATH_PALETTE)])
+    overlay_label_minima(ax_all, real_coords, real_labels, A, B)
 
     # Col K+2: paths only, temporal coloring
     ax_temp = axes_row[2 + k]
@@ -407,6 +451,7 @@ def render_transition_row(
 
 def render_figure(
     projection: str,
+    feature_space: str,
     rows_data: list,  # list of dicts, one per transition
     k: int,
     cfg: DemoConfig,
@@ -449,7 +494,7 @@ def render_figure(
 
     fig.suptitle(
         f"Transition-centred projection — {PROJECTION_DISPLAY[projection]}"
-        f" (feature space: {cfg.feature_space})",
+        f" (feature space: {feature_space})",
         fontsize=12, fontweight="bold", y=1.0,
     )
 
@@ -477,11 +522,6 @@ def main(config_path: str | None = None) -> None:
     os.makedirs(cfg.output_dir, exist_ok=True)
     rng = np.random.default_rng(cfg.seed)
 
-    print("Loading feature data...")
-    feature_data = load_feature_data(cfg)
-    n_clips, T, D = feature_data.shape
-    print(f"  {cfg.feature_space}: {feature_data.shape}")
-
     print("Loading behavior segments...")
     segments = load_behavior_segments(cfg.behavior_labels_csv)
     print(f"  {len(segments)} clips with GT labels")
@@ -492,112 +532,127 @@ def main(config_path: str | None = None) -> None:
     )
     print(f"  top {cfg.n_transitions}: {transitions}")
 
-    # Build per-transition data bundles, one per row.
-    row_bundles = []
-    for A, B in transitions:
-        dominated = find_dominated_clips(
-            segments, A, B, T,
-            cfg.majority_threshold, cfg.min_per_behavior_fraction,
-            set(cfg.skip_clips), n_clips,
-        )
-        print(f"\n{A} <-> {B}: {len(dominated)} clips dominated "
-              f"(both >= {cfg.min_per_behavior_fraction:.0%}, "
-              f"sum >= {cfg.majority_threshold:.0%})")
-        if not dominated:
-            row_bundles.append(None)
+    for feature_space in cfg.feature_spaces:
+        print(f"\n{'=' * 56}\nFeature space: {feature_space}\n{'=' * 56}")
+        extraction_dir = cfg.extraction_dirs.get(feature_space)
+        if extraction_dir is None:
+            print(f"  no extraction_dir configured for {feature_space}, skipping")
             continue
 
-        paths_by_clip = load_paths_for_clips(cfg.extraction_dir, dominated)
-        top_paths = select_top_k_paths(paths_by_clip, cfg.k_paths)
-        n_paths_found = len(top_paths)
-        print(f"  {n_paths_found} DM paths chosen "
-              f"(top {cfg.k_paths} by length from dominated clips)")
+        print(f"Loading feature data ({feature_space})...")
+        feature_data = load_feature_data(cfg, feature_space)
+        n_clips, T, D = feature_data.shape
+        print(f"  shape: {feature_data.shape}")
 
-        # Real frames: (cid, frame_idx) flattened across dominated clips.
-        real_list: list[np.ndarray] = []
-        label_list: list[np.ndarray] = []
-        labels_grid = build_frame_labels(segments, dominated, T, A, B)
-        for i, cid in enumerate(dominated):
-            real_list.append(feature_data[cid])
-            label_list.append(labels_grid[i])
-        real_X = np.concatenate(real_list, axis=0)
-        real_L = np.concatenate(label_list, axis=0)
-
-        # Stride-subsample real frames uniformly to keep projection tractable.
-        if real_X.shape[0] > cfg.real_subsample_n:
-            step = real_X.shape[0] // cfg.real_subsample_n
-            keep_idx = np.arange(0, real_X.shape[0], step)[:cfg.real_subsample_n]
-            real_X = real_X[keep_idx]
-            real_L = real_L[keep_idx]
-
-        # Path points: for each path, pull feature_data[cid][frame_idx] per vertex.
-        path_feature_list: list[np.ndarray] = []
-        path_lens: list[int] = []
-        for cid, verts in top_paths:
-            verts_arr = np.asarray(verts, dtype=np.int64)
-            verts_arr = verts_arr[(verts_arr >= 0) & (verts_arr < T)]
-            if verts_arr.size == 0:
-                path_feature_list.append(np.zeros((0, D), dtype=np.float32))
-                path_lens.append(0)
-                continue
-            path_feature_list.append(feature_data[cid, verts_arr])
-            path_lens.append(verts_arr.size)
-
-        row_bundles.append({
-            "A": A, "B": B,
-            "dominated": dominated,
-            "top_paths": top_paths,
-            "real_X": real_X,
-            "real_L": real_L,
-            "path_features": path_feature_list,
-            "path_lens": path_lens,
-            "n_paths_found": n_paths_found,
-        })
-
-    # One figure per projection.
-    for projection in cfg.projections:
-        print(f"\nProjection: {projection}")
-        rendered_rows = []
-        for (A, B), bundle in zip(transitions, row_bundles):
-            if bundle is None:
-                rendered_rows.append({
-                    "A": A, "B": B,
-                    "real_coords": np.zeros((0, 2)),
-                    "real_labels": np.array([], dtype=object),
-                    "path_coords": [],
-                    "n_clips": 0, "n_paths_found": 0,
-                    "row_title": f"{A} ↔ {B} (no dominated clips)",
-                })
+        # Build per-transition data bundles for this feature space.
+        row_bundles = []
+        for A, B in transitions:
+            dominated = find_dominated_clips(
+                segments, A, B, T,
+                cfg.majority_threshold, cfg.min_per_behavior_fraction,
+                set(cfg.skip_clips), n_clips,
+            )
+            print(f"\n{A} <-> {B}: {len(dominated)} clips dominated "
+                  f"(both >= {cfg.min_per_behavior_fraction:.0%}, "
+                  f"sum >= {cfg.majority_threshold:.0%})")
+            if not dominated:
+                row_bundles.append(None)
                 continue
 
-            all_path_pts = (
-                np.concatenate(bundle["path_features"], axis=0)
-                if bundle["path_features"] else np.zeros((0, bundle["real_X"].shape[1]))
+            paths_by_clip = load_paths_for_clips(extraction_dir, dominated)
+            top_paths = select_top_k_paths(
+                paths_by_clip, cfg.k_paths, segments, A, B,
             )
-            real_coords, path_coords_flat = project_together(
-                bundle["real_X"], all_path_pts, projection,
-                cfg.tsne_subsample_n, rng,
-            )
+            n_paths_found = len(top_paths)
+            print(f"  {n_paths_found} DM paths chosen "
+                  f"(top {cfg.k_paths} by length, endpoints in {{{A}, {B}}})")
 
-            # Split flat path coords back per path using path_lens.
-            per_path_coords: list[np.ndarray] = []
-            cursor = 0
-            for L in bundle["path_lens"]:
-                per_path_coords.append(path_coords_flat[cursor:cursor + L])
-                cursor += L
+            labels_grid = build_frame_labels(segments, dominated, T, A, B)
+            real_list, label_list = [], []
+            for i, cid in enumerate(dominated):
+                real_list.append(feature_data[cid])
+                label_list.append(labels_grid[i])
+            real_X = np.concatenate(real_list, axis=0)
+            real_L = np.concatenate(label_list, axis=0)
 
-            rendered_rows.append({
+            if real_X.shape[0] > cfg.real_subsample_n:
+                step = real_X.shape[0] // cfg.real_subsample_n
+                keep_idx = np.arange(0, real_X.shape[0], step)[:cfg.real_subsample_n]
+                real_X = real_X[keep_idx]
+                real_L = real_L[keep_idx]
+
+            path_feature_list, path_lens = [], []
+            for cid, verts in top_paths:
+                verts_arr = np.asarray(verts, dtype=np.int64)
+                verts_arr = verts_arr[(verts_arr >= 0) & (verts_arr < T)]
+                if verts_arr.size == 0:
+                    path_feature_list.append(np.zeros((0, D), dtype=np.float32))
+                    path_lens.append(0)
+                    continue
+                path_feature_list.append(feature_data[cid, verts_arr])
+                path_lens.append(verts_arr.size)
+
+            row_bundles.append({
                 "A": A, "B": B,
-                "real_coords": real_coords,
-                "real_labels": bundle["real_L"],
-                "path_coords": per_path_coords,
-                "n_clips": len(bundle["dominated"]),
-                "n_paths_found": bundle["n_paths_found"],
-                "row_title": f"{A} ↔ {B}",
+                "dominated": dominated,
+                "top_paths": top_paths,
+                "real_X": real_X,
+                "real_L": real_L,
+                "path_features": path_feature_list,
+                "path_lens": path_lens,
+                "n_paths_found": n_paths_found,
             })
 
-        out_path = Path(cfg.output_dir) / f"transition_projections_{projection}.pdf"
-        render_figure(projection, rendered_rows, cfg.k_paths, cfg, out_path)
+        for projection in cfg.projections:
+            print(f"\nProjection: {projection} ({feature_space})")
+            rendered_rows = []
+            for (A, B), bundle in zip(transitions, row_bundles):
+                if bundle is None:
+                    rendered_rows.append({
+                        "A": A, "B": B,
+                        "real_coords": np.zeros((0, 2)),
+                        "real_labels": np.array([], dtype=object),
+                        "path_coords": [],
+                        "n_clips": 0, "n_paths_found": 0,
+                        "row_title": f"{A} ↔ {B} (no dominated clips)",
+                    })
+                    continue
+
+                all_path_pts = (
+                    np.concatenate(bundle["path_features"], axis=0)
+                    if bundle["path_features"]
+                    else np.zeros((0, bundle["real_X"].shape[1]))
+                )
+                real_coords, path_coords_flat = project_together(
+                    bundle["real_X"], all_path_pts, projection,
+                    cfg.tsne_subsample_n, rng,
+                )
+
+                per_path_coords: list[np.ndarray] = []
+                cursor = 0
+                for L in bundle["path_lens"]:
+                    per_path_coords.append(path_coords_flat[cursor:cursor + L])
+                    cursor += L
+
+                rendered_rows.append({
+                    "A": A, "B": B,
+                    "real_coords": real_coords,
+                    "real_labels": bundle["real_L"],
+                    "path_coords": per_path_coords,
+                    "n_clips": len(bundle["dominated"]),
+                    "n_paths_found": bundle["n_paths_found"],
+                    "row_title": f"{A} ↔ {B}",
+                })
+
+            out_path = (
+                Path(cfg.output_dir)
+                / f"transition_projections_{feature_space}_{projection}.pdf"
+            )
+            render_figure(projection, feature_space, rendered_rows,
+                          cfg.k_paths, cfg, out_path)
+
+        # Free the feature_data memory before loading the next one.
+        del feature_data
 
 
 if __name__ == "__main__":

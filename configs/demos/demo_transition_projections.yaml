@@ -8,9 +8,16 @@ behavior_labels_csv: "behavior_labels/rodent_labels.csv"
 xml_path: "topo_mimic/extraction/xml/rodent.xml"
 stac_data_path: "data/rodent_reference_clips.h5"
 
-# Which feature space to read from (and where cached DM paths live).
-feature_space: "ekp"
-extraction_dir: "outputs/extraction/dm_pipeline_ekp"
+# Feature spaces to sweep over. One figure per (feature_space, projection).
+feature_spaces:
+  - intention
+  - qpos
+  - ekp
+
+extraction_dirs:
+  intention: "outputs/extraction/dm_pipeline_intention"
+  qpos:      "outputs/extraction/dm_pipeline_qpos"
+  ekp:       "outputs/extraction/dm_pipeline_ekp"
 
 seed: 0
 
