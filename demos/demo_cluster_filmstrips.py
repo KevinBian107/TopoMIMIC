@@ -116,7 +116,7 @@ def render_cluster_grid(
     data: np.ndarray,
     cfg: ClusterFilmstripConfig,
 ) -> None:
-    project_root = Path(__file__).resolve().parents[2]
+    project_root = Path(__file__).resolve().parents[1]
     xml_path = cfg.xml_path
     if not os.path.isabs(xml_path):
         xml_path = str(project_root / xml_path)

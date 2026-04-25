@@ -220,11 +220,11 @@ def plot_cycle_vs_no_cycle_comparison(
 
         ax1.bar(x - width/2, cycle_delta_mean, width, yerr=cycle_delta_std,
                 label=f"With cycles (n={len(sampled_cycle)})",
-                color='#4878CF', capsize=2.5, edgecolor='none',
+                color='#4C72B0', capsize=2.5, edgecolor='none',
                 error_kw={'linewidth': 0.7, 'capthick': 0.7})
         ax1.bar(x + width/2, no_cycle_delta_mean, width, yerr=no_cycle_delta_std,
                 label=f"No cycles (n={len(sampled_no_cycle)})",
-                color='#C44E52', capsize=2.5, edgecolor='none',
+                color='#DD8452', capsize=2.5, edgecolor='none',
                 error_kw={'linewidth': 0.7, 'capthick': 0.7})
 
         ax1.set_xlabel("Root displacement axis")
@@ -242,9 +242,9 @@ def plot_cycle_vs_no_cycle_comparison(
         body_labels = [bp.replace("_", "\n") for bp in body_parts]
 
         ax2.bar(x2 - width/2, cycle_var, width,
-                label=f"With cycles", color='#4878CF', edgecolor='none')
+                label=f"With cycles", color='#4C72B0', edgecolor='none')
         ax2.bar(x2 + width/2, no_cycle_var, width,
-                label=f"No cycles", color='#C44E52', edgecolor='none')
+                label=f"No cycles", color='#DD8452', edgecolor='none')
 
         ax2.set_xlabel("Body part")
         ax2.set_ylabel("Variance")
@@ -279,7 +279,7 @@ def render_filmstrip_grid(
     )
     from matplotlib.patches import FancyBboxPatch
 
-    project_root = Path(__file__).parent.parent.parent.resolve()
+    project_root = Path(__file__).resolve().parents[4]
     if not os.path.isabs(xml_path):
         xml_path = str(project_root / xml_path)
 
@@ -395,7 +395,7 @@ def main():
     parser.add_argument("--config", type=str, default=None)
     args = parser.parse_args()
 
-    project_root = Path(__file__).parent.parent.parent.resolve()
+    project_root = Path(__file__).resolve().parents[4]
     default_config = project_root / "configs" / "demos" / "property" / "demo_stationary.yaml"
 
     if args.config:

@@ -349,7 +349,7 @@ def plot_cycle_lifetime(
 
         fig, ax = plt.subplots(figsize=config.plotting.figsize)
 
-        side_colors = {"_L": "#1f77b4", "_R": "#ff7f0e", "": "#1f77b4"}
+        side_colors = {"_L": "#4C72B0", "_R": "#DD8452", "": "#4C72B0"}
 
         all_pers_values = set()
         for joint_name in group_joints:
@@ -622,7 +622,11 @@ def plot_unique_clusters_curve(
         unique_col = "n_unique_fixed"
 
     pers_values = sorted(df["pers_delta"].unique())
-    colors = plt.cm.viridis(np.linspace(0.2, 0.8, len(pers_values)))
+    from matplotlib.colors import LinearSegmentedColormap
+    _violin_cmap = LinearSegmentedColormap.from_list(
+        "violin_blue_orange", ["#4C72B0", "#DD8452"]
+    )
+    colors = _violin_cmap(np.linspace(0.0, 1.0, max(2, len(pers_values))))
 
     fig, ax = plt.subplots(figsize=config.plotting.figsize)
 
@@ -842,7 +846,11 @@ def plot_dtw_summary_across_k(
 
     df = pd.DataFrame(rows)
     pers_values = sorted(df["pers_delta"].unique())
-    colors = plt.cm.viridis(np.linspace(0.2, 0.8, len(pers_values)))
+    from matplotlib.colors import LinearSegmentedColormap
+    _violin_cmap = LinearSegmentedColormap.from_list(
+        "violin_blue_orange", ["#4C72B0", "#DD8452"]
+    )
+    colors = _violin_cmap(np.linspace(0.0, 1.0, max(2, len(pers_values))))
 
     fig, axes = plt.subplots(1, 3, figsize=(12, 4))
 

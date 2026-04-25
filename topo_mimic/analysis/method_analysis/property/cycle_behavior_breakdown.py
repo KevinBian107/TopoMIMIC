@@ -243,14 +243,7 @@ def plot_category_table(
         ax.set_xticks(x)
         ax.set_xticklabels(sigs, rotation=35, ha="right", fontsize=7)
         ax.set_ylabel("% of labeled frames in category")
-        ax.set_title(
-            f"{category}: clip-level signature breakdown (frame-weighted)\n"
-            f"singleton frames={stats['total_singleton_frames']:,} "
-            f"({stats['pct_frames_singleton']:.1f}%), "
-            f"transition frames={stats['total_transition_frames']:,} "
-            f"({stats['pct_frames_transition']:.1f}%)",
-            fontweight="bold",
-        )
+        # Title omitted for paper figures.
         ax.set_ylim(0, max(pct.max() * 1.25, 10.0))
         for spine in ("top", "right"):
             ax.spines[spine].set_visible(False)

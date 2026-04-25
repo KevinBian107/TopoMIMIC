@@ -130,23 +130,19 @@ def render_dtw_panel(
         ax_matrix.plot(path_j, path_i, "w-", linewidth=1.5, alpha=0.9)
     ax_matrix.set_xlabel("GT frames", fontsize=8)
     ax_matrix.set_ylabel("Discovered frames", fontsize=8)
-    ax_matrix.set_title(f"DTW = {dtw_dist:.4f}", fontsize=9, fontweight="bold")
+    # Titles omitted for paper figures.
     cbar = plt.colorbar(im, ax=ax_matrix, shrink=0.85, pad=0.02)
     cbar.ax.tick_params(labelsize=6)
 
     # Top-right: discovered filmstrip
     ax_disc = fig.add_subplot(gs[0, 1])
     ax_disc.imshow(disc_filmstrip)
-    ax_disc.set_title("Discovered", fontsize=8, fontweight="bold", color="#2980b9")
     ax_disc.axis("off")
 
     # Bottom-right: GT filmstrip
     ax_gt = fig.add_subplot(gs[1, 1])
     ax_gt.imshow(gt_filmstrip)
-    ax_gt.set_title("Ground Truth", fontsize=8, fontweight="bold", color="#c0392b")
     ax_gt.axis("off")
-
-    fig.suptitle(title, fontsize=10, fontweight="bold", y=0.98)
 
     fig.savefig(output_path, dpi=dpi, bbox_inches="tight", facecolor="white")
     plt.close(fig)
