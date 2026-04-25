@@ -477,7 +477,7 @@ def main():
 
     torus_cfg = TorusConfig(R=3.5, r=1.0, n_points=1000, noise_std=0.01)
     morse_cfg = MorseConfig(k_neighbors=3, pers_delta=0.6, epsilon=0.99)
-    anim_cfg = AnimConfig(n_frames=300, fps=15)
+    anim_cfg = AnimConfig(n_frames=300, fps=15, figsize=(16, 8), dpi=200)
 
     # Step 1: Generate torus
     print("\n[1/6] Generating torus point cloud...")
