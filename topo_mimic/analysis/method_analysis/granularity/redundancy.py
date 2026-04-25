@@ -394,8 +394,13 @@ def run_redundancy_for_config(
     dtw_cache_path = cache_dir / "dtw_matrix.pkl"
 
     if config.redundancy.use_cached_dtw and dtw_cache_path.exists():
+        from topo_mimic.analysis.method_analysis.granularity.dm_multi_persistence import _LegacyAwareUnpickler
         with open(dtw_cache_path, "rb") as f:
-            cached = pkl.load(f)
+            try:
+                cached = _LegacyAwareUnpickler(f).load()
+            except Exception:
+                f.seek(0)
+                cached = pkl.load(f)
         dtw_matrix = cached["D"]
         cluster_ids = cached["cluster_ids"]
         print(f"    Loaded cached DTW matrix from {dtw_cache_path}")
@@ -520,8 +525,13 @@ def run_redundancy_analysis(
             clustering_cache_path = cache_dir / "clustering_result.pkl"
 
             if config.redundancy.use_cached_clustering and clustering_cache_path.exists():
+                from topo_mimic.analysis.method_analysis.granularity.dm_multi_persistence import _LegacyAwareUnpickler
                 with open(clustering_cache_path, "rb") as f:
-                    clustering_result = pkl.load(f)
+                    try:
+                        clustering_result = _LegacyAwareUnpickler(f).load()
+                    except Exception:
+                        f.seek(0)
+                        clustering_result = pkl.load(f)
                 print(f"    Loaded cached clustering for k={n_clusters} from {clustering_cache_path}")
             else:
                 print(f"    Running clustering for k={n_clusters}...")

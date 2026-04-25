@@ -25,10 +25,27 @@ class DMExtractionResult:
     path_stats: dict | None = None
 
 
+class _LegacyAwareUnpickler(pkl.Unpickler):
+    """Resolve legacy module paths used by older granularity caches."""
+    _RENAMES = {
+        "topo_mimic.granularity": "topo_mimic.analysis.method_analysis.granularity",
+    }
+    def find_class(self, module: str, name: str):
+        for old, new in self._RENAMES.items():
+            if module == old or module.startswith(old + "."):
+                module = new + module[len(old):]
+                break
+        return super().find_class(module, name)
+
+
 def _load_cached_dm(cache_path: Path) -> DMExtractionResult | None:
     if cache_path.exists():
         with open(cache_path, "rb") as f:
-            return pkl.load(f)
+            try:
+                return _LegacyAwareUnpickler(f).load()
+            except Exception:
+                f.seek(0)
+                return pkl.load(f)
     return None
 
 
