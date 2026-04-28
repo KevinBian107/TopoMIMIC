@@ -73,6 +73,41 @@ PATH_PALETTE = [
 PROJECTION_DISPLAY = {"pca": "PCA", "umap": "UMAP", "tsne": "t-SNE"}
 
 
+def _add_colored_transition_title(
+    ax,
+    A: str,
+    B: str,
+    *,
+    A_color: str = A_COLOR,
+    B_color: str = B_COLOR,
+    arrow_color: str = "#222",
+    fontsize: int = 11,
+    y: float = 1.04,
+    sep: int = 3,
+):
+    """Place a horizontal `A ↔ B` title above ``ax`` with per-segment colors.
+
+    Uses ``HPacker`` so the three text runs are measured and laid out side
+    by side — avoids the overlap from anchoring all three texts at the same
+    x with ha=right/center/left.
+    """
+    from matplotlib.offsetbox import AnchoredOffsetbox, HPacker, TextArea
+
+    common = dict(fontsize=fontsize, fontweight="bold")
+    boxes = [
+        TextArea(A, textprops=dict(color=A_color, **common)),
+        TextArea("↔", textprops=dict(color=arrow_color, **common)),
+        TextArea(B, textprops=dict(color=B_color, **common)),
+    ]
+    pack = HPacker(children=boxes, align="center", pad=0, sep=sep)
+    abox = AnchoredOffsetbox(
+        loc="lower center", child=pack, pad=0.0, borderpad=0.0,
+        frameon=False, bbox_to_anchor=(0.5, y),
+        bbox_transform=ax.transAxes,
+    )
+    ax.add_artist(abox)
+
+
 @dataclass
 class DemoConfig:
     h5_path: str = "data/rodent_ar.h5"
@@ -464,9 +499,15 @@ def project_together(
             np.zeros((path_points.shape[0], 2), dtype=np.float32),
         )
 
+    explained_variance: tuple[float, float] | None = None
     if method == "pca":
         from sklearn.decomposition import PCA
-        coords = PCA(n_components=2, random_state=0).fit_transform(pooled).astype(np.float32)
+        pca = PCA(n_components=2, random_state=0)
+        coords = pca.fit_transform(pooled).astype(np.float32)
+        explained_variance = (
+            float(pca.explained_variance_ratio_[0]),
+            float(pca.explained_variance_ratio_[1]),
+        )
     elif method == "umap":
         import umap
         coords = umap.UMAP(
@@ -489,7 +530,7 @@ def project_together(
     # Re-expand real_coords to all original real indices (pad unused with NaN).
     full_real = np.full((real_points.shape[0], 2), np.nan, dtype=np.float32)
     full_real[idx] = real_coords
-    return full_real, path_coords
+    return full_real, path_coords, explained_variance
 
 
 def nature_axis(ax):
@@ -629,7 +670,7 @@ def render_transition_row(
 
     # Row title (y-label of first axis)
     axes_row[0].set_ylabel(
-        f"{A} ↔ {B}\n(n clips={n_clips}, paths found={n_paths_found})",
+        f"{A} ↔ {B}",
         fontsize=9, fontweight="bold", labelpad=10,
     )
 
@@ -688,8 +729,8 @@ def render_direction_panel_figure(
             scatter_real(
                 ax, row["real_coords"], row["real_labels"], A, B,
                 grey_background=False,
-                alpha_ab=0.38, alpha_other=0.35,
-                size_ab=2.0, size_other=1.5,
+                alpha_ab=0.55, alpha_other=0.45,
+                size_ab=6.0, size_other=4.0,
             )
             if row["path_coords"]:
                 import matplotlib.patheffects as PE
@@ -707,11 +748,6 @@ def render_direction_panel_figure(
                         row["paths_endpoint_labels"][0][1],
                         A, B, star_size=180,
                     )
-            ax.annotate(
-                f"n clips={row['n_clips']}, paths={row['n_paths_found']}",
-                xy=(0.02, 0.97), xycoords="axes fraction",
-                ha="left", va="top", fontsize=6.5, color="#555",
-            )
 
     from matplotlib.patches import Patch
     from matplotlib.lines import Line2D
@@ -752,6 +788,7 @@ def render_transition_filmstrip_figure(
     cfg: DemoConfig,
     out_path: Path,
     n_poses: int = 6,
+    show_row_labels: bool = True,
 ):
     """Grid of rendered MuJoCo pose filmstrips for the top-1 DM path per
     (feature_space, transition) cell. Tinted from A-color (start) to
@@ -765,17 +802,17 @@ def render_transition_filmstrip_figure(
         n_rows, n_cols,
         figsize=(4.0 * n_cols, 1.3 * n_rows + 0.8),
         squeeze=False,
+        gridspec_kw={"wspace": 0.18, "hspace": 0.25},
     )
 
     for col_idx, (A, B) in enumerate(transitions):
-        axes[0, col_idx].set_title(
-            f"{A} ↔ {B}", fontsize=10, fontweight="bold", pad=6,
-        )
+        _add_colored_transition_title(axes[0, col_idx], A, B, fontsize=11, y=1.04)
 
     for row_idx, fs in enumerate(feature_spaces):
-        axes[row_idx, 0].set_ylabel(
-            fs, fontsize=10, fontweight="bold", labelpad=12,
-        )
+        if show_row_labels:
+            axes[row_idx, 0].set_ylabel(
+                fs, fontsize=10, fontweight="bold", labelpad=12,
+            )
         rows = grid_data.get(fs, [])
         for col_idx, (A, B) in enumerate(transitions):
             ax = axes[row_idx, col_idx]
@@ -823,16 +860,12 @@ def render_transition_filmstrip_figure(
 
     from matplotlib.patches import Patch
     handles = [
-        Patch(facecolor=A_COLOR, edgecolor="none", label="behavior A tint (start)"),
-        Patch(facecolor=B_COLOR, edgecolor="none", label="behavior B tint (end)"),
+        Patch(facecolor=A_COLOR, edgecolor="none", label="behavior A (start)"),
+        Patch(facecolor=B_COLOR, edgecolor="none", label="behavior B (end)"),
     ]
     fig.legend(handles=handles, loc="lower center", ncol=len(handles),
                frameon=False, fontsize=9, bbox_to_anchor=(0.5, -0.005))
-    fig.suptitle(
-        "Transition-path filmstrips (top-1 DM path per cell; tint = A start -> B end)",
-        fontsize=12, fontweight="bold", y=1.0,
-    )
-    fig.tight_layout(rect=(0, 0.03, 1, 0.96))
+    fig.tight_layout(rect=(0, 0.03, 1, 0.99))
     plt.savefig(out_path, bbox_inches="tight", dpi=220)
     plt.savefig(out_path.with_suffix(".png"), bbox_inches="tight", dpi=220)
     plt.close(fig)
@@ -846,6 +879,8 @@ def render_combined_panel_figure(
     transitions: list[tuple[str, str]],
     cfg: DemoConfig,
     out_path: Path,
+    show_legend: bool = True,
+    show_support_annotation: bool = False,
 ):
     """One image per projection method. Rows = feature spaces, cols =
     transition types. Each cell = compact scatter of real A/B background +
@@ -866,9 +901,10 @@ def render_combined_panel_figure(
     )
 
     for col_idx, (A, B) in enumerate(transitions):
-        axes[0, col_idx].set_title(
-            f"{A} ↔ {B}", fontsize=10, fontweight="bold", pad=6,
-        )
+        # Color-code the column title so the reader can read off which scatter
+        # color is which behavior in this column (A = first/blue, B = second/red).
+        # HPacker lays the three runs out side by side without overlap.
+        _add_colored_transition_title(axes[0, col_idx], A, B, fontsize=11, y=1.04)
 
     for row_idx, fs in enumerate(feature_spaces):
         axes[row_idx, 0].set_ylabel(
@@ -888,8 +924,8 @@ def render_combined_panel_figure(
             scatter_real(
                 ax, row["real_coords"], row["real_labels"], A, B,
                 grey_background=False,
-                alpha_ab=0.38, alpha_other=0.35,
-                size_ab=2.0, size_other=1.5,
+                alpha_ab=0.55, alpha_other=0.45,
+                size_ab=6.0, size_other=4.0,
             )
             # Single top path: dark dashed line with a white halo for contrast.
             if row["path_coords"]:
@@ -908,30 +944,44 @@ def render_combined_panel_figure(
                         row["paths_endpoint_labels"][0][1],
                         A, B, star_size=200,
                     )
-            ax.annotate(
-                f"n clips={row['n_clips']}, paths={row['n_paths_found']}",
-                xy=(0.02, 0.97), xycoords="axes fraction",
-                ha="left", va="top", fontsize=6.5, color="#555",
-            )
+            if show_support_annotation:
+                ax.text(
+                    0.02, 0.98,
+                    f"n clips={row['n_clips']}, paths={row['n_paths_found']}",
+                    transform=ax.transAxes, ha="left", va="top",
+                    fontsize=7, color="#555",
+                )
+            # PCA-only: show explained variance per axis.
+            if projection == "pca":
+                ev = row.get("explained_variance")
+                if ev is not None:
+                    ax.set_xlabel(f"PC1 ({ev[0]*100:.1f}%)", fontsize=8)
+                    if col_idx == 0:
+                        ax.set_ylabel(
+                            f"{fs}\nPC2 ({ev[1]*100:.1f}%)",
+                            fontsize=9, fontweight="bold", labelpad=12,
+                        )
 
-    from matplotlib.patches import Patch
-    from matplotlib.lines import Line2D
-    handles = [
-        Patch(facecolor=A_COLOR, edgecolor="none", label="behavior A"),
-        Patch(facecolor=B_COLOR, edgecolor="none", label="behavior B"),
-        Patch(facecolor=OTHER_COLOR, edgecolor="none", label="other"),
-        Line2D([0], [0], marker="*", color="w", markerfacecolor="gold",
-               markeredgecolor="#222", markersize=10,
-               label="path endpoint (minimum)"),
-    ]
-    fig.legend(handles=handles, loc="lower center", ncol=len(handles),
-               frameon=False, fontsize=9, bbox_to_anchor=(0.5, -0.005))
-
-    fig.suptitle(
-        f"Transition x feature-space panel — {PROJECTION_DISPLAY[projection]}",
-        fontsize=12, fontweight="bold", y=1.0,
-    )
-    fig.tight_layout(rect=(0, 0.04, 1, 0.96))
+    if show_legend:
+        from matplotlib.patches import Patch
+        from matplotlib.lines import Line2D
+        handles = [
+            Patch(facecolor=A_COLOR, edgecolor="none",
+                  label="behavior A (left of ↔ in column title)"),
+            Patch(facecolor=B_COLOR, edgecolor="none",
+                  label="behavior B (right of ↔ in column title)"),
+            Patch(facecolor=OTHER_COLOR, edgecolor="none", label="other frames"),
+            Line2D([0], [0], marker="*", color="w", markerfacecolor="gold",
+                   markeredgecolor="#222", markersize=10,
+                   label="path endpoint (basin minimum)"),
+            Line2D([0], [0], linestyle=(0, (5, 3)), color="#0a0a0a",
+                   linewidth=1.8, label="DM path"),
+        ]
+        fig.legend(handles=handles, loc="lower center", ncol=len(handles),
+                   frameon=False, fontsize=9, bbox_to_anchor=(0.5, -0.005))
+        fig.tight_layout(rect=(0, 0.04, 1, 0.99))
+    else:
+        fig.tight_layout(rect=(0, 0.0, 1, 0.99))
     plt.savefig(out_path, bbox_inches="tight", dpi=220)
     plt.savefig(out_path.with_suffix(".png"), bbox_inches="tight", dpi=220)
     plt.close(fig)
@@ -1172,7 +1222,7 @@ def main(config_path: str | None = None) -> None:
                     if bundle["path_features"]
                     else np.zeros((0, bundle["real_X"].shape[1]))
                 )
-                real_coords, path_coords_flat = project_together(
+                real_coords, path_coords_flat, explained_var = project_together(
                     bundle["real_X"], all_path_pts, projection,
                     cfg.tsne_subsample_n, rng,
                 )
@@ -1193,6 +1243,7 @@ def main(config_path: str | None = None) -> None:
                     "n_clips": len(bundle["dominated"]),
                     "n_paths_found": bundle["n_paths_found"],
                     "row_title": f"{A} ↔ {B}",
+                    "explained_variance": explained_var,
                 })
 
             combined_grid[projection][feature_space] = rendered_rows
@@ -1254,7 +1305,7 @@ def main(config_path: str | None = None) -> None:
                 if path_feature_list else np.zeros((0, real_X.shape[1]))
             )
             for projection in cfg.projections:
-                real_coords, path_coords_flat = project_together(
+                real_coords, path_coords_flat, _ = project_together(
                     real_X, all_path_pts, projection,
                     cfg.tsne_subsample_n, rng,
                 )
@@ -1293,6 +1344,23 @@ def main(config_path: str | None = None) -> None:
             cfg=cfg,
             out_path=out_path,
         )
+        # Intention-only single-row version for the main paper figure.
+        # Drop the verbose legend — figure 2 uses a single shared legend
+        # at the bottom of the filmstrip below.
+        if "intention" in cfg.feature_spaces:
+            out_path_int = (
+                Path(cfg.output_dir)
+                / f"transition_panel_{projection}_intention.pdf"
+            )
+            render_combined_panel_figure(
+                projection=projection,
+                grid_data={"intention": combined_grid[projection]["intention"]},
+                feature_spaces=["intention"],
+                transitions=transitions,
+                cfg=cfg,
+                out_path=out_path_int,
+                show_legend=False,
+            )
 
     # Direction-variant panel: one image per projection. Rows = feature
     # spaces, cols = kept (A, B, dir_A, dir_B) variants across all kept
@@ -1334,6 +1402,21 @@ def main(config_path: str | None = None) -> None:
         cfg=cfg,
         out_path=filmstrip_path,
     )
+    # Intention-only single-row version for the main paper figure.
+    # No "intention" row label — figure 2 keeps only the bottom legend.
+    if "intention" in cfg.feature_spaces:
+        filmstrip_path_int = Path(cfg.output_dir) / "transition_filmstrips_intention.pdf"
+        render_transition_filmstrip_figure(
+            grid_data={"intention": combined_grid[any_projection]["intention"]},
+            feature_spaces=["intention"],
+            transitions=transitions,
+            qpos_all=qpos_all,
+            xml_path=cfg.xml_path,
+            dataset="rodent",
+            cfg=cfg,
+            out_path=filmstrip_path_int,
+            show_row_labels=False,
+        )
 
 
 if __name__ == "__main__":
