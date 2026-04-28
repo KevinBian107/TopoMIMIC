@@ -138,21 +138,28 @@ def _tile_cropped_poses(
         tint_end = np.array([0.22, 0.38, 0.50])
 
     max_h = max(c[0].shape[0] for c in cropped_poses)
+    max_w = max(c[0].shape[1] for c in cropped_poses)
     normalized = []
     for crop_rgb, crop_mask in cropped_poses:
         h, w = crop_rgb.shape[:2]
-        if h < max_h:
-            pad_top = (max_h - h) // 2
-            pad_bot = max_h - h - pad_top
-            crop_rgb = np.pad(crop_rgb, ((pad_top, pad_bot), (0, 0), (0, 0)),
-                              mode='constant', constant_values=255)
-            crop_mask = np.pad(crop_mask, ((pad_top, pad_bot), (0, 0)),
-                               mode='constant', constant_values=False)
+        pad_top = (max_h - h) // 2
+        pad_bot = max_h - h - pad_top
+        pad_left = (max_w - w) // 2
+        pad_right = max_w - w - pad_left
+        crop_rgb = np.pad(
+            crop_rgb,
+            ((pad_top, pad_bot), (pad_left, pad_right), (0, 0)),
+            mode='constant', constant_values=255,
+        )
+        crop_mask = np.pad(
+            crop_mask,
+            ((pad_top, pad_bot), (pad_left, pad_right)),
+            mode='constant', constant_values=False,
+        )
         normalized.append((crop_rgb, crop_mask))
 
-    avg_w = sum(c[0].shape[1] for c in normalized) // n_poses
-    gap = max(int(avg_w * gap_fraction), 2)
-    total_w = sum(c[0].shape[1] for c in normalized) + gap * (n_poses - 1)
+    gap = max(int(max_w * gap_fraction), 2)
+    total_w = max_w * n_poses + gap * (n_poses - 1)
 
     composite = np.full((max_h, total_w, 3), 255, dtype=np.uint8)
     x_cursor = 0

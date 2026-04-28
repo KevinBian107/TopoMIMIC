@@ -147,6 +147,17 @@ python -m demos.demo_transitions_projections_single_clip --config configs/demos/
 ```
 Visualizes rodent behavioral transitions using PCA/UMAP/t-SNE with up to 3 rows per embedding plot: GT transitions, DM cycles, and DM paths. With `skeleton_analysis.enabled: true`, also produces skeleton filmstrip figures (Figure 2C) in `{output_dir}/skeleton_analysis_filmstrip/`.
 
+### GT vs Discovered comparison videos (project page)
+```bash
+python -m demos.demo_gt_vs_discovered                                                # all 6 pairs, default DMC/DMP variants
+python -m demos.demo_gt_vs_discovered --behavior Immobile_Rear                       # one pair only
+python -m demos.demo_gt_vs_discovered \
+    --dmc-methods w2_dmc_int_kmeans w2_dmc_qpos_kmeans w2_dmc_ekp_kmeans \
+    --dmp-methods w2_dmp_qpos_kmeans w2_dmp_int_kmeans w2_dmp_ekp_kmeans \
+    --seed 0 --n-frames 60 --render-h 360 --render-w 480
+```
+For each unordered behavior pair (Walk / Immobile / Turn / Rear), renders a single-row 4-panel MP4 — `GT | GT | DMC | DMP` — with two ground-truth example clips on the left and one example from the strongest DMC and DMP variant that discovered the pair on the right. The script auto-promotes DMC and DMP variants by scanning `--dmc-methods` and `--dmp-methods` in priority order, so it picks whatever variant first matched the pair. Pairs that *neither* DMC nor DMP discovered are skipped (no row of `---`s). Each panel is an MJX rollout rendered with `compute_filmstrip_camera` + `render_fixed_camera_frames` from `topo_mimic.analysis.method_analysis.property.theta_filmstrip`. Outputs land at `outputs/demos/gt_vs_discovered/gt_vs_disc_seed{N}_{Pair}.mp4`. Used directly on the project page (`TopoMimic-website/public/figures/gtvd/`).
+
 ---
 
 ## Global-Manifold Demos
