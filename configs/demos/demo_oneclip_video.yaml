@@ -1,0 +1,40 @@
+# Single-clip animated companion to demo_oneclip.png.
+# Layout: square t-SNE panel on the LEFT, animated rodent rows on the
+# RIGHT. Each DM-path animates a tinted rodent that translates left -> right
+# across its row over time, while the path line grows on the t-SNE.
+#
+# Mirrors the skeleton-extraction logic of
+# configs/demos/demo_transitions_projections_single_clip.yaml: one minimum
+# per unique non-transition behaviour cluster (n_minima_override), with a
+# strict dedup pass.
+
+dataset: rodent
+data_path: data/rodent_ar.h5
+labels_csv: behavior_labels/rodent_labels.csv
+xml_path: topo_mimic/extraction/xml/rodent.xml
+
+dm_key: intention
+clip_id: 650          # diverse: Imm/Walk/Turn/Rear with directions
+
+# DM-G parameters (mirror configs/demos/demo_transitions_projections_single_clip.yaml).
+pers_delta: 1.0
+k_neighbors: 3
+
+# Skeleton extraction.
+minima_frame_radius: 12
+k_paths: 1
+
+# Video composition. Slow framerate, one MuJoCo render per video frame, so
+# the rodent's behaviour reads clearly as it traverses the path.
+fps: 12
+n_video_frames: 80
+hold_frames: 18
+canvas_size: [1400, 1000]
+tsne_panel_px: [820, 820]    # square; aspect preserved
+filmstrip_margin_x: 20
+filmstrip_label_h: 24
+row_body_w: 360              # snug width of each rodent row
+tsne_perplexity: 30
+
+output_dir: outputs/demos/rodent_oneclip_video
+out_filename: demo_oneclip_video.mp4
