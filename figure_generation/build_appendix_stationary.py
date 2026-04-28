@@ -1,20 +1,27 @@
 #!/usr/bin/env python3
 """Build paper/appendix_figures/appendix_stationary.png.
 
-Panel A: stationary-vs-moving line plot (DM-loop length grows with pooled
-         moving clips, stays flat for stationary-only pools), re-rendered with
-         the appendix palette to match panels B/C.
-Panel B: body-part variance bar chart (orange = with-cycles, blue = no-cycles).
-Panel C: 8-clip filmstrip grid of representative no-cycle clips (kept from the
-         existing stationary_clips run).
+Four panels:
+  (A) Root displacement per frame ($|\\Delta x|, |\\Delta y|, |\\Delta z|$),
+      with-cycle vs no-cycle clips ($n=50$ each).
+  (B) Pool size $n=5$ bar: moving vs stationary mean longest DM-loop length.
+  (C) Stationary-vs-moving line plot, sweeping pool size $n\\in\\{2,3,4,5\\}$
+      with shaded SEM.
+  (D) Chronophotography filmstrip grid of 8 representative no-cycle clips.
 
-Top row holds (A) and (B) side-by-side; (C) sits beneath at full width. Big
-"(A)" / "(B)" / "(C)" panel labels sit in the top-left of each.
+Top row carries (A) (B) (C) at a single shared height; (D) sits beneath at
+full width.
+
+Panels A and B inherit their data from the old main Figure 3 (root
+displacement bars and pool=5 stationary-vs-moving bar). Panel C is the
+original line-sweep panel; panel D is the filmstrip grid (was panel E
+before the body-variance panel was removed).
 """
 from __future__ import annotations
 
 import pickle as pkl
 import sys
+import yaml
 from io import BytesIO
 from pathlib import Path
 
@@ -27,6 +34,7 @@ sys.path.insert(0, str(REPO))
 
 from topo_mimic.analysis.method_analysis.property.stationary import (  # noqa: E402
     compute_body_variance,
+    compute_delta_xyz_stats,
     find_cycle_and_no_cycle_clips,
 )
 
@@ -35,6 +43,7 @@ OUT_PATH = REPO / "paper/appendix_figures/appendix_stationary.png"
 H5_PATH = REPO / "data/rodent_ar.h5"
 DM_RESULTS_DIR = REPO / "outputs/extraction/dm_pipeline_intention"
 BATCH_PKL = REPO / "outputs/analysis/method_analysis/batch_incompressibility/all_results.pkl"
+BATCH_RESULTS_YAML = REPO / "outputs/analysis/method_analysis/batch_incompressibility/results.yaml"
 
 # Figure 3 palette: orange = active (with-cycles / moving), blue = quiet (no-cycles / stationary).
 WITH_CYCLES_COLOR = "#E6A382"
@@ -47,7 +56,99 @@ BODY_PARTS = [
 ]
 
 
-def render_stationary_vs_moving_line_png(target_w_px: int, dpi: int = 200) -> Image.Image:
+def _figure_to_image(fig: plt.Figure, dpi: int) -> Image.Image:
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight",
+                facecolor="white")
+    plt.close(fig)
+    buf.seek(0)
+    return Image.open(buf).convert("RGB")
+
+
+def _sample_cycle_split(n_take: int = 50) -> tuple[list[int], list[int], int]:
+    cycle_clips, no_cycle_clips = find_cycle_and_no_cycle_clips(
+        str(DM_RESULTS_DIR), num_clips=500
+    )
+    np.random.seed(42)
+    n_take = min(n_take, len(cycle_clips), len(no_cycle_clips))
+    sampled_cycle = np.random.choice(cycle_clips, n_take, replace=False).tolist()
+    sampled_no_cycle = np.random.choice(no_cycle_clips, n_take, replace=False).tolist()
+    return sampled_cycle, sampled_no_cycle, n_take
+
+
+def render_root_displacement_png(target_w_px: int, target_h_px: int | None = None,
+                                  dpi: int = 200) -> Image.Image:
+    sampled_cycle, sampled_no_cycle, n_take = _sample_cycle_split(50)
+    cy_mean, cy_std = compute_delta_xyz_stats(sampled_cycle, str(H5_PATH), n_take)
+    nc_mean, nc_std = compute_delta_xyz_stats(sampled_no_cycle, str(H5_PATH), n_take)
+
+    fig_w_in = target_w_px / dpi
+    fig_h_in = (target_h_px / dpi) if target_h_px is not None else fig_w_in * 0.95
+    fig, ax = plt.subplots(figsize=(fig_w_in, fig_h_in), dpi=dpi)
+
+    x = np.arange(3)
+    w = 0.36
+    ax.bar(x - w / 2, cy_mean, w, yerr=cy_std,
+           color=WITH_CYCLES_COLOR, edgecolor="none", capsize=3.0,
+           error_kw={"linewidth": 0.7, "capthick": 0.7},
+           label=f"With cycles (n={n_take})")
+    ax.bar(x + w / 2, nc_mean, w, yerr=nc_std,
+           color=NO_CYCLES_COLOR, edgecolor="none", capsize=3.0,
+           error_kw={"linewidth": 0.7, "capthick": 0.7},
+           label=f"No cycles (n={n_take})")
+
+    ax.set_xticks(x)
+    ax.set_xticklabels([r"$|\Delta x|$", r"$|\Delta y|$", r"$|\Delta z|$"],
+                       fontsize=12)
+    ax.set_xlabel("Root displacement axis", fontsize=14)
+    ax.set_ylabel("Mean |Δ| per frame", fontsize=14)
+    ax.tick_params(direction="out", length=4, width=0.8, labelsize=12)
+    ax.ticklabel_format(axis="y", style="scientific", scilimits=(0, 0))
+    ax.yaxis.get_offset_text().set_fontsize(11)
+    ax.legend(fontsize=11, frameon=True, framealpha=0.95,
+              edgecolor="#cccccc", loc="upper right")
+    for s in ("top", "right"):
+        ax.spines[s].set_visible(False)
+    fig.tight_layout()
+    return _figure_to_image(fig, dpi)
+
+
+def render_pool5_bar_png(target_w_px: int, target_h_px: int | None = None,
+                          dpi: int = 200) -> Image.Image:
+    with open(BATCH_RESULTS_YAML, "r") as f:
+        data = yaml.safe_load(f)
+    sv = data["stationary_vs_moving"]["n_5"]
+    moving_mean, moving_std = sv["moving_total_mean"], sv["moving_total_std"]
+    stat_mean, stat_std = sv["stationary_mean"], sv["stationary_std"]
+
+    fig_w_in = target_w_px / dpi
+    fig_h_in = (target_h_px / dpi) if target_h_px is not None else fig_w_in * 0.95
+    fig, ax = plt.subplots(figsize=(fig_w_in, fig_h_in), dpi=dpi)
+
+    x = np.arange(2)
+    ax.bar(
+        x,
+        [moving_mean, stat_mean],
+        yerr=[moving_std, stat_std],
+        color=[WITH_CYCLES_COLOR, NO_CYCLES_COLOR],
+        width=0.55, capsize=4.0,
+        error_kw={"linewidth": 0.8, "capthick": 0.8},
+    )
+    ax.set_xticks([0, 1])
+    ax.set_xticklabels(["moving\n(n=5)", "stationary\n(n=5)"], fontsize=12)
+    ax.set_xlim(-0.55, 1.55)
+    ax.set_xlabel("Pool composition", fontsize=14)
+    ax.set_ylabel("Longest DM-loop (frames)", fontsize=14)
+    ax.tick_params(direction="out", length=4, width=0.8, labelsize=12)
+    for s in ("top", "right"):
+        ax.spines[s].set_visible(False)
+    fig.tight_layout()
+    return _figure_to_image(fig, dpi)
+
+
+def render_stationary_vs_moving_line_png(target_w_px: int,
+                                          target_h_px: int | None = None,
+                                          dpi: int = 200) -> Image.Image:
     with open(BATCH_PKL, "rb") as f:
         cached = pkl.load(f)
     results_by_n = cached["stationary_vs_moving"]
@@ -64,7 +165,7 @@ def render_stationary_vs_moving_line_png(target_w_px: int, dpi: int = 200) -> Im
     mov_m, mov_s = np.array(mov_m), np.array(mov_s)
 
     fig_w_in = target_w_px / dpi
-    fig_h_in = fig_w_in * 0.95
+    fig_h_in = (target_h_px / dpi) if target_h_px is not None else fig_w_in * 0.95
     fig, ax = plt.subplots(figsize=(fig_w_in, fig_h_in), dpi=dpi)
 
     ax.fill_between(n_values, mov_m - mov_s, mov_m + mov_s,
@@ -95,22 +196,11 @@ def render_stationary_vs_moving_line_png(target_w_px: int, dpi: int = 200) -> Im
     ax.set_ylim(bottom=0)
 
     fig.tight_layout()
-    buf = BytesIO()
-    fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight",
-                facecolor="white")
-    plt.close(fig)
-    buf.seek(0)
-    return Image.open(buf).convert("RGB")
+    return _figure_to_image(fig, dpi)
 
 
-def render_body_variance_png(target_w_px: int = 3204, dpi: int = 200) -> Image.Image:
-    cycle_clips, no_cycle_clips = find_cycle_and_no_cycle_clips(
-        str(DM_RESULTS_DIR), num_clips=500
-    )
-    np.random.seed(42)
-    n_take = min(50, len(cycle_clips), len(no_cycle_clips))
-    sampled_cycle = np.random.choice(cycle_clips, n_take, replace=False).tolist()
-    sampled_no_cycle = np.random.choice(no_cycle_clips, n_take, replace=False).tolist()
+def render_body_variance_png(target_w_px: int, dpi: int = 200) -> Image.Image:
+    sampled_cycle, sampled_no_cycle, n_take = _sample_cycle_split(50)
 
     cy_var, body_parts = compute_body_variance(
         sampled_cycle, str(H5_PATH), BODY_PARTS, max_clips=n_take
@@ -120,7 +210,7 @@ def render_body_variance_png(target_w_px: int = 3204, dpi: int = 200) -> Image.I
     )
 
     fig_w_in = target_w_px / dpi
-    fig_h_in = fig_w_in * 0.55
+    fig_h_in = fig_w_in * 0.40
     fig, ax = plt.subplots(figsize=(fig_w_in, fig_h_in), dpi=dpi)
 
     x = np.arange(len(body_parts))
@@ -142,13 +232,7 @@ def render_body_variance_png(target_w_px: int = 3204, dpi: int = 200) -> Image.I
     for s in ("top", "right"):
         ax.spines[s].set_visible(False)
     fig.tight_layout()
-
-    buf = BytesIO()
-    fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight",
-                facecolor="white")
-    plt.close(fig)
-    buf.seek(0)
-    return Image.open(buf).convert("RGB")
+    return _figure_to_image(fig, dpi)
 
 
 def fit_width(img: Image.Image, target_w: int) -> Image.Image:
@@ -183,36 +267,46 @@ def main() -> None:
     film = Image.open(FILMSTRIP_SRC).convert("RGB")
     target_w = film.size[0]
 
-    line_w_target = int(target_w * 0.36)
-    var_w_target = target_w - line_w_target
+    # Top row: A (root displacement) + B (pool=5 bar) + C (n in {2..5} line).
+    # All three rendered at the same absolute pixel height so axes line up.
+    panel_a_w = target_w // 3
+    panel_b_w = target_w // 4
+    panel_c_w = target_w - panel_a_w - panel_b_w
+    # Pin the shared height to the smallest panel's natural square-ish ratio
+    # so B (the narrowest) is not stretched.
+    panel_h = int(panel_b_w * 0.95)
 
-    line_img = render_stationary_vs_moving_line_png(target_w_px=line_w_target)
-    var_img = render_body_variance_png(target_w_px=var_w_target)
+    a_img = render_root_displacement_png(target_w_px=panel_a_w, target_h_px=panel_h)
+    b_img = render_pool5_bar_png(target_w_px=panel_b_w, target_h_px=panel_h)
+    c_img = render_stationary_vs_moving_line_png(target_w_px=panel_c_w, target_h_px=panel_h)
 
-    line_img = fit_width(line_img, line_w_target)
-    var_img = fit_width(var_img, var_w_target)
+    a_img = fit_width(a_img, panel_a_w)
+    b_img = fit_width(b_img, panel_b_w)
+    c_img = fit_width(c_img, panel_c_w)
+    top_h = max(a_img.size[1], b_img.size[1], c_img.size[1])
+    a_img = pad_to_height(a_img, top_h)
+    b_img = pad_to_height(b_img, top_h)
+    c_img = pad_to_height(c_img, top_h)
 
-    top_h = max(line_img.size[1], var_img.size[1])
-    line_img = pad_to_height(line_img, top_h)
-    var_img = pad_to_height(var_img, top_h)
+    a_labeled = add_label(a_img, "(A)", pad=70, font_size=60)
+    b_labeled = add_label(b_img, "(B)", pad=70, font_size=60)
+    c_labeled = add_label(c_img, "(C)", pad=70, font_size=60)
 
-    line_labeled = add_label(line_img, "(A)", pad=70, font_size=60)
-    var_labeled = add_label(var_img, "(B)", pad=70, font_size=60)
-    film_labeled = add_label(film, "(C)", pad=70, font_size=60)
-
-    top_row = Image.new("RGB", (target_w, line_labeled.size[1]),
+    top_row = Image.new("RGB", (target_w, a_labeled.size[1]),
                         color=(255, 255, 255))
-    top_row.paste(line_labeled, (0, 0))
-    top_row.paste(var_labeled, (line_labeled.size[0], 0))
+    top_row.paste(a_labeled, (0, 0))
+    top_row.paste(b_labeled, (a_labeled.size[0], 0))
+    top_row.paste(c_labeled, (a_labeled.size[0] + b_labeled.size[0], 0))
+
+    # Bottom row: D (filmstrip) at full width — was panel E before the
+    # body-variance panel was removed.
+    d_labeled = add_label(film, "(D)", pad=70, font_size=60)
 
     gap = 16
-    out = Image.new(
-        "RGB",
-        (target_w, top_row.size[1] + gap + film_labeled.size[1]),
-        color=(255, 255, 255),
-    )
+    total_h = top_row.size[1] + gap + d_labeled.size[1]
+    out = Image.new("RGB", (target_w, total_h), color=(255, 255, 255))
     out.paste(top_row, (0, 0))
-    out.paste(film_labeled, (0, top_row.size[1] + gap))
+    out.paste(d_labeled, (0, top_row.size[1] + gap))
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     out.save(OUT_PATH, dpi=(200, 200))

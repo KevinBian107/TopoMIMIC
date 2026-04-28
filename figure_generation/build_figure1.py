@@ -210,6 +210,26 @@ def pad_to_height(img: Image.Image, target_h: int,
     return out
 
 
+def trim_white_borders(img: Image.Image, threshold: int = 245,
+                        pad: int = 6) -> Image.Image:
+    """Crop near-white margins from every side of ``img``, leaving ``pad``
+    pixels of slack so glyphs at the edge are not clipped."""
+    arr = np.asarray(img.convert("RGB"))
+    mask = (arr < threshold).any(axis=2)
+    if not mask.any():
+        return img
+    rows = np.where(mask.any(axis=1))[0]
+    cols = np.where(mask.any(axis=0))[0]
+    top, bottom = rows[0], rows[-1]
+    left, right = cols[0], cols[-1]
+    h, w = arr.shape[:2]
+    top = max(0, top - pad)
+    bottom = min(h, bottom + 1 + pad)
+    left = max(0, left - pad)
+    right = min(w, right + 1 + pad)
+    return img.crop((left, top, right, bottom))
+
+
 def render_mimic_pipeline_split(
     pdf_path: Path, dpi: int = 300, split_frac: float = MIMIC_SPLIT_FRAC,
 ) -> tuple[Image.Image, Image.Image]:
@@ -217,7 +237,9 @@ def render_mimic_pipeline_split(
 
     The PDF lays the general-space demo (3D Keypoints / Joint Angles /
     Action+Latent thumbnails) on the left and the encoder-decoder schematic
-    on the right. We split horizontally at ``split_frac`` of the width.
+    on the right. We split horizontally at ``split_frac`` of the width, then
+    trim near-white margins from each half so the source PDF's whitespace
+    around the encoder-decoder schematic does not leak into the figure.
     """
     import fitz  # PyMuPDF
 
@@ -230,13 +252,14 @@ def render_mimic_pipeline_split(
 
     w, h = img.size
     split_x = int(w * split_frac)
-    left = img.crop((0, 0, split_x, h))
-    right = img.crop((split_x, 0, w, h))
+    left = trim_white_borders(img.crop((0, 0, split_x, h)))
+    right = trim_white_borders(img.crop((split_x, 0, w, h)))
     return left, right
 
 
 def add_label(img: Image.Image, label: str, pad: int = 56,
-              font_size: int = 44, x_offset: int = 30) -> Image.Image:
+              font_size: int = 44, x_offset: int = 30,
+              y_offset: int = 6) -> Image.Image:
     out = Image.new("RGB", (img.size[0], img.size[1] + pad), color=(255, 255, 255))
     out.paste(img, (0, pad))
     draw = ImageDraw.Draw(out)
@@ -244,7 +267,7 @@ def add_label(img: Image.Image, label: str, pad: int = 56,
         font = ImageFont.truetype("DejaVuSans-Bold.ttf", font_size)
     except OSError:
         font = ImageFont.load_default()
-    draw.text((x_offset, 6), label, fill=(0, 0, 0), font=font)
+    draw.text((x_offset, y_offset), label, fill=(0, 0, 0), font=font)
     return out
 
 
@@ -267,12 +290,16 @@ def main() -> None:
     panel_a = pad_to_height(panel_a, top_h)
     panel_b = pad_to_height(panel_b, top_h)
 
-    panel_a_lab = add_label(panel_a, "(A)")
-    panel_b_lab = add_label(panel_b, "(B)")
+    # Layout: (A) DM cancellation tree on the left, (B) 3D landscape on the
+    # right. The two top-row labels sit at the bottom of their pad strip so
+    # they hug the panel content rather than floating in whitespace.
+    panel_left_lab = add_label(panel_b, "(A)", pad=44, y_offset=44 - 44)
+    panel_right_lab = add_label(panel_a, "(B)", pad=44, y_offset=44 - 44)
 
-    top_row = Image.new("RGB", (target_w, panel_a_lab.size[1]), color=(255, 255, 255))
-    top_row.paste(panel_a_lab, (0, 0))
-    top_row.paste(panel_b_lab, (panel_a_lab.size[0], 0))
+    top_row = Image.new("RGB", (target_w, panel_left_lab.size[1]),
+                         color=(255, 255, 255))
+    top_row.paste(panel_left_lab, (0, 0))
+    top_row.paste(panel_right_lab, (panel_left_lab.size[0], 0))
 
     print("Rendering panels C/D from mimice_pipeline.pdf...")
     panel_c_raw, panel_d_raw = render_mimic_pipeline_split(MIMIC_PIPELINE_PDF)
@@ -288,10 +315,12 @@ def main() -> None:
     panel_c = pad_to_height(panel_c, bottom_h)
     panel_d = pad_to_height(panel_d, bottom_h)
 
-    panel_c_lab = add_label(panel_c, "(C)")
-    # Push (D) inward so it sits over the encoder-decoder schematic, not over
-    # the whitespace that the source PDF leaves on the left of that panel.
-    panel_d_lab = add_label(panel_d, "(D)", x_offset=int(panel_d.size[0] * 0.18))
+    # (C) sits at the left edge of the panel so it aligns with the leading
+    # edge of "3D Keypoints" / "Joint Angles" / "Action/Latent" text. (D)
+    # is pushed slightly inward so it sits over the encoder graphic itself,
+    # past the leading $s^{g}_{t:T}$ glyph.
+    panel_c_lab = add_label(panel_c, "(C)", x_offset=10)
+    panel_d_lab = add_label(panel_d, "(D)", x_offset=int(panel_d.size[0] * 0.13))
 
     bottom_row = Image.new(
         "RGB",
