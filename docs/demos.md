@@ -24,6 +24,12 @@ python -m demos.demo_torus
 ```
 Demonstrates discrete Morse graph extraction on a synthetic torus point cloud. Shows how the DM skeleton captures the topology of a known shape.
 
+### PCD Pipeline Walkthrough (figure-eight)
+```bash
+python demos/demo_dm_pipeline_walkthrough.py
+```
+Stage-by-stage visual walkthrough of the Point Cloud Discrete-Morse pipeline (greedy permutation → ε-sparsifier → density-weighted Rips → persistence → δ-cancellation → V-path tracing) on a synthetic 3D figure-eight cloud. Produces 5 mp4 animations + 5 static panels under `outputs/demos/illustrative/dm_walkthrough/`, plus inline numerical sanity asserts on the pipeline invariants. The demo's outputs power the `/tutorial` page on the TopoMimic-website (full credit to arXiv:2109.07606 for the algorithm).
+
 ### Behavior Overlap Demo
 ```bash
 python -m demos.demo_behavior_overlap
