@@ -1091,6 +1091,7 @@ def run_warping_analysis(
         behavior_labels_csv,
         short_threshold=short_threshold,
         merge_rear=merge_rear,
+        window_frames=int(resample_K) if resample_K else 100,
     )
 
     grouped_clusters = defaultdict(list)

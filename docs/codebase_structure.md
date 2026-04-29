@@ -50,13 +50,14 @@ topo_mimic/
 ├── analysis/
 │   ├── feature_analysis/        # analysis of methods across feature spaces
 │   │   ├── main_transitions.py      # orchestrator (runs all blocks below)
+│   │   ├── coverage_quality_panels.py   # per-family coverage-vs-quality boxplot grid
 │   │   └── blocks/                  # atomic per-block entry points:
 │   │       ├── gt_sanity.py             # GT-transition DTW distinctiveness
 │   │       ├── transition_ranking.py    # GT transition variant counts
 │   │       ├── mds.py                   # MDS cluster subspace projections
 │   │       ├── transition_comparison.py
 │   │       ├── transition_graph.py
-│   │       ├── dtw_metrics.py           # DTW sequence comparison + consistency
+│   │       ├── dtw_metrics.py           # DTW + consistency + warping (sync ratio, non-diag)
 │   │       ├── dtw_visualization.py
 │   │       ├── mmd.py
 │   │       ├── c2st.py

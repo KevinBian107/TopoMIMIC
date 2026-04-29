@@ -169,6 +169,14 @@ def load_consistency_meanstd() -> tuple[pd.DataFrame, pd.DataFrame]:
     return _seed_aggregate_with_std(pd.read_csv(FA / "consistency_comparison_table.csv"))
 
 
+def load_sync_ratio_meanstd() -> tuple[pd.DataFrame, pd.DataFrame]:
+    return _seed_aggregate_with_std(pd.read_csv(FA / "sync_ratio_comparison_table.csv"))
+
+
+def load_non_diag_meanstd() -> tuple[pd.DataFrame, pd.DataFrame]:
+    return _seed_aggregate_with_std(pd.read_csv(FA / "non_diag_comparison_table.csv"))
+
+
 def load_wide_meanstd(mean_csv: Path, std_csv: Path | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Mean+std wide CSV pair (e.g. mmd_rbf_table + mmd_rbf_table_std)."""
     mean_df = load_wide(mean_csv)
@@ -681,17 +689,31 @@ def long_to_wide_std(std_long: pd.DataFrame) -> pd.DataFrame:
 
 
 def main_warping_table() -> TableSpec:
-    """figure4_warping_rodent.tex — Consistency + Sync ratio + Non-diag, family-best with ±std."""
+    """figure4_warping_rodent.tex — Consistency + Sync ratio + Non-diag, family-best with ±std.
+
+    All three blocks now come from per-seed feature_analysis CSVs so the
+    per-cell std (across 3 random seeds) is available for every block. The
+    Sync-ratio and Non-diag CSVs are produced by the same per-seed loop in
+    ``main_transitions.run_analysis`` that writes ``dtw_comparison_table.csv``,
+    so any (Label, Turn) cell that exists in the DTW table also exists here.
+    """
     cons_mean_long, cons_std_long = load_consistency_meanstd()
     cons_m = collapse_direction(long_to_wide(cons_mean_long))
     cons_s = collapse_direction(long_to_wide(cons_std_long.rename(columns={"std": "value"})))
-    sync   = collapse_direction(load_wide(WA / "warping_dtw_sync_ratio_full.csv"))
-    nond   = collapse_direction(load_wide(WA / "warping_non_diag_frac_full.csv"))
+
+    sync_mean_long, sync_std_long = load_sync_ratio_meanstd()
+    sync_m = collapse_direction(long_to_wide(sync_mean_long))
+    sync_s = collapse_direction(long_to_wide(sync_std_long.rename(columns={"std": "value"})))
+
+    nd_mean_long, nd_std_long = load_non_diag_meanstd()
+    nd_m = collapse_direction(long_to_wide(nd_mean_long))
+    nd_s = collapse_direction(long_to_wide(nd_std_long.rename(columns={"std": "value"})))
+
     transitions = [f"{a}<->{b}" for a, b in ORDERED_PAIRS]
 
     cons_rows, cons_stds, _ = _family_best_per_row(cons_m, transitions, lower_better=True, std_wide=cons_s)
-    sync_rows, sync_stds, _ = _family_best_per_row(sync,   transitions, lower_better=False)
-    nd_rows,   nd_stds,   _ = _family_best_per_row(nond,   transitions, lower_better=False)
+    sync_rows, sync_stds, _ = _family_best_per_row(sync_m, transitions, lower_better=False, std_wide=sync_s)
+    nd_rows,   nd_stds,   _ = _family_best_per_row(nd_m,   transitions, lower_better=False, std_wide=nd_s)
 
     body = _emit_three_block_with_std([
         (r"Consistency ($\downarrow$)",  "down", cons_rows, cons_stds, True),
@@ -840,22 +862,28 @@ def appendix_kid() -> TableSpec:
 
 
 def appendix_dtw_sync_ratio() -> TableSpec:
-    wide = load_wide(WA / "warping_dtw_sync_ratio_full.csv")
+    mean_long, std_long = load_sync_ratio_meanstd()
+    wide_m = long_to_wide(mean_long)
+    wide_s = long_to_wide(std_long.rename(columns={"std": "value"}))
     return appendix_directional_table(
-        "appendix_dtw_sync_ratio", wide,
+        "appendix_dtw_sync_ratio", wide_m,
         metric_name="DTW-to-frame-sync ratio",
         label="tab:warping-dtw-sync", lower_better=False,
-        caption_extra=" Higher means less reliance on warping rescue. The warping pipeline pre-aggregates seeds, so per-cell std is not reported.",
+        caption_extra=" Higher means less reliance on warping rescue.",
+        wide_std=wide_s,
     )
 
 
 def appendix_non_diag() -> TableSpec:
-    wide = load_wide(WA / "warping_non_diag_frac_full.csv")
+    mean_long, std_long = load_non_diag_meanstd()
+    wide_m = long_to_wide(mean_long)
+    wide_s = long_to_wide(std_long.rename(columns={"std": "value"}))
     return appendix_directional_table(
-        "appendix_non_diag_frac", wide,
+        "appendix_non_diag_frac", wide_m,
         metric_name="Non-diagonal fraction of DTW warping path",
         label="tab:warping-non-diag", lower_better=False,
-        caption_extra=" Higher means a more compressed primitive stretched to longer GT. The warping pipeline pre-aggregates seeds, so per-cell std is not reported.",
+        caption_extra=" Higher means a more compressed primitive stretched to longer GT.",
+        wide_std=wide_s,
     )
 
 
