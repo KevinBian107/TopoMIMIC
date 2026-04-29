@@ -37,6 +37,25 @@ python -m topo_mimic.analysis.feature_analysis.main_transitions \
 
 All eleven blocks currently share one YAML config; each block turns on only its own `run_*` flag inside the shared config. Per-block configs can be introduced later if desired (see `_block_runner.py`).
 
+### Coverage--quality boxplot panels
+
+`coverage_quality_panels.py` (formerly `method_scatter.py`) compares
+method families on a two-axis (coverage, quality) plane. Reads the
+aggregate CSVs that `dtw_metrics` writes
+(`dtw_comparison_table.csv`, `consistency_comparison_table.csv`) and
+the per-(method, seed) MMD CSVs under `<method>/<seed>/mmd/`, and
+renders an `n_families x 2` small-multiples grid: rows = DM-WKC /
+Mapper / KP-MoSeq, columns = negated internal consistency / negated
+MMD, y-scale shared per column. One box per coverage tick within each
+panel pools per-(transition, seed) cells. Both axes negated so
+up-and-right is the ideal regime: tighter clusters, broader coverage.
+
+```
+python -m topo_mimic.analysis.feature_analysis.coverage_quality_panels
+```
+
+Output: `outputs/analysis/feature_analysis/coverage_quality_panels/coverage_quality_panels.{png,pdf}` plus a long-form `coverage_quality_panels_long.csv` of every plotted dot.
+
 ## `method_analysis/`
 
 Method-property demos that study **why** DM primitives recover behavior transitions. These were originally `demos/property/` and a handful of loose scripts; they now have their own configs and output folders.

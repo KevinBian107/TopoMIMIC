@@ -63,6 +63,15 @@ python -m topo_mimic.analysis.feature_analysis.blocks.purity <cfg>
 python -m topo_mimic.analysis.feature_analysis.blocks.classification <cfg>
 ```
 
+After `dtw_metrics` and `mmd` have produced their aggregates, render the
+coverage-vs-quality panels:
+
+```bash
+python -m topo_mimic.analysis.feature_analysis.coverage_quality_panels
+```
+
+This produces `outputs/analysis/feature_analysis/coverage_quality_panels/coverage_quality_panels.{png,pdf}`: a small-multiples grid with one row per method family and two columns (negated internal consistency, negated MMD), each box pooling per-(transition, seed) cells at a fixed coverage. Up-and-right is the ideal regime.
+
 See [topo_mimic/analysis/README.md](../topo_mimic/analysis/README.md) for a per-block description.
 
 ## Stage 4: Method analysis

@@ -13,7 +13,17 @@ echo "=============================="
 echo "Table Generation: ${SUB}"
 echo "=============================="
 
+# Auxiliary tables (paper_tables.py PDFs, results_table.py, warping_tables.py
+# scale-sweep variants) under outputs/analysis/tables/.
 $PYTHON -m topo_mimic.analysis.tables "$SUB"
 
+# Paper-ready .tex tables under paper/tables/. Reads from
+# outputs/analysis/feature_analysis/*.csv, including the new
+# sync_ratio_comparison_table.csv and non_diag_comparison_table.csv produced
+# by the dtw_metrics feature_analysis block.
+if [ "$SUB" = "all" ] || [ "$SUB" = "paper" ]; then
+  $PYTHON figure_generation/build_tables.py
+fi
+
 echo ""
-echo "Tables written to outputs/analysis/tables/."
+echo "Tables written to outputs/analysis/tables/ and paper/tables/."

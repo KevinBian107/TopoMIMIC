@@ -85,6 +85,26 @@ python -m demos.demo_dtw_metric --method w2_dmc_int_kmeans --seed 0
 ```
 Nature-style per-cluster DTW comparison figures. For each unique transition cluster in a benchmark method, renders a panel with the DTW cost matrix (with warping path) on the left and two chronophotography filmstrips on the right: discovered sequence (blue tint) on top, ground truth (red tint) on bottom. Uses the same DTW computation as the main analysis pipeline. Default method: `w2_dmp_qpos_kmeans`.
 
+### Single-Clip Animated DM-Paths
+```bash
+python -m demos.demo_oneclip_video
+python -m demos.demo_oneclip_video --config configs/demos/demo_oneclip_video.yaml
+```
+Animated `.mp4` companion to `demo_oneclip.png`. For a single clip
+(default `clip_id: 650`), DM-G is run in intention space at
+`pers_delta=1.0`, one density minimum is selected per unique non-transition
+behaviour cluster, and DM-paths are extracted between every pair of
+minima. Layout: square t-SNE panel on the **left**, one animated rodent
+row per DM-path on the **right**. As time advances, each path's line
+grows on the t-SNE while a tinted MuJoCo-rendered rodent translates
+left → right across its filmstrip row, with the per-pose tint
+interpolated between the source-cluster and destination-cluster colours.
+Uses the EGL backend for headless MuJoCo rendering. Output:
+`outputs/demos/rodent_oneclip_video/demo_oneclip_video.mp4`. Mirrors the
+skeleton-extraction logic of
+`demos.demo_transitions_projections_single_clip` (the still-image
+companion).
+
 ---
 
 ## Property Demos

@@ -38,6 +38,8 @@ from .metrics import (
     DTWResult,
     run_internal_consistency_analysis,
     InternalConsistencyResult,
+    run_warping_analysis,
+    WarpingResult,
 )
 from .gt_sanity_check import run_gt_dtw_sanity_check
 from .dtw_visualization import run_dtw_visualization
@@ -149,6 +151,73 @@ def create_consistency_comparison_table(
     print("-" * 80)
 
 
+def _create_warping_metric_table(
+    all_warping_results: dict[str, list[WarpingResult]],
+    output_dir: str,
+    metric_attr: str,
+    table_name: str,
+    csv_basename: str,
+) -> None:
+    """Wide (Label, Turn) × method_seed table for one WarpingResult attribute.
+
+    Mirrors the schema of ``dtw_comparison_table.csv`` so the table builder's
+    ``_seed_aggregate_with_std`` loader can ingest the result without changes.
+    """
+    all_keys = set()
+    for results in all_warping_results.values():
+        for r in results:
+            all_keys.add((r.label, r.turn_direction or "none"))
+    all_keys = sorted(all_keys)
+    methods = sorted(all_warping_results.keys())
+
+    rows = []
+    for label, turn in all_keys:
+        row = {"Label": label, "Turn": turn}
+        for method in methods:
+            results = all_warping_results.get(method, [])
+            found = None
+            for r in results:
+                r_turn = r.turn_direction or "none"
+                if r.label == label and r_turn == turn:
+                    found = r
+                    break
+            if found is not None:
+                v = getattr(found, metric_attr)
+                row[method] = f"{float(v):.4f}" if v is not None else "N/A"
+            else:
+                row[method] = "N/A"
+        rows.append(row)
+
+    df = pd.DataFrame(rows)
+    csv_path = os.path.join(output_dir, csv_basename)
+    df.to_csv(csv_path, index=False)
+    print(f"Saved {table_name} comparison table to {csv_path}")
+
+
+def create_sync_ratio_comparison_table(
+    all_warping_results: dict[str, list[WarpingResult]],
+    output_dir: str,
+) -> None:
+    _create_warping_metric_table(
+        all_warping_results, output_dir,
+        metric_attr="mean_dtw_sync_ratio",
+        table_name="DTW sync-ratio",
+        csv_basename="sync_ratio_comparison_table.csv",
+    )
+
+
+def create_non_diag_comparison_table(
+    all_warping_results: dict[str, list[WarpingResult]],
+    output_dir: str,
+) -> None:
+    _create_warping_metric_table(
+        all_warping_results, output_dir,
+        metric_attr="mean_non_diag_frac",
+        table_name="non-diagonal fraction",
+        csv_basename="non_diag_comparison_table.csv",
+    )
+
+
 def load_trajectory_data(rodent_rollout_dir: str, data_key: str) -> np.ndarray:
     """Load trajectory data (qpos or intention) from h5 file."""
     if rodent_rollout_dir.endswith('.h5'):
@@ -235,6 +304,7 @@ def run_analysis(config: AnalysisConfig) -> None:
 
     all_dtw_results: dict[str, list[DTWResult]] = {}
     all_consistency_results: dict[str, list[InternalConsistencyResult]] = {}
+    all_warping_results: dict[str, list[WarpingResult]] = {}
 
     for method_name, method_results in all_results.items():
         if config.methods and method_name not in config.methods:
@@ -354,6 +424,29 @@ def run_analysis(config: AnalysisConfig) -> None:
                 dtw_dir = os.path.join(seed_output_dir, "dtw_metrics")
                 if _should_skip_analysis(dtw_dir):
                     print(f"    [skip] DTW metrics already exist at {dtw_dir}")
+                    cached_csv = os.path.join(
+                        dtw_dir, f"{method_name}_seed{seed}_dtw_results.csv"
+                    )
+                    if os.path.exists(cached_csv):
+                        try:
+                            cdf = pd.read_csv(cached_csv)
+                            method_key = f"{method_name}_seed{seed}"
+                            all_dtw_results[method_key] = [
+                                DTWResult(
+                                    label=row["Label"],
+                                    turn_direction=(None if pd.isna(row.get("Turn_Direction"))
+                                                    or row.get("Turn_Direction") in ("", "none")
+                                                    else str(row["Turn_Direction"])),
+                                    cluster_ids=[int(c) for c in str(row.get("Cluster_IDs", "")).split(",") if c.strip().lstrip("-").isdigit()],
+                                    mean_dtw=float(row["Mean_DTW"]),
+                                    std_dtw=float(row.get("Std_DTW", 0.0)) if pd.notna(row.get("Std_DTW", None)) else 0.0,
+                                    n_discovered_seqs=int(row.get("N_Discovered_Seqs", 0)) if pd.notna(row.get("N_Discovered_Seqs", None)) else 0,
+                                    n_gt_seqs=int(row.get("N_GT_Seqs", 0)) if pd.notna(row.get("N_GT_Seqs", None)) else 0,
+                                )
+                                for _, row in cdf.iterrows()
+                            ]
+                        except Exception as e:
+                            print(f"    Failed to reload cached DTW CSV: {e}")
                 elif os.path.exists(config.behavior_labels_csv):
                     print(f"    Running DTW analysis (sequence-based comparison)...")
                     try:
@@ -386,6 +479,29 @@ def run_analysis(config: AnalysisConfig) -> None:
                     consistency_dir = os.path.join(seed_output_dir, "consistency")
                     if _should_skip_analysis(consistency_dir):
                         print(f"    [skip] Consistency already exists at {consistency_dir}")
+                        cached_csv = os.path.join(
+                            consistency_dir, f"{method_name}_seed{seed}_consistency.csv"
+                        )
+                        if os.path.exists(cached_csv):
+                            try:
+                                cdf = pd.read_csv(cached_csv)
+                                method_key = f"{method_name}_seed{seed}"
+                                all_consistency_results[method_key] = [
+                                    InternalConsistencyResult(
+                                        label=row["Label"],
+                                        turn_direction=(None if pd.isna(row.get("Turn_Direction"))
+                                                        or row.get("Turn_Direction") in ("", "none")
+                                                        else str(row["Turn_Direction"])),
+                                        cluster_ids=[int(c) for c in str(row.get("Cluster_IDs", "")).split(",") if c.strip().lstrip("-").isdigit()],
+                                        mean_intra_dtw=float(row["Mean_Intra_DTW"]),
+                                        std_intra_dtw=float(row.get("Std_Intra_DTW", 0.0)) if pd.notna(row.get("Std_Intra_DTW", None)) else 0.0,
+                                        n_sequences=int(row.get("N_Sequences", 0)) if pd.notna(row.get("N_Sequences", None)) else 0,
+                                        avg_frames=float(row.get("Avg_Frames", 0.0)) if pd.notna(row.get("Avg_Frames", None)) else 0.0,
+                                    )
+                                    for _, row in cdf.iterrows()
+                                ]
+                            except Exception as e:
+                                print(f"    Failed to reload cached consistency CSV: {e}")
                     else:
                         print(f"    Running internal consistency analysis...")
                         try:
@@ -409,6 +525,76 @@ def run_analysis(config: AnalysisConfig) -> None:
                             print(f"    Internal consistency analysis failed: {e}")
                             import traceback
                             traceback.print_exc()
+
+                warping_dir = os.path.join(seed_output_dir, "warping")
+                if _should_skip_analysis(warping_dir):
+                    print(f"    [skip] Warping already exists at {warping_dir}")
+                    cached_csv = os.path.join(
+                        warping_dir, f"{method_name}_seed{seed}_warping.csv"
+                    )
+                    if os.path.exists(cached_csv):
+                        try:
+                            cdf = pd.read_csv(cached_csv)
+                            method_key = f"{method_name}_seed{seed}"
+                            all_warping_results[method_key] = [
+                                WarpingResult(
+                                    label=row["Label"],
+                                    turn_direction=(None if row["Turn"] == "none"
+                                                    else row["Turn"]),
+                                    mean_dtw=float(row["mean_dtw"]),
+                                    mean_non_diag_frac=float(row["mean_non_diag_frac"]),
+                                    mean_temporal_dev=float(row["mean_temporal_dev"]),
+                                    mean_max_run=float(row["mean_max_run"]),
+                                    mean_sync_dist=float(row["mean_sync_dist"]),
+                                    mean_dtw_sync_ratio=float(row["mean_dtw_sync_ratio"]),
+                                    n_comparisons=int(row["n_comparisons"]),
+                                )
+                                for _, row in cdf.iterrows()
+                            ]
+                        except Exception as e:
+                            print(f"    Failed to reload cached warping CSV: {e}")
+                elif os.path.exists(config.behavior_labels_csv):
+                    print(f"    Running warping analysis (DTW + sync-ratio + non-diag)...")
+                    try:
+                        warping_results = run_warping_analysis(
+                            cluster_dict=cluster_dict,
+                            cluster_labels=cluster_labels,
+                            turn_directions=turn_directions,
+                            behavior_labels_csv=config.behavior_labels_csv,
+                            data=dtw_data,
+                            method_name=method_name,
+                            max_samples=config.dtw_max_seqs,
+                            max_comparisons=config.dtw_max_comparisons,
+                            short_threshold=config.short_behavior_threshold,
+                            merge_rear=config.merge_rear,
+                            skip_root_dims=config.dtw_skip_root_dims,
+                            min_seq_length=config.dtw_min_seq_length,
+                            resample_K=config.c2st_window_frames,
+                        )
+                        method_key = f"{method_name}_seed{seed}"
+                        all_warping_results[method_key] = warping_results
+
+                        os.makedirs(warping_dir, exist_ok=True)
+                        warping_csv = os.path.join(
+                            warping_dir,
+                            f"{method_name}_seed{seed}_warping.csv",
+                        )
+                        pd.DataFrame([{
+                            "Label": r.label,
+                            "Turn": r.turn_direction or "none",
+                            "mean_dtw": r.mean_dtw,
+                            "mean_non_diag_frac": r.mean_non_diag_frac,
+                            "mean_temporal_dev": r.mean_temporal_dev,
+                            "mean_max_run": r.mean_max_run,
+                            "mean_sync_dist": r.mean_sync_dist,
+                            "mean_dtw_sync_ratio": r.mean_dtw_sync_ratio,
+                            "n_comparisons": r.n_comparisons,
+                        } for r in warping_results]).to_csv(warping_csv, index=False)
+                        print(f"    Saved warping per-seed CSV to {warping_csv}")
+                    except Exception as e:
+                        print(f"    Warping analysis failed: {e}")
+                        import traceback
+                        traceback.print_exc()
 
             if config.run_dtw_visualization and dtw_data is not None:
                 dtw_viz_dir = os.path.join(seed_output_dir, "dtw_visualization")
@@ -522,6 +708,12 @@ def run_analysis(config: AnalysisConfig) -> None:
     if config.run_dtw_metrics and all_consistency_results:
         print("\n=== Generating Consistency Comparison Table ===")
         create_consistency_comparison_table(all_consistency_results, config.output_dir)
+
+    if config.run_dtw_metrics and all_warping_results:
+        print("\n=== Generating Sync-Ratio Comparison Table ===")
+        create_sync_ratio_comparison_table(all_warping_results, config.output_dir)
+        print("\n=== Generating Non-Diagonal Fraction Comparison Table ===")
+        create_non_diag_comparison_table(all_warping_results, config.output_dir)
 
     analyzed_methods = [m for m in all_results if not config.methods or m in config.methods]
     analyzed_seeds = config.seeds or [0]

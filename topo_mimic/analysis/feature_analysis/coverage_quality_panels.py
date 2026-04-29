@@ -1,9 +1,16 @@
-"""Method x cluster scatter for Figure 3.
+"""Coverage--quality boxplot panels.
 
-Three Nature-style panels: DTW, MMD, KID (left to right) on the y-axis vs
-internal consistency on the x-axis. One dot per (method-variant, transition,
-seed); colour by method family. Both axes inverted so the upper-right is
-the "ideal" corner (tight cluster + GT-aligned).
+Small-multiples grid: ``n_families`` rows x 2 columns. Each row is a
+method family (DM-WKC, Mapper, KP-MoSeq); each column is a quality
+metric (negated internal consistency on the left, negated MMD on the
+right). Within a panel, one box per coverage tick pools per-(transition,
+seed) cells from that family at that coverage. Y-scale shared per
+column so families can be compared by eye-tracking down a column.
+
+Both axes are negated so up-and-right is the ideal regime: tighter
+clusters, broader coverage. The earlier module name ``method_scatter``
+was a holdover from a literal scatter prototype; the rendered figure has
+been boxplot panels for some time.
 
 Reads:
   outputs/analysis/feature_analysis/dtw_comparison_table.csv
@@ -11,7 +18,8 @@ Reads:
   outputs/analysis/feature_analysis/<method>/seed_<N>/mmd/<method>_seed<N>_mmd_results.csv
 
 Writes:
-  outputs/analysis/feature_analysis/method_scatter/method_scatter.{png,pdf}
+  outputs/analysis/feature_analysis/coverage_quality_panels/coverage_quality_panels.{png,pdf}
+  outputs/analysis/feature_analysis/coverage_quality_panels/coverage_quality_panels_long.csv
 """
 from __future__ import annotations
 
@@ -58,8 +66,8 @@ _PUBLIC_FAMILY_RENAME = {"KPMS": "KP-MoSeq", "Keypoint-MoSeq": "KP-MoSeq"}
 
 
 @dataclass
-class ScatterConfig:
-    out_dir: Path = FA_ROOT / "method_scatter"
+class PanelsConfig:
+    out_dir: Path = FA_ROOT / "coverage_quality_panels"
     figsize: tuple[float, float] = (10.5, 4.2)
     dpi: int = 220
 
@@ -166,7 +174,7 @@ def _per_variant_summary(df: pd.DataFrame) -> pd.DataFrame:
     return sub.merge(cov, on=["family", "method", "seed"])
 
 
-def render(df: pd.DataFrame, cfg: ScatterConfig) -> Path:
+def render(df: pd.DataFrame, cfg: PanelsConfig) -> Path:
     cfg.out_dir.mkdir(parents=True, exist_ok=True)
 
     plt.rcParams.update({
@@ -254,16 +262,16 @@ def render(df: pd.DataFrame, cfg: ScatterConfig) -> Path:
 
     fig.tight_layout(w_pad=1.4, h_pad=0.25)
 
-    png = cfg.out_dir / "method_scatter.png"
-    pdf = cfg.out_dir / "method_scatter.pdf"
+    png = cfg.out_dir / "coverage_quality_panels.png"
+    pdf = cfg.out_dir / "coverage_quality_panels.pdf"
     fig.savefig(png, bbox_inches="tight")
     fig.savefig(pdf, bbox_inches="tight")
     plt.close(fig)
     return png
 
 
-def build_method_scatter(out_dir: Path | None = None) -> Path:
-    cfg = ScatterConfig()
+def build_coverage_quality_panels(out_dir: Path | None = None) -> Path:
+    cfg = PanelsConfig()
     if out_dir is not None:
         cfg.out_dir = Path(out_dir)
     df = collect_long(verbose=True)
@@ -273,7 +281,7 @@ def build_method_scatter(out_dir: Path | None = None) -> Path:
     if df.empty:
         raise RuntimeError("no scatter data; check that all four metric "
                            "tables exist under outputs/analysis/feature_analysis/")
-    csv_out = cfg.out_dir / "method_scatter_long.csv"
+    csv_out = cfg.out_dir / "coverage_quality_panels_long.csv"
     cfg.out_dir.mkdir(parents=True, exist_ok=True)
     df.to_csv(csv_out, index=False)
     print(f"  wrote {csv_out}")
@@ -281,5 +289,5 @@ def build_method_scatter(out_dir: Path | None = None) -> Path:
 
 
 if __name__ == "__main__":
-    p = build_method_scatter()
+    p = build_coverage_quality_panels()
     print(f"wrote {p}")
