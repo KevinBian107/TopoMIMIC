@@ -360,6 +360,17 @@ def plot_combined_main(
         ax_i = fig.add_subplot(gs[0, 1])
         ax_ami = fig.add_subplot(gs[0, 2])
 
+        def _panel_label(ax, text):
+            ax.text(
+                -0.18, 1.02, text,
+                transform=ax.transAxes,
+                fontsize=12, fontweight="bold", va="bottom", ha="left",
+            )
+
+        _panel_label(ax_ib, "(A)")
+        _panel_label(ax_i, "(B)")
+        _panel_label(ax_ami, "(C)")
+
         # ----- IB plane (left) -----
         H_T = np.array([r.H_T for r in results])
         I_TY = np.array([r.I_TY for r in results])

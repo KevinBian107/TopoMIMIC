@@ -97,6 +97,7 @@ def render_latex_table(rows: list[dict], output_tex: Path, granularity: str) -> 
 
     n_cols = 1 + len(metrics)
     lines = []
+    lines.append(r"\resizebox{\textwidth}{!}{%")
     lines.append(r"\begin{tabular}{l" + "r" * len(metrics) + "}")
     lines.append(r"\toprule")
     headers = ["Method"] + [m[1] for m in metrics]
@@ -114,7 +115,8 @@ def render_latex_table(rows: list[dict], output_tex: Path, granularity: str) -> 
             cells.append(cell)
         lines.append(" & ".join(cells) + r" \\")
     lines.append(r"\bottomrule")
-    lines.append(r"\end{tabular}")
+    lines.append(r"\end{tabular}%")
+    lines.append(r"}")
 
     tex = "\n".join(lines)
     output_tex.write_text(tex)

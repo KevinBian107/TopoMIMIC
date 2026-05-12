@@ -208,7 +208,7 @@ def create_transition_grid(
             label = key
         ax.set_title(
             f"{label}  ($n$={count})",
-            fontsize=9, fontfamily="sans-serif", pad=2,
+            fontsize=16, fontfamily="sans-serif", fontweight="bold", pad=4,
         )
 
     fig.subplots_adjust(

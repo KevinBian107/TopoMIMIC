@@ -54,10 +54,13 @@ class ClusterFilmstripConfig:
     xml_path: str = "topo_mimic/extraction/xml/rodent.xml"
     dataset: str = "rodent"
     output_dir: str = "outputs/demos/cluster_filmstrips"
-    k_samples: int = 5
+    k_samples: int = 3
     n_poses: int = 6
     filmstrip_gap_fraction: float = 0.25
     dpi: int = 300
+    row_label_fontsize: float = 11.0
+    clip_id_fontsize: float = 8.0
+    row_label_width_in: float = 2.6
 
 
 def load_config(path: str | None) -> ClusterFilmstripConfig:
@@ -178,7 +181,7 @@ def render_cluster_grid(
     box_w = panel_w_in + 2 * bx_pad
     box_h = max_h_in + 2 * by_pad + label_h
 
-    row_label_w = 2.0
+    row_label_w = cfg.row_label_width_in
     fig_w = row_label_w + n_cols * box_w + (n_cols - 1) * gap_x + 0.15
     fig_h = n_rows * box_h + (n_rows - 1) * gap_y + 0.15
 
@@ -198,7 +201,7 @@ def render_cluster_grid(
         ax.text(
             row_label_w - 0.08, y0 + box_h / 2,
             label, ha="right", va="center",
-            fontsize=5.5, fontweight="bold", color="#333333",
+            fontsize=cfg.row_label_fontsize, fontweight="bold", color="#333333",
             zorder=2,
         )
 
@@ -229,7 +232,7 @@ def render_cluster_grid(
                     x0 + box_w / 2, y0 + by_pad + label_h * 0.4,
                     f"C{cid}, clip {clip_id}",
                     ha="center", va="center",
-                    fontsize=4, color="#555555", zorder=2,
+                    fontsize=cfg.clip_id_fontsize, color="#555555", zorder=2,
                 )
 
     fig.subplots_adjust(left=0, right=1, top=1, bottom=0)

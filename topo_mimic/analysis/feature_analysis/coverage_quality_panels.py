@@ -192,7 +192,7 @@ def render(df: pd.DataFrame, cfg: PanelsConfig) -> Path:
         ("consistency", "internal consistency",
          "Negated internal consistency"),
         ("mmd", "MMD",
-         "Negated MMD"),
+         "Similarity to ground truth"),
     ]
 
     fam_visible = [f for f in FAMILY_ORDER if (summary["family"] == f).any()]
