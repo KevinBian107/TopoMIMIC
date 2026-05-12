@@ -89,7 +89,16 @@ python -m topo_mimic.analysis.method_analysis.incompressibility.batch configs/an
 python -m topo_mimic.analysis.method_analysis.incompressibility.varying_k configs/analysis/method_analysis/incompressibility/varying_k.yaml
 python -m topo_mimic.analysis.method_analysis.global_manifold.run configs/analysis/method_analysis/global_manifold/rodent.yaml
 python -m topo_mimic.analysis.method_analysis.granularity.main configs/analysis/method_analysis/granularity/granularity_{intention,qpos,ekp}.yaml
+python -m topo_mimic.analysis.method_analysis.information_loss.main configs/analysis/method_analysis/information_loss/information_loss.yaml
 ```
+
+The `information_loss` module quantifies the coarse-graining information loss
+of each method by computing I(T;Y) between the per-frame primitive assignment
+T and the GT directed-transition labels Y. Outputs land in
+`outputs/analysis/method_analysis/information_loss/` (CSV + NPZ + IB-plane
+PNG/PDF + appendix bar chart + joint-distribution heatmaps + LaTeX-source
+table). It is also chained as the final stage of
+`bash bash_scripts/run_method_analysis.sh`.
 
 ## Stage 5: Auto-labeling
 

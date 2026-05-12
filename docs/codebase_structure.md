@@ -74,7 +74,8 @@ topo_mimic/
 │   │   ├── dm_dim_reduction/        # empirical PCA justification
 │   │   ├── cycle_persistence/       # persistence-threshold sensitivity
 │   │   ├── transition_stats/        # GT transition frequency
-│   │   └── cycle_rendering/         # DM cycle videos
+│   │   ├── cycle_rendering/         # DM cycle videos
+│   │   └── information_loss/        # I(T;Y) MI under coarsening + IB-plane figure
 │   ├── scale_sweep/             # baseline-fairness KPMS + Mapper sweep
 │   ├── mapper/                  # Mapper method implementation
 │   └── tables/                  # unified paper table generator
