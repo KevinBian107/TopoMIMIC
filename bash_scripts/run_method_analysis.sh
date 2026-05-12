@@ -64,4 +64,12 @@ for space in intention qpos ekp; do
 done
 
 echo ""
+echo "=============================="
+echo "Method Analysis - Information Loss (IB plane)"
+echo "=============================="
+
+$PYTHON -m topo_mimic.analysis.method_analysis.information_loss.main \
+        configs/analysis/method_analysis/information_loss/information_loss.yaml
+
+echo ""
 echo "Method analysis complete."
