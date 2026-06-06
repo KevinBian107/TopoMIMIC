@@ -31,6 +31,7 @@ dm:
   results_dir: null
   segment_gap_limit: 50
   min_segment_len: 50
+  min_primitive_frames: 30
   use_dm_path: true
 
 rendering:

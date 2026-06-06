@@ -292,8 +292,8 @@ def prepare_windows_from_dm(
         if not segments:
             continue
 
-        if source == "cycle" and config.clustering.only_max:
-            segments = [max(segments, key=len)]
+        # Use ALL primitives per clip (all beta1 cycles / all corridors), matching the
+        # main extraction. (Previously reduced to the single longest when only_max.)
 
         clip_len = intention_data.shape[1]
         for seg in segments:

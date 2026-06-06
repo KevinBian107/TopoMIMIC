@@ -48,18 +48,21 @@ METHOD_DISPLAY = {
     "kpms_intention"     : "KPMS-Int",
     "kpms_keypoint"      : "KPMS-KP",
     "custom_vae"         : "VAE",
+    "w2_full_kmeans"     : "Full-Int",
 }
 METHOD_ORDER_FULL = list(METHOD_DISPLAY.keys())
 
 # Family groupings used to pick best-of-family per row in the main tables.
+# DM cycles (DMC) and paths (DMP) are reported as separate columns; the VAE
+# baseline is dropped from the main tables.
 FAMILIES = {
-    "DM-WKC$^*$" : ["w2_dmc_int_kmeans", "w2_dmc_qpos_kmeans", "w2_dmc_ekp_kmeans",
-                    "w2_dmp_int_kmeans", "w2_dmp_qpos_kmeans", "w2_dmp_ekp_kmeans"],
-    "Mapper"     : ["mapper_int", "mapper_qpos", "mapper_ekp"],
-    "KPMS"       : ["kpms_intention", "kpms_keypoint"],
-    "VAE"        : ["custom_vae"],
+    "DMC$^*$" : ["w2_dmc_int_kmeans", "w2_dmc_qpos_kmeans", "w2_dmc_ekp_kmeans"],
+    "DMP$^*$" : ["w2_dmp_int_kmeans", "w2_dmp_qpos_kmeans", "w2_dmp_ekp_kmeans"],
+    "Mapper"  : ["mapper_int", "mapper_qpos", "mapper_ekp"],
+    "KPMS"    : ["kpms_intention", "kpms_keypoint"],
+    "Full"    : ["w2_full_kmeans"],
 }
-FAMILY_ORDER = ["DM-WKC$^*$", "Mapper", "KPMS", "VAE"]
+FAMILY_ORDER = ["DMC$^*$", "DMP$^*$", "Mapper", "KPMS", "Full"]
 
 # Aliases used by the wide MMD/KID/warping CSVs (already pre-aggregated).
 ALIAS_WIDE = {
@@ -71,6 +74,7 @@ ALIAS_WIDE = {
     "W₂+DMP+qpos (ours)" : "w2_dmp_qpos_kmeans",
     "W₂+DMP+EKP (ours)"  : "w2_dmp_ekp_kmeans",
     "W₂+Unif+Int"        : "w2_unif_kmeans",
+    "W₂+Full+Int"        : "w2_full_kmeans",
     "KPMS-Int"           : "kpms_intention",
     "KPMS-KP"            : "kpms_keypoint",
     "VAE"                : "custom_vae",
@@ -273,10 +277,11 @@ def _fmt_cell(v: float, rank: str | None, fmt: str = "{:.3f}", std: float | None
     std_s = ""
     if std is not None and not (isinstance(std, float) and np.isnan(std)):
         std_s = std_fmt.format(std)
-    body = r"\meanstd{" + val_s + "}{" + std_s + "}"
-    if rank == "best":   return GREEN + "{" + body + "}"
-    if rank == "second": return YELL + "{" + body + "}"
-    if rank == "worst":  return RED + "{" + body + "}"
+    body = val_s
+    if std_s:
+        body = val_s + r"{\scriptsize$\,\pm\,$" + std_s + "}"
+    if rank == "best":   return r"\textbf{" + body + "}"
+    if rank == "second": return r"\underline{" + body + "}"
     return body
 
 
@@ -747,9 +752,8 @@ def appendix_directional_table(
                     r" random seeds), aggregated over the populated rows.")
     caption = (
         rf"\textbf{{{metric_name} by directed transition (${arrow}$ {direction} is better).}} "
-        rf"\textbf{{\textcolor{{bestgreen}}{{Green}}}} = best per row over populated cells; "
-        rf"\textcolor{{secondyellow}}{{yellow}} = second; "
-        rf"\textcolor{{worstred}}{{red}} = worst. --- = method did not discover this transition. "
+        rf"\textbf{{Bold}} = best per row over populated cells; \underline{{underline}} = second. "
+        rf"--- = method did not discover this transition. "
         rf"Direction tags: [L] left, [R] right, [S] straight. $^*$Ours.{caption_extra}{std_note}"
     )
     body = _emit_color_table_with_std(

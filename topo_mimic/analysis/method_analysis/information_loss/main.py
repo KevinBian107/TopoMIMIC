@@ -39,6 +39,7 @@ from topo_mimic.analysis.method_analysis.information_loss.metrics import (
 from topo_mimic.analysis.method_analysis.information_loss.primitives import (
     PrimitiveAssignment,
     load_dm_primitives,
+    load_full_primitives,
     load_kpms_primitives,
     load_mapper_primitives,
     load_per_frame_labels_primitives,
@@ -156,6 +157,11 @@ def _load_for_spec(
             spec.results_pkl, seed, spec.feature_space,
             n_clips, frames_per_clip,
             primitive_level=spec.primitive_level,
+        )
+    if k == "full":
+        return load_full_primitives(
+            spec.results_pkl, seed,
+            n_clips, frames_per_clip,
         )
     raise ValueError(f"Unknown method kind {k!r} for {spec.name!r}")
 

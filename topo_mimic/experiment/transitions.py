@@ -387,9 +387,9 @@ def prepare_windows_for_clustering(
             if clustering_cfg.min_len <= len(loop) <= clustering_cfg.max_len
         ]
 
-        # only_max is handled upstream: dm_pipeline now pre-splits the longest
-        # cycle into segments before pickling, so all entries are already from
-        # the longest cycle. Skipping only_max filter here.
+        # Extraction now emits ALL primitives per clip (every beta1 cycle / every
+        # bridge-corridor above the frame threshold), already split into segments,
+        # so we cluster all of them. No only_max filter here.
 
         clip_len = len(data[local_idx])
         for loop in loops:

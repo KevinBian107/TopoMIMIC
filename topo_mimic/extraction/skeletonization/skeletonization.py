@@ -40,6 +40,78 @@ def extract_cycles_from_dm_graph(
     return cycles
 
 
+def extract_all_cycles(
+    G: nx.Graph,
+    vertex_weight: dict[int, float] | None = None,
+) -> list[np.ndarray]:
+    """All beta1 loops of the DM skeleton as a (filtration-weighted) minimum cycle basis.
+
+    Replaces the old "single longest MST fundamental cycle". Returns one vertex array per
+    independent loop (count == beta1). When vertex_weight is given, edges are weighted by the
+    max endpoint weight (the lower-star filtration value) so the basis prefers denser loops,
+    the practical stand-in for the persistence-optimal basis (Magee-Wang Thm 3.5).
+    """
+    if G.number_of_edges() == 0:
+        return []
+    H = G
+    weight_key = None
+    if vertex_weight is not None:
+        H = G.copy()
+        for u, v in H.edges():
+            H[u][v]["fweight"] = max(
+                vertex_weight.get(u, 0.0), vertex_weight.get(v, 0.0)
+            ) + 1e-9
+        weight_key = "fweight"
+    try:
+        basis = nx.minimum_cycle_basis(H, weight=weight_key)
+    except nx.NetworkXException:
+        return []
+    return [np.array(c, dtype=int) for c in basis if len(c) > 0]
+
+
+def _maximal_bridge_chains(Hb: nx.Graph) -> list[list[int]]:
+    """Maximal degree!=2 vertex chains (corridors) of a forest Hb (bridge subgraph)."""
+    chains: list[list[int]] = []
+    seen: set = set()
+    junctions = [n for n in Hb if Hb.degree(n) != 2]
+    for j in junctions:
+        for nb in Hb.neighbors(j):
+            if frozenset((j, nb)) in seen:
+                continue
+            chain, prev, cur = [j], j, nb
+            seen.add(frozenset((prev, cur)))
+            chain.append(cur)
+            while Hb.degree(cur) == 2:
+                nxt = [x for x in Hb.neighbors(cur) if x != prev]
+                if not nxt or frozenset((cur, nxt[0])) in seen:
+                    break
+                seen.add(frozenset((cur, nxt[0])))
+                chain.append(nxt[0])
+                prev, cur = cur, nxt[0]
+            chains.append(chain)
+    return chains
+
+
+def extract_all_corridors(G: nx.Graph) -> list[np.ndarray]:
+    """All bridge-corridors (paths) of the DM skeleton.
+
+    A corridor is a maximal junction-to-junction chain on the bridge (acyclic) part
+    of G. Each fork in the bridge forest is a branch point of the trajectory, where
+    a subtle behavior change occurs, so every non-branching corridor between forks
+    is kept as its own path primitive (a finer decomposition than mode-to-mode).
+    Corridors live only on bridges, so they never lie inside a cycle (disjoint
+    typing from DM-cycles).
+    """
+    if G.number_of_edges() == 0:
+        return []
+    bridges = list(nx.bridges(G))
+    if not bridges:
+        return []
+    Hb = nx.Graph()
+    Hb.add_edges_from(bridges)
+    return [np.array(c, dtype=int) for c in _maximal_bridge_chains(Hb) if len(c) > 0]
+
+
 def extract_skeleton_pcd_dm(
     points: np.ndarray,
     k: int = 10,

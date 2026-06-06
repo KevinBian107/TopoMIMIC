@@ -486,20 +486,28 @@ def run_analysis(config: AnalysisConfig) -> None:
                             try:
                                 cdf = pd.read_csv(cached_csv)
                                 method_key = f"{method_name}_seed{seed}"
-                                all_consistency_results[method_key] = [
-                                    InternalConsistencyResult(
+                                # Guard each row: a single non-numeric Mean_Intra_DTW
+                                # must not drop the whole method from the comparison.
+                                reloaded = []
+                                for _, row in cdf.iterrows():
+                                    if pd.isna(row.get("Mean_Intra_DTW")):
+                                        continue
+                                    try:
+                                        mean_dtw = float(row["Mean_Intra_DTW"])
+                                    except (ValueError, TypeError):
+                                        continue
+                                    reloaded.append(InternalConsistencyResult(
                                         label=row["Label"],
                                         turn_direction=(None if pd.isna(row.get("Turn_Direction"))
                                                         or row.get("Turn_Direction") in ("", "none")
                                                         else str(row["Turn_Direction"])),
                                         cluster_ids=[int(c) for c in str(row.get("Cluster_IDs", "")).split(",") if c.strip().lstrip("-").isdigit()],
-                                        mean_intra_dtw=float(row["Mean_Intra_DTW"]),
+                                        mean_intra_dtw=mean_dtw,
                                         std_intra_dtw=float(row.get("Std_Intra_DTW", 0.0)) if pd.notna(row.get("Std_Intra_DTW", None)) else 0.0,
                                         n_sequences=int(row.get("N_Sequences", 0)) if pd.notna(row.get("N_Sequences", None)) else 0,
                                         avg_frames=float(row.get("Avg_Frames", 0.0)) if pd.notna(row.get("Avg_Frames", None)) else 0.0,
-                                    )
-                                    for _, row in cdf.iterrows()
-                                ]
+                                    ))
+                                all_consistency_results[method_key] = reloaded
                             except Exception as e:
                                 print(f"    Failed to reload cached consistency CSV: {e}")
                     else:

@@ -37,3 +37,6 @@ methods:
   - {name: Mapper-Int,  kind: mapper, feature_space: intention, seeds: [0, 1, 2], results_pkl: outputs/experiment/transitions/mapper_int/results.pkl,  primitive_level: pair_type}
   - {name: Mapper-Qpos, kind: mapper, feature_space: qpos,      seeds: [0, 1, 2], results_pkl: outputs/experiment/transitions/mapper_qpos/results.pkl, primitive_level: pair_type}
   - {name: Mapper-EKP,  kind: mapper, feature_space: ekp,       seeds: [0, 1, 2], results_pkl: outputs/experiment/transitions/mapper_ekp/results.pkl,  primitive_level: pair_type}
+
+  # Full-clip control: each clip is one window, T = clip's cluster id (no decomposition).
+  - {name: Full-Int, kind: full, seeds: [0, 1, 2], results_pkl: outputs/experiment/transitions/w2_full_kmeans/results.pkl}
