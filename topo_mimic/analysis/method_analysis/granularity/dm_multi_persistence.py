@@ -112,10 +112,13 @@ def extract_dm_for_persistence(
         remap_cycle_to_original,
         split_cycle_into_segments,
     )
+    from topo_mimic.extraction.skeletonization.skeletonization import (
+        extract_all_cycles,
+        extract_all_corridors,
+    )
+    from topo_mimic.extraction.skeletonization.dm_path import _parse_sorted_weights
 
     use_dm_path = getattr(config.dm, "use_dm_path", False)
-    if use_dm_path:
-        from topo_mimic.extraction.skeletonization.dm_path import extract_dm_paths
 
     all_cycle_dm = []
     all_path_dm = [] if use_dm_path else None
@@ -127,6 +130,7 @@ def extract_dm_for_persistence(
 
     segment_gap_limit = getattr(config.dm, "segment_gap_limit", 50)
     min_segment_len = getattr(config.dm, "min_segment_len", 50)
+    min_prim = getattr(config.dm, "min_primitive_frames", min_segment_len)
 
     n_clips = len(intention_data)
     for local_idx in tqdm(range(n_clips), desc=f"DM extraction (pers={pers_delta})"):
@@ -152,35 +156,34 @@ def extract_dm_for_persistence(
 
             remap = parse_swr_remap(clip_output_dir)
             n_takens = len(points)
+            try:
+                vweight = _parse_sorted_weights(clip_output_dir)
+            except Exception:
+                vweight = None
 
-            remapped_cycles = []
-            for cycle in cycles:
-                cycle_arr = np.array(cycle, dtype=int)
-                orig = remap_cycle_to_original(cycle_arr, remap, n_takens)
-                if len(orig) > 0:
-                    remapped_cycles.append(orig)
+            def _prims(vertex_lists):
+                out = []
+                for vl in vertex_lists:
+                    orig = remap_cycle_to_original(np.asarray(vl, dtype=int), remap, n_takens)
+                    if len(orig) == 0:
+                        continue
+                    for seg in split_cycle_into_segments(orig, gap_limit=segment_gap_limit):
+                        if len(seg) >= min_prim:
+                            out.append(seg)
+                return out
 
-            if remapped_cycles:
-                longest = max(remapped_cycles, key=len)
-                segs = split_cycle_into_segments(longest, gap_limit=segment_gap_limit)
-                segments = [seg for seg in segs if len(seg) >= min_segment_len]
-            else:
-                segments = []
-
+            # All cycles (every beta1 loop), not just the longest.
+            segments = _prims(extract_all_cycles(G, vertex_weight=vweight))
             all_cycle_dm.append(segments)
             n_total_segments += len(segments)
             for seg in segments:
                 segment_lengths.append(len(seg))
 
             if use_dm_path:
-                path_result = extract_dm_paths(
-                    G, clip_output_dir, remap, n_takens,
-                    gap_limit=segment_gap_limit,
-                    min_segment_len=min_segment_len,
-                )
-                all_path_dm.append(path_result.paths_remapped)
-                n_total_paths += len(path_result.paths_remapped)
-                for p in path_result.paths_remapped:
+                path_prims = _prims(extract_all_corridors(G))
+                all_path_dm.append(path_prims)
+                n_total_paths += len(path_prims)
+                for p in path_prims:
                     path_lengths.append(len(p))
 
         except Exception as e:

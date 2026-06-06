@@ -16,7 +16,9 @@ walker/
 # output figures
 outputs/
 outputs_archive/
-paper/
+paper/tables
+paper/appendix_figures
+paper/figures
 logs/
 
 # figure-generation external assets (not pushed to GitHub)

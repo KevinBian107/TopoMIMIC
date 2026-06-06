@@ -41,12 +41,12 @@ FA_ROOT = REPO / "outputs/analysis/feature_analysis"
 # Method-variant -> family map. DMC and DMP kept separate per the paper's
 # best-of-family convention (Table 1).
 FAMILY_OF: dict[str, str] = {
-    "w2_dmc_int_kmeans":  "DM-WKC",
-    "w2_dmc_qpos_kmeans": "DM-WKC",
-    "w2_dmc_ekp_kmeans":  "DM-WKC",
-    "w2_dmp_int_kmeans":  "DM-WKC",
-    "w2_dmp_qpos_kmeans": "DM-WKC",
-    "w2_dmp_ekp_kmeans":  "DM-WKC",
+    "w2_dmc_int_kmeans":  "DM-cycle",
+    "w2_dmc_qpos_kmeans": "DM-cycle",
+    "w2_dmc_ekp_kmeans":  "DM-cycle",
+    "w2_dmp_int_kmeans":  "DM-path",
+    "w2_dmp_qpos_kmeans": "DM-path",
+    "w2_dmp_ekp_kmeans":  "DM-path",
     "mapper_int":   "Mapper",
     "mapper_qpos":  "Mapper",
     "mapper_ekp":   "Mapper",
@@ -54,11 +54,12 @@ FAMILY_OF: dict[str, str] = {
     "kpms_keypoint":  "KP-MoSeq",
 }
 
-FAMILY_ORDER = ["DM-WKC", "Mapper", "KP-MoSeq"]
+FAMILY_ORDER = ["DM-cycle", "DM-path", "Mapper", "KP-MoSeq"]
 FAMILY_COLOR = {
-    "DM-WKC":         "#1F4E79",  # deep blue ("ours")
-    "Mapper":         "#B22222",  # red
-    "KP-MoSeq": "#2E7D32",  # green
+    "DM-cycle":  "#1F4E79",  # deep blue ("ours", cycles)
+    "DM-path":   "#2E86AB",  # teal blue ("ours", paths)
+    "Mapper":    "#B22222",  # red
+    "KP-MoSeq":  "#2E7D32",  # green
 }
 
 # Re-key KPMS rows out of the legacy short label to the published name.
@@ -134,7 +135,7 @@ def collect_long(verbose: bool = False) -> pd.DataFrame:
             label, turn = row["Label"], row.get("Turn", "")
             dtw_val = row[col]
             cons_match = cons[(cons["Label"] == label) & (cons["Turn"] == turn)]
-            if cons_match.empty:
+            if cons_match.empty or col not in cons.columns:
                 continue
             cons_val = cons_match.iloc[0][col]
             mk = mmd_df[(mmd_df["Label"] == label) & (mmd_df["Turn"] == turn)]
@@ -192,7 +193,7 @@ def render(df: pd.DataFrame, cfg: PanelsConfig) -> Path:
         ("consistency", "internal consistency",
          "Negated internal consistency"),
         ("mmd", "MMD",
-         "Negated MMD"),
+         "Similarity to ground truth"),
     ]
 
     fam_visible = [f for f in FAMILY_ORDER if (summary["family"] == f).any()]

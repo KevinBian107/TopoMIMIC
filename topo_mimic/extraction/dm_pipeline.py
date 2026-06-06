@@ -24,12 +24,17 @@ from tqdm import tqdm
 from topo_mimic.extraction.utils.load_utils import get_aggregate_data, get_clip_indices
 from topo_mimic.extraction.utils.feature_transforms import apply_dm_key_transform, get_hdf5_key_for_dm_key
 from topo_mimic.extraction.utils.dataset_config import get_dataset_preset
-from topo_mimic.extraction.skeletonization.skeletonization import extract_skeleton_pcd_dm
+from topo_mimic.extraction.skeletonization.skeletonization import (
+    extract_skeleton_pcd_dm,
+    extract_all_cycles,
+    extract_all_corridors,
+)
 from topo_mimic.extraction.skeletonization.remap import (
     parse_swr_remap,
     remap_cycle_to_original,
     split_cycle_into_segments,
 )
+from topo_mimic.extraction.skeletonization.dm_path import _parse_sorted_weights
 from topo_mimic.extraction.skeletonization.preprocess import estimate_delay_embedding_params
 from topo_mimic.extraction.skeletonization.postprocess import (
     chunk_loops_by_clustered_vpath,
@@ -136,6 +141,7 @@ class DMConfig:
     results_dir: str | None = None
     segment_gap_limit: int = 50
     min_segment_len: int = 50
+    min_primitive_frames: int = 30
     use_dm_path: bool = False
 
 
@@ -265,8 +271,6 @@ def run_dm_extraction(
     os.makedirs(config.output_dir, exist_ok=True)
 
     use_dm_path = config.dm.use_dm_path
-    if use_dm_path:
-        from topo_mimic.extraction.skeletonization.dm_path import extract_dm_paths
 
     n_total = len(data)
 
@@ -326,42 +330,33 @@ def run_dm_extraction(
         remap = parse_swr_remap(clip_output_dir)
         n_takens = len(pts)
 
-        if not cycle_inds:
-            all_cycle_dm[clip_id] = []
-            if use_dm_path:
-                path_result = extract_dm_paths(
-                    G_sm, clip_output_dir, remap, n_takens,
-                    gap_limit=config.dm.segment_gap_limit,
-                    min_segment_len=config.dm.min_segment_len,
-                )
-                all_path_dm[clip_id] = path_result.paths_remapped
-                print(f"Clip {clip_id}: 0 cycles, {len(path_result.paths_remapped)} paths, {G_sm.number_of_edges()} edges")
-            else:
-                print(f"Clip {clip_id}: 0 cycles, {G_sm.number_of_edges()} edges")
-            continue
+        try:
+            vweight = _parse_sorted_weights(clip_output_dir)
+        except Exception:
+            vweight = None
 
-        remapped_cycles = []
-        for cycle in cycle_inds:
-            orig = remap_cycle_to_original(cycle, remap, n_takens)
-            if len(orig) > 0:
-                remapped_cycles.append(orig)
+        def _primitives(vertex_lists):
+            prims = []
+            for vl in vertex_lists:
+                orig = remap_cycle_to_original(vl, remap, n_takens)
+                if len(orig) == 0:
+                    continue
+                for seg in split_cycle_into_segments(orig, gap_limit=config.dm.segment_gap_limit):
+                    if len(seg) >= config.dm.min_primitive_frames:
+                        prims.append(seg)
+            return prims
 
-        longest = max(remapped_cycles, key=len)
-        segments = split_cycle_into_segments(longest, gap_limit=config.dm.segment_gap_limit)
-        segments = [seg for seg in segments if len(seg) >= config.dm.min_segment_len]
+        # All cycles: every beta1 loop (filtration-weighted basis), not just the longest.
+        cyc_prims = _primitives(extract_all_cycles(G_sm, vertex_weight=vweight))
+        all_cycle_dm[clip_id] = cyc_prims
 
-        all_cycle_dm[clip_id] = segments
-
+        # All paths: every bridge-corridor (forks = subtle behavior branch points).
         if use_dm_path:
-            path_result = extract_dm_paths(
-                G_sm, clip_output_dir, remap, n_takens,
-                gap_limit=config.dm.segment_gap_limit,
-                min_segment_len=config.dm.min_segment_len,
-            )
-            all_path_dm[clip_id] = path_result.paths_remapped
-            print(f"Clip {clip_id}: {len(cycle_inds)} cycles -> {len(segments)} segments, {len(path_result.paths_remapped)} paths, {G_sm.number_of_edges()} edges")
+            path_prims = _primitives(extract_all_corridors(G_sm))
+            all_path_dm[clip_id] = path_prims
+            print(f"Clip {clip_id}: {len(cyc_prims)} cycle-prims, {len(path_prims)} path-prims, {G_sm.number_of_edges()} edges")
         else:
-            print(f"Clip {clip_id}: {len(cycle_inds)} cycles -> {len(segments)} segments, {G_sm.number_of_edges()} edges")
+            print(f"Clip {clip_id}: {len(cyc_prims)} cycle-prims, {G_sm.number_of_edges()} edges")
 
     all_cycle_dm = [x for x in all_cycle_dm[:n_total] if x is not sentinel]
     all_G_sm = [x for x in all_G_sm[:n_total] if x is not sentinel]

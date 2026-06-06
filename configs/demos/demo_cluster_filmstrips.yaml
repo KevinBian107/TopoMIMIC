@@ -9,7 +9,10 @@ dataset: "rodent"
 
 output_dir: "outputs/demos/cluster_filmstrips"
 
-k_samples: 5
+k_samples: 3
 n_poses: 6
 filmstrip_gap_fraction: 0.25
 dpi: 300
+row_label_fontsize: 11.0
+clip_id_fontsize: 8.0
+row_label_width_in: 2.6

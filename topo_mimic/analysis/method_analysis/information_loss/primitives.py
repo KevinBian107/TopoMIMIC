@@ -397,6 +397,24 @@ def load_mapper_primitives(
     )
 
 
+def load_full_primitives(
+    results_pkl: str | Path,
+    seed: int,
+    n_clips: int,
+    frames_per_clip: int,
+) -> PrimitiveAssignment:
+    """Full-clip control: each clip is a single window, so $T_t$ is the
+    cluster id of the clip containing frame $t$ (one id per cluster, reused
+    across clips). This is the coarsest possible coarsening, no decomposition."""
+    return load_cluster_dict_primitives(
+        results_pkl=results_pkl, seed=seed,
+        method_name="Full-Int", family="Full",
+        feature_space="intention",
+        n_clips=n_clips, frames_per_clip=frames_per_clip,
+        pair_type=True,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Sanity-check helpers
 # ---------------------------------------------------------------------------

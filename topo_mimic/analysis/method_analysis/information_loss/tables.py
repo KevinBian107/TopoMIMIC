@@ -65,11 +65,9 @@ def _rank_colors(values: np.ndarray, higher_better: bool) -> list[str]:
     order = np.argsort(-values) if higher_better else np.argsort(values)
     colors = [""] * len(values)
     if len(values) >= 1:
-        colors[order[0]] = "bestgreen"
+        colors[order[0]] = "best"
     if len(values) >= 2:
-        colors[order[1]] = "secondyellow"
-    if len(values) >= 3:
-        colors[order[-1]] = "worstred"
+        colors[order[1]] = "second"
     return colors
 
 
@@ -97,6 +95,7 @@ def render_latex_table(rows: list[dict], output_tex: Path, granularity: str) -> 
 
     n_cols = 1 + len(metrics)
     lines = []
+    lines.append(r"\resizebox{\textwidth}{!}{%")
     lines.append(r"\begin{tabular}{l" + "r" * len(metrics) + "}")
     lines.append(r"\toprule")
     headers = ["Method"] + [m[1] for m in metrics]
@@ -107,14 +106,18 @@ def render_latex_table(rows: list[dict], output_tex: Path, granularity: str) -> 
         for k, _, rank_key in metrics:
             v = values_mat[k][i]
             s = stds_mat[k][i]
-            cell = rf"\meanstd{{{v:.3f}}}{{{s:.3f}}}" if s > 0 else f"{v:.3f}"
+            cell = (rf"{v:.3f}{{\scriptsize$\,\pm\,${s:.3f}}}"
+                    if s > 0 else f"{v:.3f}")
             color = color_mat[rank_key][i]
-            if color:
-                cell = rf"\textcolor{{{color}}}{{{cell}}}"
+            if color == "best":
+                cell = rf"\textbf{{{cell}}}"
+            elif color == "second":
+                cell = rf"\underline{{{cell}}}"
             cells.append(cell)
         lines.append(" & ".join(cells) + r" \\")
     lines.append(r"\bottomrule")
-    lines.append(r"\end{tabular}")
+    lines.append(r"\end{tabular}%")
+    lines.append(r"}")
 
     tex = "\n".join(lines)
     output_tex.write_text(tex)
