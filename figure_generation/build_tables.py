@@ -53,16 +53,25 @@ METHOD_DISPLAY = {
 METHOD_ORDER_FULL = list(METHOD_DISPLAY.keys())
 
 # Family groupings used to pick best-of-family per row in the main tables.
-# DM cycles (DMC) and paths (DMP) are reported as separate columns; the VAE
-# baseline is dropped from the main tables.
+# DM cycles (DMC) and paths (DMP) are reported as separate columns; the VAE and
+# full-clip (Full) baselines are dropped from the main tables (full detail in the
+# appendix per-variant tables).
 FAMILIES = {
     "DMC$^*$" : ["w2_dmc_int_kmeans", "w2_dmc_qpos_kmeans", "w2_dmc_ekp_kmeans"],
     "DMP$^*$" : ["w2_dmp_int_kmeans", "w2_dmp_qpos_kmeans", "w2_dmp_ekp_kmeans"],
     "Mapper"  : ["mapper_int", "mapper_qpos", "mapper_ekp"],
     "KPMS"    : ["kpms_intention", "kpms_keypoint"],
-    "Full"    : ["w2_full_kmeans"],
 }
-FAMILY_ORDER = ["DMC$^*$", "DMP$^*$", "Mapper", "KPMS", "Full"]
+FAMILY_ORDER = ["DMC$^*$", "DMP$^*$", "Mapper", "KPMS"]
+
+# Single-method transition pairs (only one method discovers each, so a best-of-
+# family comparison is meaningless): Turn<->Walk (only DMP-Qpos) and Rear<->Walk
+# (only Mapper-EKP). Dropped from the main comparison tables and the appendix
+# warping tables; still recorded in the coverage table (Table~\ref{tab:coverage}).
+SINGLE_METHOD_PAIRS = {("Turn", "Walk"), ("Rear", "Walk")}
+EXCLUDE_MAIN = {f"{a}<->{b}" for a, b in SINGLE_METHOD_PAIRS}
+EXCLUDE_LABELS = {f"{a} -> {b}" for a, b in SINGLE_METHOD_PAIRS} | \
+                 {f"{b} -> {a}" for a, b in SINGLE_METHOD_PAIRS}
 
 # Aliases used by the wide MMD/KID/warping CSVs (already pre-aggregated).
 ALIAS_WIDE = {
@@ -398,6 +407,52 @@ def _pretty_pair(t: str) -> str:
     return t.replace("<->", r"$\leftrightarrow$")
 
 
+# ── Directed-transition rows for the main tables (one row per directed
+#    transition + turn direction, like the appendix full tables) ──────────────
+_DIR_TAG = {"left": "[L]", "right": "[R]", "straight": "[S]", "none": "", "": ""}
+
+
+def _add_rowkey(df: pd.DataFrame) -> pd.DataFrame:
+    """Tag each (Label, Turn) row with a directed RowKey 'Label | turn'."""
+    df = df.copy()
+    df["RowKey"] = (df["Label"].astype(str).str.strip() + " | "
+                    + df["Turn"].astype(str).str.strip().str.lower())
+    return df
+
+
+def _pretty_directed(key: str) -> str:
+    """'Immobile -> Rear | left' -> 'Immobile$\\to$Rear [L]'."""
+    if " | " not in key:
+        return _pretty_pair(key)
+    lab, turn = key.split(" | ", 1)
+    parts = [s.strip() for s in lab.split("->")]
+    name = f"{parts[0]}$\\to${parts[1]}" if len(parts) == 2 else lab
+    tag = _DIR_TAG.get(turn.strip().lower(), "")
+    return (name + (" " + tag if tag else "")).strip()
+
+
+def _directed_keys(wide: pd.DataFrame) -> list[str]:
+    """Ordered list of directed RowKeys present in `wide`, grouped by canonical
+    pair (ORDERED_PAIRS) then direction, excluding the single-method pairs."""
+    pair_rank = {f"{a}<->{b}": i for i, (a, b) in enumerate(ORDERED_PAIRS)}
+    dir_rank = {"left": 0, "right": 1, "straight": 2, "none": 3, "": 4}
+    rows, seen = [], set()
+    for _, r in wide.iterrows():
+        lab = str(r["Label"]).strip()
+        turn = str(r["Turn"]).strip().lower()
+        pair = _canonical_pair(lab)
+        ptup = tuple(pair.split("<->")) if "<->" in pair else None
+        if ptup is not None and tuple(sorted(ptup)) in SINGLE_METHOD_PAIRS:
+            continue
+        key = f"{lab} | {turn}"
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append((pair_rank.get(pair, 99), pair, dir_rank.get(turn, 9), key))
+    rows.sort()
+    return [k[-1] for k in rows]
+
+
 def _build_table_rows(
     df_wide: pd.DataFrame,
     methods: list[str],
@@ -568,7 +623,7 @@ def _family_best_per_row(
     for t in transitions:
         sel = wide[wide[pair_col] == t]
         s_sel = std_wide[std_wide[pair_col] == t] if std_wide is not None else None
-        rname = _pretty_pair(t)
+        rname = _pretty_directed(t)
         best_vals: list[float] = []
         best_stds: list[float] = []
         best_picks: list[str] = []
@@ -665,19 +720,19 @@ def _emit_three_block_with_std(
 def main_alignment_dtw_mmd_kid() -> TableSpec:
     """figure4_alignment_rodent.tex — three panels: DTW + MMD + KID, family-best with ±std."""
     dtw_mean_long, dtw_std_long = load_dtw_meanstd()
-    dtw_mean = collapse_direction(long_to_wide(dtw_mean_long))
-    dtw_std  = collapse_direction(long_to_wide(dtw_std_long.rename(columns={"std": "value"})))
+    dtw_mean = _add_rowkey(long_to_wide(dtw_mean_long))
+    dtw_std  = _add_rowkey(long_to_wide(dtw_std_long.rename(columns={"std": "value"})))
     mmd_m, mmd_s = load_wide_meanstd(FA / "tables/mmd_rbf_table.csv",
                                       FA / "tables/mmd_rbf_table_std.csv")
     kid_m, kid_s = load_wide_meanstd(FA / "tables/kid_table.csv",
                                       FA / "tables/kid_table_std.csv")
-    mmd_m, mmd_s = collapse_direction(mmd_m), collapse_direction(mmd_s)
-    kid_m, kid_s = collapse_direction(kid_m), collapse_direction(kid_s)
-    transitions = [f"{a}<->{b}" for a, b in ORDERED_PAIRS if (a, b) != ("Turn", "Walk")]
+    mmd_m, mmd_s = _add_rowkey(mmd_m), _add_rowkey(mmd_s)
+    kid_m, kid_s = _add_rowkey(kid_m), _add_rowkey(kid_s)
+    transitions = _directed_keys(dtw_mean)   # one row per directed transition (single-method pairs excluded)
 
-    dtw_rows, dtw_stds, _ = _family_best_per_row(dtw_mean, transitions, lower_better=True, std_wide=dtw_std)
-    mmd_rows, mmd_stds, _ = _family_best_per_row(mmd_m,    transitions, lower_better=True, std_wide=mmd_s)
-    kid_rows, kid_stds, _ = _family_best_per_row(kid_m,    transitions, lower_better=True, std_wide=kid_s)
+    dtw_rows, dtw_stds, _ = _family_best_per_row(dtw_mean, transitions, lower_better=True, pair_col="RowKey", std_wide=dtw_std)
+    mmd_rows, mmd_stds, _ = _family_best_per_row(mmd_m,    transitions, lower_better=True, pair_col="RowKey", std_wide=mmd_s)
+    kid_rows, kid_stds, _ = _family_best_per_row(kid_m,    transitions, lower_better=True, pair_col="RowKey", std_wide=kid_s)
 
     body = _emit_three_block_with_std([
         (r"DTW to GT ($\downarrow$)", "down", dtw_rows, dtw_stds, True),
@@ -703,22 +758,22 @@ def main_warping_table() -> TableSpec:
     so any (Label, Turn) cell that exists in the DTW table also exists here.
     """
     cons_mean_long, cons_std_long = load_consistency_meanstd()
-    cons_m = collapse_direction(long_to_wide(cons_mean_long))
-    cons_s = collapse_direction(long_to_wide(cons_std_long.rename(columns={"std": "value"})))
+    cons_m = _add_rowkey(long_to_wide(cons_mean_long))
+    cons_s = _add_rowkey(long_to_wide(cons_std_long.rename(columns={"std": "value"})))
 
     sync_mean_long, sync_std_long = load_sync_ratio_meanstd()
-    sync_m = collapse_direction(long_to_wide(sync_mean_long))
-    sync_s = collapse_direction(long_to_wide(sync_std_long.rename(columns={"std": "value"})))
+    sync_m = _add_rowkey(long_to_wide(sync_mean_long))
+    sync_s = _add_rowkey(long_to_wide(sync_std_long.rename(columns={"std": "value"})))
 
     nd_mean_long, nd_std_long = load_non_diag_meanstd()
-    nd_m = collapse_direction(long_to_wide(nd_mean_long))
-    nd_s = collapse_direction(long_to_wide(nd_std_long.rename(columns={"std": "value"})))
+    nd_m = _add_rowkey(long_to_wide(nd_mean_long))
+    nd_s = _add_rowkey(long_to_wide(nd_std_long.rename(columns={"std": "value"})))
 
-    transitions = [f"{a}<->{b}" for a, b in ORDERED_PAIRS]
+    transitions = _directed_keys(cons_m)   # one row per directed transition (single-method pairs excluded)
 
-    cons_rows, cons_stds, _ = _family_best_per_row(cons_m, transitions, lower_better=True, std_wide=cons_s)
-    sync_rows, sync_stds, _ = _family_best_per_row(sync_m, transitions, lower_better=False, std_wide=sync_s)
-    nd_rows,   nd_stds,   _ = _family_best_per_row(nd_m,   transitions, lower_better=False, std_wide=nd_s)
+    cons_rows, cons_stds, _ = _family_best_per_row(cons_m, transitions, lower_better=True, pair_col="RowKey", std_wide=cons_s)
+    sync_rows, sync_stds, _ = _family_best_per_row(sync_m, transitions, lower_better=False, pair_col="RowKey", std_wide=sync_s)
+    nd_rows,   nd_stds,   _ = _family_best_per_row(nd_m,   transitions, lower_better=False, pair_col="RowKey", std_wide=nd_s)
 
     body = _emit_three_block_with_std([
         (r"Consistency ($\downarrow$)",  "down", cons_rows, cons_stds, True),
@@ -738,8 +793,13 @@ def appendix_directional_table(
     caption_extra: str = "",
     fmt: str = "{:.3f}",
     wide_std: pd.DataFrame | None = None,
+    exclude_labels: frozenset = frozenset(),
 ) -> TableSpec:
     methods = METHOD_ORDER_FULL
+    if exclude_labels:
+        wide = wide[~wide["Label"].isin(exclude_labels)]
+        if wide_std is not None:
+            wide_std = wide_std[~wide_std["Label"].isin(exclude_labels)]
     rows, stds = _wide_rows_for_methods_with_std(wide, wide_std, methods)
     arrow = r"\downarrow" if lower_better else r"\uparrow"
     direction = "lower" if lower_better else "higher"
@@ -839,7 +899,7 @@ def appendix_consistency() -> TableSpec:
         "appendix_consistency", wide_m,
         metric_name="Internal cluster consistency",
         label="tab:consistency-detailed", lower_better=True,
-        wide_std=wide_s,
+        wide_std=wide_s, exclude_labels=EXCLUDE_LABELS,
     )
 
 
@@ -874,7 +934,7 @@ def appendix_dtw_sync_ratio() -> TableSpec:
         metric_name="DTW-to-frame-sync ratio",
         label="tab:warping-dtw-sync", lower_better=False,
         caption_extra=" Higher means less reliance on warping rescue.",
-        wide_std=wide_s,
+        wide_std=wide_s, exclude_labels=EXCLUDE_LABELS,
     )
 
 
@@ -887,7 +947,7 @@ def appendix_non_diag() -> TableSpec:
         metric_name="Non-diagonal fraction of DTW warping path",
         label="tab:warping-non-diag", lower_better=False,
         caption_extra=" Higher means a more compressed primitive stretched to longer GT.",
-        wide_std=wide_s,
+        wide_std=wide_s, exclude_labels=EXCLUDE_LABELS,
     )
 
 

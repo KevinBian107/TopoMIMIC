@@ -1,0 +1,16 @@
+# Variance-frame tradeoff: do DM-paths/cycles capture qpos pose variance
+# efficiently (more per frame than random sub-trajectories)? Run on all clips.
+output_dir: outputs/analysis/method_analysis/variance_frame_tradeoff
+qpos_h5: data/rodent_ar.h5
+qpos_key: qpos_rollout       # (842, 500, 74)
+skip_root_dims: 7            # drop global root pos(3)+quat(4) -> 67 joint dims
+n_random: 20                 # random same-length windows per primitive (null)
+rng_seed: 0
+min_frames: 3
+
+# Takens (m, tau) per extraction space; takens_offset = (m-1)*tau maps stored
+# primitive (Takens) indices to qpos clip frames. Matches Table tab:dm-hp.
+spaces:
+  - {name: intention, extraction_dir: outputs/extraction/dm_pipeline_intention, m: 3, tau: 6}
+  - {name: qpos,      extraction_dir: outputs/extraction/dm_pipeline_qpos,      m: 3, tau: 9}
+  - {name: ekp,       extraction_dir: outputs/extraction/dm_pipeline_ekp,       m: 3, tau: 8}

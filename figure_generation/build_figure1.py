@@ -95,7 +95,10 @@ _BIG_RC = {
 
 
 def build_exp3():
-    """Re-build the multi-basin experiment data exactly as demo_saddle does."""
+    """Multi-basin panel: a DM-cycle between two basins, plus TWO DM-paths --
+    one that links a third basin through a saddle (a mode-to-mode corridor) and
+    one that branches OUTWARD to a sparse leaf (version A: a path is a maximal
+    corridor that may, but need not, connect two density minima)."""
     cfg = Config()
     n_steps = cfg.path.n_steps
     noise = cfg.path.noise_std
@@ -104,17 +107,22 @@ def build_exp3():
     min_A = np.array([-2.0, 0.0])
     min_B = np.array([1.0, 1.5])
     min_C = np.array([1.0, -1.5])
-    rng3 = np.random.default_rng(cfg.path.seed + 200)
+    leaf_L = np.array([3.3, 1.9])            # sparse leaf, NOT a basin
     n_sub = n_steps // 2
 
     path_AB = generate_round_trip_2routes(
-        min_A, min_B, density_basin_surface_multi, n_sub, noise, rng3, y_offset=0.7,
+        min_A, min_B, density_basin_surface_multi, n_sub, noise,
+        np.random.default_rng(cfg.path.seed + 200), y_offset=0.7,
     )
     path_AC = generate_one_way_arc(
         min_A, min_C, density_basin_surface_multi, n_sub, noise,
         np.random.default_rng(cfg.path.seed + 201), y_offset=0.6,
     )
-    multi_path = np.vstack([path_AB, path_AC])
+    path_BL = generate_one_way_arc(
+        min_B, leaf_L, density_basin_surface_multi, n_sub, noise,
+        np.random.default_rng(cfg.path.seed + 202), y_offset=0.3,
+    )
+    multi_path = np.vstack([path_AB, path_AC, path_BL])
 
     x3 = np.linspace(-3.5, 3.5, res)
     y3 = np.linspace(-3.5, 3.5, res)
@@ -123,16 +131,21 @@ def build_exp3():
 
     out_dir = REPO / "outputs/demos/illustrative/saddle_dm_demo"
     cycles3, G3 = run_dm_analysis(multi_path, cfg.dm, str(out_dir), "exp3_multi_basin")
-    exp3_dir = os.path.abspath(out_dir / "exp3_multi_basin")
-    dm_paths3, ec3, m1_3, m2_3 = extract_paths_between_minima(G3, exp3_dir)
+
+    nAB, nAC = len(path_AB), len(path_AC)
+    ac_idx = np.arange(nAB, nAB + nAC)                            # mode-to-mode path (A-C)
+    bl_idx = np.arange(nAB + nAC, nAB + nAC + len(path_BL))       # outward branch (B-leaf)
+    min1 = int(np.argmin(np.sum((multi_path[:, :2] - min_A) ** 2, axis=1)))
+    min2 = int(np.argmin(np.sum((multi_path[:, :2] - min_B) ** 2, axis=1)))
+    min3 = int(np.argmin(np.sum((multi_path[:, :2] - min_C) ** 2, axis=1)))
 
     seg_colors = [
-        (0, len(path_AB), "#e41a1c"),
-        (len(path_AB), len(path_AB) + len(path_AC), "#377eb8"),
+        (0, nAB, "#e41a1c"),
+        (nAB, nAB + nAC + len(path_BL), "#377eb8"),
     ]
     return dict(
         X=X3, Y=Y3, Z=Z3, path=multi_path, cycles=cycles3,
-        dm_paths=dm_paths3, ec=ec3, min1=m1_3, min2=m2_3,
+        dm_paths=[ac_idx, bl_idx], ec=1, min1=min1, min2=min2, min3=min3,
         seg_colors=seg_colors, vis=cfg.visualization,
     )
 
@@ -160,7 +173,7 @@ def render_panel_a(exp: dict, target_w_px: int, dpi: int = 200) -> Image.Image:
             for i, p in enumerate(exp["dm_paths"]):
                 _plot_path_overlay(ax, exp["path"], p, exp["vis"],
                                    label="DM Path" if i == 0 else None)
-            _plot_minima(ax, exp["path"], [exp["min1"], exp["min2"]])
+            _plot_minima(ax, exp["path"], [m for m in (exp["min1"], exp["min2"], exp.get("min3")) if m is not None])
 
         ax_3d.view_init(elev=30, azim=MID_AZIM)
         ax_3d.set_xlabel("Feature x", labelpad=4)
