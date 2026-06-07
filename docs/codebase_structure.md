@@ -71,10 +71,7 @@ topo_mimic/
 │   │   ├── incompressibility/       # run.py, batch.py, varying_k.py
 │   │   ├── global_manifold/         # run.py, common.py, filmstrip.py
 │   │   ├── granularity/             # multi_persistence + stationary_joint_variance + redundancy
-│   │   ├── dm_dim_reduction/        # empirical PCA justification
-│   │   ├── cycle_persistence/       # persistence-threshold sensitivity
-│   │   ├── transition_stats/        # GT transition frequency
-│   │   ├── cycle_rendering/         # DM cycle videos
+│   │   ├── variance_frame_tradeoff/ # appendix: pose variance captured per frame vs random
 │   │   └── information_loss/        # I(T;Y) MI under coarsening + IB-plane figure
 │   ├── scale_sweep/             # baseline-fairness KPMS + Mapper sweep
 │   ├── mapper/                  # Mapper method implementation
@@ -100,8 +97,7 @@ configs/
 │   │   ├── property/*.yaml
 │   │   ├── incompressibility/{incompressibility,batch,varying_k}.yaml
 │   │   ├── granularity/granularity_{intention,qpos,ekp}.yaml
-│   │   ├── global_manifold/rodent.yaml
-│   │   └── cycle_rendering.yaml
+│   │   └── global_manifold/rodent.yaml
 │   └── scale_sweep/         scale_sweep.yaml
 ├── labeling/                auto_label.yaml, render_for_label.yaml
 ├── hyperparam_sweep/        kpms_sweep.yaml, vae_sweep.yaml + wandb sweep specs

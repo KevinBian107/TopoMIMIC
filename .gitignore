@@ -19,6 +19,7 @@ outputs_archive/
 paper/tables
 paper/appendix_figures
 paper/figures
+paper/
 logs/
 
 # figure-generation external assets (not pushed to GitHub)

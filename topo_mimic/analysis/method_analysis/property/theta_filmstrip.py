@@ -272,6 +272,119 @@ def _load_mujoco_model(
     return mj_model, mj_data
 
 
+def _render_poses_individually(
+    qposes: np.ndarray,
+    frame_indices: list[int],
+    xml_path: str,
+    camera_elevation: float,
+    camera_azimuth: float,
+    camera_distance: float,
+    camera_lookat_fn,
+    render_h: int = 720,
+    render_w: int = 480,
+) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Render each pose individually centered, return list of (cropped_rgb, body_mask)."""
+    import mujoco
+
+    mj_model, mj_data = _load_mujoco_model(xml_path)
+    floor_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_GEOM, "floor")
+
+    rgb_renderer = mujoco.Renderer(mj_model, height=render_h, width=render_w)
+    seg_renderer = mujoco.Renderer(mj_model, height=render_h, width=render_w)
+    seg_renderer.enable_segmentation_rendering()
+
+    camera = mujoco.MjvCamera()
+    camera.type = mujoco.mjtCamera.mjCAMERA_FREE
+    camera.distance = camera_distance
+    camera.elevation = camera_elevation
+    camera.azimuth = camera_azimuth
+
+    cropped_poses = []
+    for fi in frame_indices:
+        camera.lookat[:] = camera_lookat_fn(qposes[fi])
+
+        mj_data.qpos[:] = qposes[fi]
+        mujoco.mj_forward(mj_model, mj_data)
+
+        rgb_renderer.update_scene(mj_data, camera=camera)
+        rgb = rgb_renderer.render().copy()
+
+        seg_renderer.update_scene(mj_data, camera=camera)
+        seg = seg_renderer.render()
+        geom_ids = seg[:, :, 0].astype(np.int32)
+        body_mask = (geom_ids >= 0) & (geom_ids != floor_id)
+
+        rows_with_body = np.any(body_mask, axis=1)
+        cols_with_body = np.any(body_mask, axis=0)
+        if not np.any(rows_with_body):
+            cropped_poses.append((
+                np.full((100, 60, 3), 255, dtype=np.uint8),
+                np.zeros((100, 60), dtype=bool),
+            ))
+            continue
+
+        r_min, r_max = np.where(rows_with_body)[0][[0, -1]]
+        c_min, c_max = np.where(cols_with_body)[0][[0, -1]]
+        pad = 6
+        r_min = max(0, r_min - pad)
+        r_max = min(render_h - 1, r_max + pad)
+        c_min = max(0, c_min - pad)
+        c_max = min(render_w - 1, c_max + pad)
+
+        crop_rgb = rgb[r_min:r_max + 1, c_min:c_max + 1]
+        crop_mask = body_mask[r_min:r_max + 1, c_min:c_max + 1]
+        cropped_poses.append((crop_rgb, crop_mask))
+
+    rgb_renderer.close()
+    seg_renderer.close()
+    return cropped_poses
+
+
+def _tile_cropped_poses(
+    cropped_poses: list[tuple[np.ndarray, np.ndarray]],
+    gap_fraction: float = 0.3,
+) -> np.ndarray:
+    """Tint and tile cropped poses into a tight strip with no padding."""
+    n_poses = len(cropped_poses)
+    tint_start = np.array([0.68, 0.80, 0.88])
+    tint_end = np.array([0.22, 0.38, 0.50])
+
+    max_h = max(c[0].shape[0] for c in cropped_poses)
+    normalized = []
+    for crop_rgb, crop_mask in cropped_poses:
+        h, w = crop_rgb.shape[:2]
+        if h < max_h:
+            pad_top = (max_h - h) // 2
+            pad_bot = max_h - h - pad_top
+            crop_rgb = np.pad(crop_rgb, ((pad_top, pad_bot), (0, 0), (0, 0)),
+                              mode='constant', constant_values=255)
+            crop_mask = np.pad(crop_mask, ((pad_top, pad_bot), (0, 0)),
+                               mode='constant', constant_values=False)
+        normalized.append((crop_rgb, crop_mask))
+
+    avg_w = sum(c[0].shape[1] for c in normalized) // n_poses
+    gap = max(int(avg_w * gap_fraction), 4)
+    total_w = sum(c[0].shape[1] for c in normalized) + gap * (n_poses - 1)
+
+    composite = np.full((max_h, total_w, 3), 255, dtype=np.uint8)
+    x_cursor = 0
+    for pose_i, (crop_rgb, crop_mask) in enumerate(normalized):
+        h, w = crop_rgb.shape[:2]
+        t = pose_i / max(n_poses - 1, 1)
+        tint = tint_start * (1 - t) + tint_end * t
+
+        body_pixels = crop_rgb[crop_mask].astype(np.float32) / 255.0
+        luminance = 1.0 - np.mean(body_pixels, axis=-1, keepdims=True)
+        colored = luminance * tint[None, :] + (1.0 - luminance) * 1.0
+        tinted_crop = np.full_like(crop_rgb, 255)
+        tinted_crop[crop_mask] = np.clip(colored * 255.0, 0, 255).astype(np.uint8)
+
+        composite[:h, x_cursor:x_cursor + w] = tinted_crop
+        x_cursor += w + gap
+
+    return composite[:, :x_cursor - gap]
+
+
 def render_fixed_camera_frames(
     qposes: np.ndarray,
     frame_indices: list[int],
