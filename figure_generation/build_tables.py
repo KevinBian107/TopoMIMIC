@@ -899,7 +899,7 @@ def appendix_consistency() -> TableSpec:
         "appendix_consistency", wide_m,
         metric_name="Internal cluster consistency",
         label="tab:consistency-detailed", lower_better=True,
-        wide_std=wide_s, exclude_labels=EXCLUDE_LABELS,
+        wide_std=wide_s,
     )
 
 
@@ -934,7 +934,7 @@ def appendix_dtw_sync_ratio() -> TableSpec:
         metric_name="DTW-to-frame-sync ratio",
         label="tab:warping-dtw-sync", lower_better=False,
         caption_extra=" Higher means less reliance on warping rescue.",
-        wide_std=wide_s, exclude_labels=EXCLUDE_LABELS,
+        wide_std=wide_s,
     )
 
 
@@ -947,7 +947,7 @@ def appendix_non_diag() -> TableSpec:
         metric_name="Non-diagonal fraction of DTW warping path",
         label="tab:warping-non-diag", lower_better=False,
         caption_extra=" Higher means a more compressed primitive stretched to longer GT.",
-        wide_std=wide_s, exclude_labels=EXCLUDE_LABELS,
+        wide_std=wide_s,
     )
 
 
