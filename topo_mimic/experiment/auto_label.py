@@ -387,6 +387,7 @@ def auto_label_clusters_directional(
     for cluster_id, members in sorted(cluster_dict.items()):
         per_clip_pairs: list[tuple[str, str | None]] = []
         per_clip_labels: list[str] = []
+        per_clip_tuples: list[tuple[str, str | None, str]] = []
 
         for abs_clip_id, frames in members:
             behav_segs = behavior_segments.get(int(abs_clip_id), [])
@@ -395,6 +396,13 @@ def auto_label_clusters_directional(
             per_clip_labels.append(
                 format_directional_label(from_b, to_b, "Straight") if from_b else ""
             )
+            if from_b:
+                # Direction tied to THIS member's own frames, so the (pair,
+                # direction) tuple reflects a combination the member actually had.
+                dtag = direction_tag_from_window(
+                    np.asarray(frames), direction_segments.get(int(abs_clip_id), [])
+                ) or "Straight"
+                per_clip_tuples.append((from_b, to_b, dtag))
 
         non_empty_pairs = [p for p in per_clip_pairs if p[0]]
         if not non_empty_pairs:
@@ -406,20 +414,23 @@ def auto_label_clusters_directional(
             )
             continue
 
-        votes = Counter(non_empty_pairs)
-        top_count = max(votes.values())
-        tied_pairs = sorted(
-            [p for p, c in votes.items() if c == top_count],
-            key=lambda p: (p[0], p[1] or ""),
+        votes = Counter(non_empty_pairs)  # pair-only counts, kept for vote_counts/GUI
+
+        # Joint (from, to, direction) tuple majority: direction is voted jointly
+        # with the behavior pair, so the cluster's direction is one that actually
+        # co-occurred with its winning pair in real members. This forbids the
+        # impossible combos that separate pair/direction votes produced
+        # (Immobile/Walk + Left/Right, Turn + Straight).
+        tuple_votes = Counter(per_clip_tuples)
+        top_count = max(tuple_votes.values())
+        tied = sorted(
+            [t for t, c in tuple_votes.items() if c == top_count],
+            key=lambda t: (t[0], t[1] or "", t[2]),
         )
-        winning_pair = tied_pairs[0]
-
-        direction_counts = aggregate_direction_counts(members, direction_segments)
-        direction = choose_cluster_direction(direction_counts)
-
-        primary = format_directional_label(winning_pair[0], winning_pair[1], direction)
+        win = tied[0]
+        primary = format_directional_label(win[0], win[1], win[2])
         alternatives = [
-            format_directional_label(p[0], p[1], direction) for p in tied_pairs[1:]
+            format_directional_label(t[0], t[1], t[2]) for t in tied[1:]
         ]
 
         # vote_counts key is the per-pair string WITHOUT the cluster direction

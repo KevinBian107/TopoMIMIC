@@ -28,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from topo_mimic.analysis.feature_analysis.data_loading import (
     load_experiment_results,
     load_labels_yaml,
+    recenter_cluster_dict,
 )
 from topo_mimic.analysis.feature_analysis.metrics import (
     run_warping_analysis,
@@ -139,7 +140,7 @@ def run_mapper_variant(
     from topo_mimic.experiment.auto_label import auto_label_clusters_directional
 
     with open(variant["cluster_dict_path"], "rb") as f:
-        cluster_dict = _pickle.load(f)
+        cluster_dict = recenter_cluster_dict(_pickle.load(f), variant["short_name"])
     if not cluster_dict:
         return []
 
@@ -180,7 +181,7 @@ def run_all_methods(data: np.ndarray) -> dict[str, list[WarpingResult]]:
             continue
 
         result = method_data[seed]
-        cluster_dict = result.get("cluster_dict", {})
+        cluster_dict = recenter_cluster_dict(result.get("cluster_dict", {}), method_name)
         if not cluster_dict:
             continue
 

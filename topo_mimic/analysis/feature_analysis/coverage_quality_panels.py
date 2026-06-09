@@ -248,7 +248,8 @@ def render(df: pd.DataFrame, cfg: PanelsConfig) -> Path:
             ax.set_axisbelow(True)
 
             if row_idx == n_fams - 1:
-                ax.set_xlabel("Coverage", fontsize=11)
+                ax.set_xlabel("Coverage  (number of distinct transitions the family's variants recovered)",
+                              fontsize=9)
             if col_idx == 0:
                 ax.set_ylabel(fam, fontsize=10, fontweight="bold",
                               color=color, labelpad=8)

@@ -952,44 +952,30 @@ def appendix_non_diag() -> TableSpec:
 
 
 def appendix_coverage() -> TableSpec:
-    """Discovery indicator (✓/×) for each method on the 6 macro-transitions."""
-    dtw = collapse_direction(long_to_wide(load_dtw_long()))
-    transitions = [f"{a}<->{b}" for a, b in ORDERED_PAIRS]
+    """Discovery indicator (✓/×) per method for each DIRECTED, direction-resolved
+    transition class (Imm->Turn distinct from Turn->Imm; [L]/[R]/[S] split)."""
+    import sys as _sys
+    if str(REPO) not in _sys.path:
+        _sys.path.insert(0, str(REPO))
+    from topo_mimic.analysis.feature_analysis.ground_truth import find_all_transitions
+    wide = long_to_wide(load_dtw_long())
     methods = METHOD_ORDER_FULL
 
-    # ground-truth instance counts (collapsed direction). Restrict to the eval split
-    # (clips evaluated by the methods); use the union of clips appearing in the DTW CSV
-    # so the count reflects what evaluation actually covered.
-    gt_csv = REPO / "behavior_labels/rodent_labels.csv"
-    df = pd.read_csv(gt_csv)
-    df = df[df["Track"] == "behavior"].reset_index(drop=True)
-    eval_clips = set()
-    raw = pd.read_csv(FA / "dtw_comparison_table.csv")
-    method_cols = [c for c in raw.columns if c not in ("Label", "Turn")]
-    # The DTW CSV does not name clips; fall back to the test-set range from rodent.csv labels.
-    # We use clips whose Video name parses to clip_<id>.mp4 with id in [642, 841].
-    for v in df["Video"].unique():
-        try:
-            cid = int(v.replace("clip_", "").replace(".mp4", ""))
-            if 642 <= cid <= 841:
-                eval_clips.add(v)
-        except Exception:
-            pass
-    sub_df = df[df["Video"].isin(eval_clips)] if eval_clips else df
-    gt_counts: dict[str, int] = {f"{a}<->{b}": 0 for a, b in ORDERED_PAIRS}
-    for vid, sub in sub_df.groupby("Video"):
-        sub = sub.sort_values("Start_Frame").reset_index(drop=True)
-        for i in range(len(sub) - 1):
-            a, b = sub.loc[i, "Label"], sub.loc[i + 1, "Label"]
-            if a == b: continue
-            key = f"{a}<->{b}" if (a, b) in ORDERED_PAIRS else f"{b}<->{a}"
-            if key in gt_counts:
-                gt_counts[key] += 1
+    # Directed + direction-resolved GT instance counts over the eval split (clips
+    # 642-841), keyed by (directed "A -> B" label, turn in {left,right,straight}).
+    _TN = {"LEFT": "left", "RIGHT": "right", "STRAIGHT": "straight"}
+    gt_counts: dict[tuple[str, str], int] = {}
+    for t in find_all_transitions(str(REPO / "behavior_labels/rodent_labels.csv")):
+        if not (642 <= int(t.clip_id) <= 841):
+            continue
+        key = (f"{t.from_behavior} -> {t.to_behavior}",
+               _TN.get(getattr(t.turn, "name", ""), "straight"))
+        gt_counts[key] = gt_counts.get(key, 0) + 1
 
     out = [
         r"\begin{table}[h]",
         r"\centering",
-        r"\caption{\textbf{Behavioral coverage by method (4-behavior set).} Each cell indicates whether the method discovered ($\checkmark$) or missed ($\times$) at least one cluster majority-voted to the given unordered transition. GT $n$ = number of ground-truth transition instances in \texttt{behavior\_labels/rodent\_labels.csv}.}",
+        r"\caption{\textbf{Behavioral coverage by method (directed, direction-resolved).} Each cell indicates whether the method discovered ($\checkmark$) or missed ($\times$) at least one cluster majority-voted to the given \emph{directed} transition and turn direction (Immobile$\to$Turn is distinct from Turn$\to$Immobile). Direction tags: [L] left, [R] right, [S] straight. GT $n$ = ground-truth instances in the evaluation split.}",
         r"\label{tab:coverage}",
         r"\tiny",
         r"\setlength{\tabcolsep}{1.5pt}",
@@ -1001,11 +987,14 @@ def appendix_coverage() -> TableSpec:
         r"\midrule",
     ]
     totals = [0] * len(methods)
-    for t in transitions:
-        sel = dtw[dtw["Pair"] == t]
-        cells = [t.replace("<->", r"$\leftrightarrow$"), str(gt_counts.get(t, 0))]
+    for label, turn in _sorted_directional_rows(wide):
+        gtn = gt_counts.get((label, turn), 0)
+        if gtn == 0:  # no GT instances of this directed+directional class in the eval split
+            continue
+        sel = wide[(wide["Label"] == label) & (wide["Turn"] == turn)]
+        cells = [_label_with_dir(label, turn), str(gtn)]
         for i, m in enumerate(methods):
-            ok = (m in sel.columns) and (not sel.empty) and pd.notna(sel.iloc[0][m])
+            ok = (not sel.empty) and (m in sel.columns) and pd.notna(sel.iloc[0][m])
             if ok:
                 cells.append(r"$\checkmark$")
                 totals[i] += 1

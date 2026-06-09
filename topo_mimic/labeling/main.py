@@ -31,7 +31,7 @@ from topo_mimic.labeling.core import (
     save_recommendations_csv,
     write_minimal_stats_csv,
 )
-from topo_mimic.analysis.feature_analysis.data_loading import load_cluster_dict
+from topo_mimic.analysis.feature_analysis.data_loading import load_cluster_dict, recenter_cluster_dict
 
 
 @dataclass
@@ -95,6 +95,7 @@ def run_labeling(config: LabelingConfig) -> dict:
 
     print("\n=== Stage 1: Loading data ===")
     cluster_dict = load_cluster_dict(method_dir, config.seed)
+    cluster_dict = recenter_cluster_dict(cluster_dict, config.method)
     if not cluster_dict:
         raise ValueError(f"No cluster_dict found for {config.method} seed {config.seed}")
     print(f"Loaded {len(cluster_dict)} clusters from {method_dir}")

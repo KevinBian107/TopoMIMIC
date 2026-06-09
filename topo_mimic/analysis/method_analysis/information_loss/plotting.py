@@ -372,15 +372,18 @@ def plot_combined_main(
         _panel_label(ax_ami, "(C)")
 
         # ----- IB plane (left) -----
-        H_T = np.array([r.H_T for r in results])
-        I_TY = np.array([r.I_TY for r in results])
+        # Full-clip control stays in the info-loss table but is not shown on the
+        # IB plane (kevin).
+        ib_results = [r for r in results if r.family != "Full"]
+        H_T = np.array([r.H_T for r in ib_results])
+        I_TY = np.array([r.I_TY for r in ib_results])
         x_lo = max(0.0, float(np.min(H_T)) - 0.2)
         x_hi = float(np.max(H_T)) + 0.2
         y_lo = max(0.0, float(np.min(I_TY)) - 0.05)
         y_hi = float(np.max(I_TY)) * 1.18 + 0.02
 
         by_method = defaultdict(list)
-        for r in results:
+        for r in ib_results:
             by_method[r.method_name].append(r)
 
         legend_handles = {}

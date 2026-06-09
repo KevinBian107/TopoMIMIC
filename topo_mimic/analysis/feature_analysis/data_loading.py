@@ -46,6 +46,50 @@ def load_cluster_dict(method_dir: str, seed: int = 0) -> dict:
     return {}
 
 
+# --- Takens-embedding -> frame-space alignment ----------------------------
+# DM primitives store Takens-NODE indices. Node t is the embedding vector
+# [x(t), x(t+tau), x(t+2tau)]; its dynamic footprint spans clip frames
+# [t, t+(m-1)*tau], centered at t + (m-1)*tau/2. To compare a DM primitive against
+# frame-space ground truth (behavior/direction segments, per-frame GT), shift its
+# frames to that window center. Non-DM methods (KPMS/VAE/Mapper/full/unif) already
+# live in frame space -> offset 0. m=3 for every space, so the center offset == tau.
+_DM_SPACE_OFFSET = {"intention": 6, "qpos": 9, "ekp": 8}  # (m-1)*tau/2, m=3
+
+
+def center_offset_for_space(feature_space: str | None) -> int:
+    """Takens-window-center offset for a DM feature space (0 if unknown/non-DM)."""
+    return _DM_SPACE_OFFSET.get(feature_space, 0)
+
+
+def center_offset_for_method(method_name: str) -> int:
+    """Frames to add to a DM primitive's node index to reach the Takens-window
+    center (aligning it with frame-space GT). 0 for non-DM (frame-space) methods."""
+    name = (method_name or "").lower()
+    if "dmc" not in name and "dmp" not in name:
+        return 0
+    if "int" in name:
+        return _DM_SPACE_OFFSET["intention"]
+    if "qpos" in name:
+        return _DM_SPACE_OFFSET["qpos"]
+    if "ekp" in name:
+        return _DM_SPACE_OFFSET["ekp"]
+    return 0
+
+
+def recenter_cluster_dict(cluster_dict: dict, method_name: str) -> dict:
+    """Return a copy of ``cluster_dict`` whose DM primitive frames are shifted to
+    the Takens-window center so they align with frame-space ground truth. No-op for
+    non-DM methods. Clustering is unaffected: this only adjusts the frames handed to
+    downstream GT lookup / sequence extraction / rendering, not the stored result."""
+    off = center_offset_for_method(method_name)
+    if off == 0 or not cluster_dict:
+        return cluster_dict
+    return {
+        cid: [(int(c), np.asarray(f).flatten() + off) for c, f in members]
+        for cid, members in cluster_dict.items()
+    }
+
+
 _DIRECTION_TOKENS = {"Left": "left", "Right": "right", "Straight": "straight"}
 
 

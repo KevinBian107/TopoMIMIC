@@ -27,6 +27,7 @@ from .data_loading import (
     load_cluster_dict,
     load_labels_yaml,
     load_method_results,
+    recenter_cluster_dict,
 )
 from .transition_ranking import run_transition_ranking_analysis
 from .visualization import (
@@ -329,7 +330,7 @@ def run_analysis(config: AnalysisConfig) -> None:
 
         for seed in seeds:
             result = method_results.get(seed, {})
-            cluster_dict = result.get("cluster_dict", {})
+            cluster_dict = recenter_cluster_dict(result.get("cluster_dict", {}), method_name)
 
             if not cluster_dict:
                 print(f"  Seed {seed}: No cluster_dict found, skipping")
