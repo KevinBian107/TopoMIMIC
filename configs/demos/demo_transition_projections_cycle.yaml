@@ -1,0 +1,34 @@
+# Cycle version of the transition-projection figure (Figure 2): same transition
+# clips, but the DM-CYCLE (H1 loop) overlaid + filmstripped instead of the DM-path.
+# Limited to intention + t-SNE since that is what build_figure2 consumes.
+h5_path: "data/rodent_ar.h5"
+behavior_labels_csv: "behavior_labels/rodent_labels.csv"
+xml_path: "topo_mimic/extraction/xml/rodent.xml"
+stac_data_path: "data/rodent_reference_clips.h5"
+
+feature_spaces:
+  - intention
+  - qpos
+  - ekp
+
+extraction_dirs:
+  intention: "outputs/extraction/dm_pipeline_intention"
+  qpos:      "outputs/extraction/dm_pipeline_qpos"
+  ekp:       "outputs/extraction/dm_pipeline_ekp"
+
+seed: 0
+majority_threshold: 0.5
+min_per_behavior_fraction: 0.15
+min_clips_per_transition: 8
+min_clips_per_direction_variant: 10
+n_transitions: 6
+exclude_transitions:
+  - ["Immobile", "Walk"]
+k_paths: 2
+primitive: "cycle"
+real_subsample_n: 4000
+tsne_subsample_n: 3000
+projections:
+  - tsne
+skip_clips: [80, 187, 227, 246, 267, 392, 434, 456, 475, 491, 562, 610, 685]
+merge_rear: true
