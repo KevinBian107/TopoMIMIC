@@ -1,0 +1,36 @@
+# Primitive-decomposition walkthrough video (advisor response).
+# Pick a clip whose skeleton has >=2 independent cycles and branching trees
+# (e.g. 8: 3 cycles / 4 corridors; 742: more cycles). See candidates printed by
+# the extraction stats, or any clip with beta1 >= 2.
+
+# Example clips chosen by root-height profile (qpos z), rendered into tagged subfolders:
+#   walk -> rear -> walk  (low-high-low root, walk on both flanks):
+#       python -m demos.demo_primitive_decomposition --clip-ids 132 741 181 --tag walk_rear_walk
+#   rear -> walk -> rear  (high-low-high root, walk in the dip):
+#       python -m demos.demo_primitive_decomposition --clip-ids 713 701 374 --tag rear_walk_rear
+#   multi-cycle + branchy  (>=2 independent cycles, two of them long, plus many branch corridors):
+#       python -m demos.demo_primitive_decomposition --clip-ids 499 792 512 --tag multi_cycle_branchy
+#   immobile -> walk -> immobile  (still flanks, high-xy/low-z bout):
+#       python -m demos.demo_primitive_decomposition --clip-ids 500 235 41 --tag imm_walk_imm
+#   immobile -> rear -> immobile  (still flanks, high-z/low-xy bout):
+#       python -m demos.demo_primitive_decomposition --clip-ids 50 316 486 --tag imm_rear_imm
+# all the above are run per feature space with --feature-space {intention,qpos,ekp}
+clip_ids: [132, 741, 181]
+tag: "walk_rear_walk"
+clip_id: 132
+feature_space: "intention"
+extraction_root: "outputs/extraction"
+data_h5: "data/rodent_ar.h5"
+intention_key: "intention"
+xml_path: "topo_mimic/extraction/xml/rodent.xml"
+
+takens_m: 3
+takens_tau: 6
+
+output_dir: "outputs/demos/illustrative/primitive_decomposition"
+
+render_size: 300        # square mujoco frame, px
+stride: 1               # 1 = play every clip frame at natural speed (subsample to speed up)
+framerate: 30           # clip sim rate; the video plays at this normal framerate
+dpi: 180
+make_video: true        # set false for the static decomposition PNG only

@@ -126,7 +126,9 @@ class DemoConfig:
     min_clips_per_transition: int = 10
     min_clips_per_direction_variant: int = 10
     n_transitions: int = 4
+    exclude_transitions: list = field(default_factory=list)  # unordered [A,B] pairs to drop
     k_paths: int = 2
+    primitive: str = "path"  # "path" (H0 transition corridor) or "cycle" (H1 loop)
     real_subsample_n: int = 4000
     tsne_subsample_n: int = 3000
     projections: list[str] = field(default_factory=lambda: ["pca", "umap", "tsne"])
@@ -321,6 +323,22 @@ def load_paths_for_clips(
     return {cid: full.get(cid, []) for cid in clip_ids}
 
 
+def load_cycles_for_clips(
+    extraction_dir: str, clip_ids: list[int],
+) -> dict[int, list[list[int]]]:
+    """DM-cycle (H1 loop) frame-index lists per clip, from ``all_cycle_dm.pkl``."""
+    pkl = Path(extraction_dir) / "all_cycle_dm.pkl"
+    if not pkl.exists():
+        raise FileNotFoundError(f"missing {pkl}")
+    with open(pkl, "rb") as f:
+        data = pickle.load(f)
+    if isinstance(data, dict):
+        full = {int(k): list(v) for k, v in data.items()}
+    else:
+        full = {i: list(c) for i, c in enumerate(data)}
+    return {cid: full.get(cid, []) for cid in clip_ids}
+
+
 def _frame_label(
     segs: list[tuple[str, int, int]], frame: int,
 ) -> str:
@@ -470,6 +488,42 @@ def select_top_k_paths(
             flat.append((score, cid, verts, first_lab, last_lab))
     flat.sort(key=lambda t: -t[0])
     return [(c, v, fl, ll) for _, c, v, fl, ll in flat[:k]]
+
+
+def select_top_k_cycles(
+    cycles_by_clip: dict[int, list[list[int]]],
+    k: int,
+    segments: dict[int, list[tuple[str, int, int]]],
+    extraction_dir: str | None = None,
+    exclude_clips: set[int] | None = None,
+) -> list[tuple[int, list[int], str, str]]:
+    """Top-k DM-cycles (loops) across the given clips. Unlike paths, cycles have
+    no {A,B} endpoint constraint (a cycle is a recurrence, not a corridor); they
+    are ranked by the clip's minima persistence (deepest-skeleton clips first),
+    then by loop length. ``exclude_clips`` skips clips already used by another
+    transition row, so each row shows a distinct example. Each returned cycle has
+    its first vertex appended so the shared path renderer closes the loop, and its
+    endpoint labels are the (single) behavior at the loop anchor."""
+    exclude = exclude_clips or set()
+    flat: list[tuple[float, int, int, list[int], str, str]] = []
+    for cid, cycles in cycles_by_clip.items():
+        if cid in exclude:
+            continue
+        segs = segments.get(cid, [])
+        pers_score = (
+            clip_minima_persistence_score(extraction_dir, cid)
+            if extraction_dir else 0.0
+        )
+        for cyc in cycles:
+            verts = list(cyc)
+            if len(verts) < 3:
+                continue
+            closed = verts + [verts[0]]  # close the loop for the path renderer
+            lab = _frame_label(segs, int(verts[0]))
+            score = pers_score if extraction_dir else float(len(verts))
+            flat.append((score, len(verts), cid, closed, lab, lab))
+    flat.sort(key=lambda t: (-t[0], -t[1]))
+    return [(c, v, fl, ll) for _, _, c, v, fl, ll in flat[:k]]
 
 
 def project_together(
@@ -824,7 +878,8 @@ def render_transition_filmstrip_figure(
             row = rows[col_idx]
             top_paths = row.get("top_paths_raw") or []
             if not top_paths:
-                ax.text(0.5, 0.5, "no path", ha="center", va="center",
+                ax.text(0.5, 0.5, ("no cycle" if cfg.primitive == "cycle" else "no path"),
+                        ha="center", va="center",
                         transform=ax.transAxes, fontsize=9, color="#777")
                 continue
 
@@ -860,8 +915,10 @@ def render_transition_filmstrip_figure(
 
     from matplotlib.patches import Patch
     handles = [
-        Patch(facecolor=A_COLOR, edgecolor="none", label="behavior A (start)"),
-        Patch(facecolor=B_COLOR, edgecolor="none", label="behavior B (end)"),
+        Patch(facecolor=A_COLOR, edgecolor="none",
+              label="loop start" if cfg.primitive == "cycle" else "behavior A (start)"),
+        Patch(facecolor=B_COLOR, edgecolor="none",
+              label="loop end" if cfg.primitive == "cycle" else "behavior B (end)"),
     ]
     fig.legend(handles=handles, loc="lower center", ncol=len(handles),
                frameon=False, fontsize=9, bbox_to_anchor=(0.5, -0.005))
@@ -973,9 +1030,9 @@ def render_combined_panel_figure(
             Patch(facecolor=OTHER_COLOR, edgecolor="none", label="other frames"),
             Line2D([0], [0], marker="*", color="w", markerfacecolor="gold",
                    markeredgecolor="#222", markersize=10,
-                   label="path endpoint (basin minimum)"),
+                   label="basin minimum" if cfg.primitive == "cycle" else "path endpoint (basin minimum)"),
             Line2D([0], [0], linestyle=(0, (5, 3)), color="#0a0a0a",
-                   linewidth=1.8, label="DM path"),
+                   linewidth=1.8, label="DM cycle" if cfg.primitive == "cycle" else "DM path"),
         ]
         fig.legend(handles=handles, loc="lower center", ncol=len(handles),
                    frameon=False, fontsize=9, bbox_to_anchor=(0.5, -0.005))
@@ -1010,10 +1067,11 @@ def render_figure(
         squeeze=False,
     )
 
+    _noun = "cycle" if cfg.primitive == "cycle" else "path"
     col_titles = (
         ["Real (labeled)"]
-        + [f"DM path {i + 1}" for i in range(k)]
-        + ["All paths + minima", "Paths (temporal)"]
+        + [f"DM {_noun} {i + 1}" for i in range(k)]
+        + [f"All {_noun}s + minima", f"{_noun.capitalize()}s (temporal)"]
     )
     for col, title in enumerate(col_titles):
         axes[0, col].set_title(title, fontsize=10, fontweight="bold", pad=6)
@@ -1057,8 +1115,10 @@ def render_figure(
     print(f"  wrote {out_path} (+.png)")
 
 
-def main(config_path: str | None = None) -> None:
+def main(config_path: str | None = None, primitive: str | None = None) -> None:
     cfg = load_config(config_path)
+    if primitive is not None:
+        cfg.primitive = primitive
     os.makedirs(cfg.output_dir, exist_ok=True)
     rng = np.random.default_rng(cfg.seed)
 
@@ -1071,7 +1131,10 @@ def main(config_path: str | None = None) -> None:
     transitions = rank_transitions(
         cfg.behavior_labels_csv, cfg.n_transitions, cfg.merge_rear,
     )
-    print(f"  top {cfg.n_transitions}: {transitions}")
+    if cfg.exclude_transitions:
+        _excl = {tuple(sorted(e)) for e in cfg.exclude_transitions}
+        transitions = [t for t in transitions if tuple(sorted(t)) not in _excl]
+    print(f"  selected transitions: {transitions}")
 
     # Drop transitions with too few dominated clips. We do this on the
     # first feature space (intention); support is nearly identical across
@@ -1140,6 +1203,7 @@ def main(config_path: str | None = None) -> None:
 
         # Build per-transition data bundles for this feature space.
         row_bundles = []
+        used_cycle_clips: set[int] = set()  # distinct example clip per cycle row
         for A, B in transitions:
             dominated = find_dominated_clips(
                 segments, A, B, T,
@@ -1153,14 +1217,25 @@ def main(config_path: str | None = None) -> None:
                 row_bundles.append(None)
                 continue
 
-            paths_by_clip = load_paths_for_clips(extraction_dir, dominated)
-            top_paths = select_top_k_paths(
-                paths_by_clip, cfg.k_paths, segments, A, B,
-                extraction_dir=extraction_dir,
-            )
-            n_paths_found = len(top_paths)
-            print(f"  {n_paths_found} DM paths chosen "
-                  f"(top {cfg.k_paths} by length, endpoints in {{{A}, {B}}})")
+            if cfg.primitive == "cycle":
+                cycles_by_clip = load_cycles_for_clips(extraction_dir, dominated)
+                top_paths = select_top_k_cycles(
+                    cycles_by_clip, cfg.k_paths, segments,
+                    extraction_dir=extraction_dir, exclude_clips=used_cycle_clips,
+                )
+                used_cycle_clips.update(c for c, _, _, _ in top_paths)
+                n_paths_found = len(top_paths)
+                print(f"  {n_paths_found} DM cycles chosen "
+                      f"(top {cfg.k_paths} loops, distinct clip per row)")
+            else:
+                paths_by_clip = load_paths_for_clips(extraction_dir, dominated)
+                top_paths = select_top_k_paths(
+                    paths_by_clip, cfg.k_paths, segments, A, B,
+                    extraction_dir=extraction_dir,
+                )
+                n_paths_found = len(top_paths)
+                print(f"  {n_paths_found} DM paths chosen "
+                      f"(top {cfg.k_paths} by length, endpoints in {{{A}, {B}}})")
 
             labels_grid = build_frame_labels(segments, dominated, T, A, B)
             real_list, label_list = [], []
@@ -1422,5 +1497,6 @@ def main(config_path: str | None = None) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, default=None)
+    parser.add_argument("--primitive", type=str, default=None, choices=["path", "cycle"])
     args = parser.parse_args()
-    main(args.config)
+    main(args.config, args.primitive)

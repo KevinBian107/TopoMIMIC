@@ -38,10 +38,36 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from topo_mimic.analysis.feature_analysis.data_loading import (
     load_cluster_dict,
     load_labels_yaml,
+    recenter_cluster_dict,
 )
 from topo_mimic.analysis.feature_analysis.behavior_parsing import (
     parse_cluster_label,
 )
+from topo_mimic.experiment.auto_label import (
+    load_behavior_segments,
+    split_segments_by_kind,
+    label_member_directional,
+    direction_tag_from_window,
+    format_directional_label,
+)
+
+
+def _member_match_score(frames, clip_id, label, behav_segs, dir_segs) -> float:
+    """How well a single member exhibits its cluster's label.
+    1.0 = member's own (from, to, direction) tuple equals the cluster label,
+    0.5 = same behavior pair but different direction, 0.0 = neither / unknown.
+    Used to surface the clearest exemplars instead of arbitrary first-N members.
+    """
+    if behav_segs is None or dir_segs is None:
+        return 0.0
+    frm, to = label_member_directional(frames, behav_segs.get(clip_id, []))
+    if not frm:
+        return 0.0
+    dt = direction_tag_from_window(frames, dir_segs.get(clip_id, [])) or "Straight"
+    member_label = format_directional_label(frm, to, dt)
+    if member_label == label:
+        return 1.0
+    return 0.5 if member_label.rsplit(" ", 1)[0] == label.rsplit(" ", 1)[0] else 0.0
 
 
 @dataclass
@@ -55,6 +81,8 @@ class ClusterFilmstripConfig:
     dataset: str = "rodent"
     output_dir: str = "outputs/demos/cluster_filmstrips"
     k_samples: int = 3
+    sample_select: str = "match"   # "match" (clearest exemplars) | "longest" | "first" (legacy order)
+    behavior_labels_csv: str = "behavior_labels/rodent_labels.csv"
     n_poses: int = 6
     filmstrip_gap_fraction: float = 0.25
     dpi: int = 300
@@ -93,10 +121,12 @@ def _group_clusters_by_label(
     cluster_labels: dict[int, str],
     turn_directions: dict[int, str] | None,
     merge_rear: bool = True,
-) -> dict[str, list[tuple[int, int, np.ndarray]]]:
+    behav_segs: dict | None = None,
+    dir_segs: dict | None = None,
+) -> dict[str, list[tuple[int, int, np.ndarray, float]]]:
     """Group cluster entries by their human-assigned label + turn.
 
-    Returns: {display_label: [(clip_id, cluster_id, frame_indices), ...]}
+    Returns: {display_label: [(clip_id, cluster_id, frame_indices, match_score), ...]}
     """
     if turn_directions is None:
         turn_directions = {}
@@ -105,11 +135,14 @@ def _group_clusters_by_label(
     for cid, label in cluster_labels.items():
         if not label or label.startswith("C"):
             continue
-        turn = turn_directions.get(cid, "")
-        display = f"{label} [{turn}]" if turn else label
+        # label already carries the direction (e.g. "Immobile -> Turn Right"),
+        # so the trailing "[right]" tag is redundant.
+        display = label
 
         for clip_id, frames in cluster_dict.get(cid, []):
-            grouped[display].append((int(clip_id), cid, np.sort(np.asarray(frames).flatten())))
+            fr = np.sort(np.asarray(frames).flatten())
+            score = _member_match_score(fr, int(clip_id), label, behav_segs, dir_segs)
+            grouped[display].append((int(clip_id), cid, fr, score))
 
     return dict(sorted(grouped.items()))
 
@@ -141,13 +174,20 @@ def render_cluster_grid(
     print(f"Rendering {n_rows} rows x {n_cols} columns...")
 
     all_strips = {}
+    selected_samples = {}
     target_w = int(panel_w_in * dpi)
 
     for label in labels:
         entries = grouped[label]
+        # Pick the clearest exemplars: members that most strongly exhibit the
+        # cluster's labeled transition (match score), instead of arbitrary first-N.
+        if cfg.sample_select == "match":
+            entries = sorted(entries, key=lambda e: -e[3])
+        elif cfg.sample_select == "longest":
+            entries = sorted(entries, key=lambda e: -len(e[2]))
         samples = entries[:n_cols]
         strips = []
-        for clip_id, cid, frames in samples:
+        for clip_id, cid, frames, *_ in samples:
             valid = frames[(frames >= 0) & (frames < data.shape[1])]
             if len(valid) < 2:
                 strips.append(np.full((60, target_w, 3), 232, dtype=np.uint8))
@@ -171,6 +211,7 @@ def render_cluster_grid(
             strips.append(np.full((60, target_w, 3), 255, dtype=np.uint8))
 
         all_strips[label] = strips
+        selected_samples[label] = samples
 
     max_h_px = max(
         max(s.shape[0] for s in strips)
@@ -225,9 +266,10 @@ def render_cluster_grid(
             extent = [img_x, img_x + iw_in, center_y - ih_in / 2, center_y + ih_in / 2]
             ax.imshow(img, extent=extent, aspect="auto", zorder=1)
 
-            entry = grouped[label][col_idx] if col_idx < len(grouped[label]) else None
+            sel = selected_samples[label]
+            entry = sel[col_idx] if col_idx < len(sel) else None
             if entry is not None:
-                clip_id, cid, _ = entry
+                clip_id, cid, *_ = entry
                 ax.text(
                     x0 + box_w / 2, y0 + by_pad + label_h * 0.4,
                     f"C{cid}, clip {clip_id}",
@@ -251,6 +293,7 @@ def main():
     parser.add_argument("--config", type=str, default=None)
     parser.add_argument("--method", type=str, default=None)
     parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--select", type=str, default=None, choices=["match", "longest", "first"])
     args = parser.parse_args()
 
     default_cfg = Path(__file__).resolve().parents[2] / "configs/demos/demo_cluster_filmstrips.yaml"
@@ -259,11 +302,14 @@ def main():
         cfg.method = args.method
     if args.seed is not None:
         cfg.seed = args.seed
+    if args.select is not None:
+        cfg.sample_select = args.select
 
     method_dir = os.path.join(cfg.experiment_dir, cfg.method)
     print(f"Loading {cfg.method} seed {cfg.seed}...")
 
     cluster_dict = load_cluster_dict(method_dir, cfg.seed)
+    cluster_dict = recenter_cluster_dict(cluster_dict, cfg.method)
     cluster_labels, turn_directions = load_labels_yaml(method_dir, cfg.seed)
     if not cluster_labels:
         cluster_labels = {i: f"C{i}" for i in cluster_dict.keys()}
@@ -274,8 +320,16 @@ def main():
     with h5py.File(cfg.data_path, "r") as f:
         data = np.array(f[cfg.data_key])
 
-    grouped = _group_clusters_by_label(cluster_dict, cluster_labels, turn_directions)
-    print(f"  {len(grouped)} unique cluster groups")
+    behav_segs = dir_segs = None
+    if cfg.sample_select == "match" and os.path.exists(cfg.behavior_labels_csv):
+        behav_segs, dir_segs = split_segments_by_kind(
+            load_behavior_segments(cfg.behavior_labels_csv)
+        )
+    grouped = _group_clusters_by_label(
+        cluster_dict, cluster_labels, turn_directions,
+        behav_segs=behav_segs, dir_segs=dir_segs,
+    )
+    print(f"  {len(grouped)} unique cluster groups (select={cfg.sample_select})")
 
     render_cluster_grid(grouped, data, cfg)
     print("Done.")

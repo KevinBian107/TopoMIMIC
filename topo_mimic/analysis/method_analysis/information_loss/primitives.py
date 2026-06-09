@@ -18,6 +18,11 @@ from typing import Literal
 
 import numpy as np
 
+from topo_mimic.analysis.feature_analysis.data_loading import (
+    center_offset_for_space,
+    recenter_cluster_dict,
+)
+
 
 PrimitiveKind = Literal["dm_cycle", "dm_path", "kpms_sustained", "vae_sustained", "mapper_edge"]
 
@@ -101,7 +106,7 @@ def load_dm_primitives(
             pid = next_pid
             next_pid += 1
 
-            frames = np.asarray(frame_inds, dtype=np.int64)
+            frames = np.asarray(frame_inds, dtype=np.int64) + center_offset_for_space(feature_space)
             frames = frames[(frames >= 0) & (frames < frames_per_clip)]
             if frames.size == 0:
                 continue
@@ -238,7 +243,7 @@ def load_cluster_dict_primitives(
     """
     payload = _load_results_pkl(results_pkl)
     seed_payload = _seed_payload(payload, seed)
-    cluster_dict = seed_payload.get("cluster_dict")
+    cluster_dict = recenter_cluster_dict(seed_payload.get("cluster_dict"), method_name)
     if cluster_dict is None:
         raise KeyError(f"results.pkl at {results_pkl!r} has no cluster_dict")
 

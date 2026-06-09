@@ -69,10 +69,6 @@ Method-property demos that study **why** DM primitives recover behavior transiti
 | `property/rear_cycles`           | Cross-clip cycle validation grid (4 MP4 + 2 PNG)                                                         |
 | `property/cycle_behavior_breakdown` | Categorize no-cycle vs many-cycle clips by behavior signature                                         |
 | `incompressibility/`             | Figure 3: DM retains only the minimal frames needed to preserve topology. `run.py`, `batch.py`, `varying_k.py` |
-| `dm_dim_reduction/`              | Empirical justification for the PCA/Takens preprocessing                                                 |
-| `cycle_persistence/`             | Persistence-threshold sensitivity of cycle stats                                                         |
-| `transition_stats/`              | GT transition frequency analysis                                                                         |
-| `cycle_rendering/`               | Side-by-side DM-cycle rendering videos                                                                    |
 | `global_manifold/`               | Pool clips by GT transition type, run DM on the pooled cloud                                            |
 | `granularity/`                   | Multi-persistence DM extraction + stationary joint variance + redundancy DTW (3-stage pipeline)         |
 

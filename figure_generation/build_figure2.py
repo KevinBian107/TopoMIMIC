@@ -78,8 +78,8 @@ def main() -> None:
     print(f"wrote {FIG2_OUT} (size={out.size})")
 
     APPENDIX_PANEL.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(PANEL_FULL_SRC, APPENDIX_PANEL)
-    shutil.copy2(FILM_FULL_SRC, APPENDIX_FILM)
+    shutil.copyfile(PANEL_FULL_SRC, APPENDIX_PANEL)  # content only; copy2 chmod fails on root-owned dest
+    shutil.copyfile(FILM_FULL_SRC, APPENDIX_FILM)
     print(f"copied  {APPENDIX_PANEL}")
     print(f"copied  {APPENDIX_FILM}")
 
