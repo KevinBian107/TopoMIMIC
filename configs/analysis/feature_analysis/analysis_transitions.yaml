@@ -99,6 +99,7 @@ run_dtw_visualization: false  # Enable detailed DTW visualization (slower)
 # Real-GT windows are subsampled to match the cluster size; the cluster's
 # own source clips are excluded from the real pool to avoid clip-level
 # leakage.
+run_mmd_analysis: true
 run_c2st_analysis: true
 c2st_raw_h5_path: "data/rodent_ar.h5"
 c2st_window_frames: 200

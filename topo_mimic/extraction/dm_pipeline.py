@@ -28,6 +28,7 @@ from topo_mimic.extraction.skeletonization.skeletonization import (
     extract_skeleton_pcd_dm,
     extract_all_cycles,
     extract_all_corridors,
+    extract_persistence_paths,
 )
 from topo_mimic.extraction.skeletonization.remap import (
     parse_swr_remap,
@@ -143,6 +144,8 @@ class DMConfig:
     min_segment_len: int = 50
     min_primitive_frames: int = 30
     use_dm_path: bool = False
+    path_method: str = "persistence"  # "persistence" (branch decomposition) | "corridor" (bridge chains)
+    path_persistence_delta: float = 0.0
 
 
 @dataclass
@@ -350,9 +353,15 @@ def run_dm_extraction(
         cyc_prims = _primitives(extract_all_cycles(G_sm, vertex_weight=vweight))
         all_cycle_dm[clip_id] = cyc_prims
 
-        # All paths: every bridge-corridor (forks = subtle behavior branch points).
+        # All paths: persistence-branch decomposition (default) or bridge-corridors.
         if use_dm_path:
-            path_prims = _primitives(extract_all_corridors(G_sm))
+            if config.dm.path_method == "corridor" or vweight is None:
+                path_vlists = extract_all_corridors(G_sm)
+            else:
+                path_vlists = extract_persistence_paths(
+                    G_sm, vweight, persistence_delta=config.dm.path_persistence_delta
+                )
+            path_prims = _primitives(path_vlists)
             all_path_dm[clip_id] = path_prims
             print(f"Clip {clip_id}: {len(cyc_prims)} cycle-prims, {len(path_prims)} path-prims, {G_sm.number_of_edges()} edges")
         else:

@@ -364,7 +364,7 @@ def plot_combined_main(
             ax.text(
                 -0.18, 1.02, text,
                 transform=ax.transAxes,
-                fontsize=12, fontweight="bold", va="bottom", ha="left",
+                fontsize=8, fontweight="bold", va="bottom", ha="left",
             )
 
         _panel_label(ax_ib, "(A)")
