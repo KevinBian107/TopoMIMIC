@@ -18,6 +18,7 @@ REPO = Path(__file__).resolve().parents[1]
 FA   = REPO / "outputs/analysis/feature_analysis"
 WA   = REPO / "outputs/analysis/tables/warping_analysis"
 SS   = REPO / "outputs/analysis/scale_sweep/v1/v1/cfg_01f5a4b3/discovery"
+KS   = REPO / "outputs/analysis/method_analysis/k_sweep"
 OUT  = REPO / "paper/tables"
 
 # Drop the uniform-Wasserstein control + all classifier columns.
@@ -1140,6 +1141,36 @@ def appendix_scale_sweep() -> TableSpec:
 
 # ─────────────────────────────────────────────────────────────────────────────
 
+def appendix_k_sweep() -> TableSpec:
+    """appendix_k_sweep.tex — DM kNN-$k$ sensitivity. Per (space, $k$): label-free
+    structural $\\beta_1$ + giant-CC, and DM-cycle DTW/MMD/KID/coverage, read from
+    the k-sweep CSVs (outputs/analysis/method_analysis/k_sweep/)."""
+    struct = pd.read_csv(KS / "structural_stats.csv")
+    down = pd.read_csv(KS / "downstream_metrics_vs_k.csv")
+    down = down[down["primitive"] == "cycle"]
+    spaces = [("intention", "Intention"), ("qpos", "Qpos"), ("ekp", "EKP")]
+    lines = [r"\begin{tabular}{llcccccc}", r"\toprule",
+             r"Space & $k$ & $\beta_1$ & giant-CC & DTW & MMD & KID & cov \\",
+             r"\midrule"]
+    for si, (sp, disp) in enumerate(spaces):
+        for ki, k in enumerate([3, 5, 8]):
+            s = struct[(struct.space == sp) & (struct.k == k)]
+            d = down[(down.space == sp) & (down.k == k)]
+            if s.empty or d.empty:
+                continue
+            s, d = s.iloc[0], d.iloc[0]
+            kc = rf"\textbf{{{k}}}" if k == 3 else f"{k}"
+            cell = disp if ki == 0 else ""
+            lines.append(
+                f"{cell} & {kc} & {s.n_cycles_mean:.2f} & {s.giant_cc_frac_mean:.2f} & "
+                f"{d.dtw_mean:.2f} & {d.mmd_mean:.3f} & {d.kid_mean:.3f} & "
+                f"{d.coverage_mean:.1f} \\\\")
+        if si < len(spaces) - 1:
+            lines.append(r"\midrule")
+    lines += [r"\bottomrule", r"\end{tabular}"]
+    return TableSpec("appendix_k_sweep", "\n".join(lines) + "\n")
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--check", action="store_true", help="dry-run; print but don't write")
@@ -1156,6 +1187,7 @@ def main():
         appendix_non_diag(),
         appendix_coverage(),
         appendix_scale_sweep(),
+        appendix_k_sweep(),
     ]
     write_tables(specs, dry=args.check)
 
