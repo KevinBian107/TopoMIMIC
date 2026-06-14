@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build paper/figures/figure1.png.
+"""Build paper/figures/figure2.png (manuscript Figure 2: pipeline + primitives).
 
 Four-panel layout (data on top, method-intuition on the bottom):
 
@@ -56,6 +56,7 @@ sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "PCD-Graph-Recon-DM"))
 
 from demos.demo_saddle import MorseConfig, run_dm_analysis  # noqa: E402
+from figure_generation.dm_primitives import render_pair  # noqa: E402
 from topo_mimic.extraction.skeletonization.skeletonization import (  # noqa: E402
     extract_all_corridors,
     extract_all_cycles,
@@ -63,7 +64,7 @@ from topo_mimic.extraction.skeletonization.skeletonization import (  # noqa: E40
 
 EXTERNAL_DATA = Path(__file__).resolve().parent / "external_data"
 MIMIC_PIPELINE_PDF = EXTERNAL_DATA / "mimice_pipeline.pdf"
-OUT_PATH = REPO / "paper/figures/figure1.png"
+OUT_PATH = REPO / "paper/figures/figure2.png"
 
 # Fraction of mimice_pipeline.pdf width that belongs to (A) (general-space
 # demo, left side); the remainder is (B) (encoder-decoder schematic).
@@ -212,7 +213,7 @@ def _recovered_skeleton_polylines(cloud: np.ndarray) -> list[np.ndarray]:
     return polylines
 
 
-def render_panel_c(target_w_px: int, dpi: int = 200) -> Image.Image:
+def render_panel_c(target_w_px: int, dpi: int = 200, legend: bool = True) -> Image.Image:
     # Display terrain: a continuous ridge field along the whole hidden network
     # (1c_sample look), so the roads form one connected mountain range.
     res = 210
@@ -252,10 +253,11 @@ def render_panel_c(target_w_px: int, dpi: int = 200) -> Image.Image:
         ax.set_zlabel("Feature z", labelpad=2)
         ax.tick_params(pad=0)
         ax.set_xticklabels([]); ax.set_yticklabels([]); ax.set_zticklabels([])
-        handles = [plt.Line2D([0], [0], color="#d62728", lw=2.5,
-                              label="Recovered DM-graph")]
-        ax.legend(handles=handles, loc="upper left", frameon=False,
-                  bbox_to_anchor=(0.0, 0.98))
+        if legend:
+            handles = [plt.Line2D([0], [0], color="#d62728", lw=2.5,
+                                  label="Recovered DM-graph")]
+            ax.legend(handles=handles, loc="upper left", frameon=False,
+                      bbox_to_anchor=(0.0, 0.98))
         fig.subplots_adjust(left=0.0, right=1.0, top=0.98, bottom=0.02)
         buf = BytesIO()
         fig.savefig(buf, format="png", dpi=dpi, facecolor="white",
@@ -329,7 +331,7 @@ BLUE_FILL, BLUE_EDGE = "#a6cee3", "#1f78b4"
 GREY_FILL, GREY_EDGE = "#dcdcdc", "#9a9a9a"
 
 
-def render_panel_d(target_w_px: int, dpi: int = 200) -> Image.Image:
+def render_panel_d(target_w_px: int, dpi: int = 200, legend: bool = True) -> Image.Image:
     G, pos, min_node, max_node = _schematic_skeleton()
     # Label only the critical points (leaves/forks/root); interior corridor
     # waypoints (degree 2) stay unlabelled small dots.
@@ -379,13 +381,14 @@ def render_panel_d(target_w_px: int, dpi: int = 200) -> Image.Image:
                 va="center", ha="right", fontsize=12)
 
         # Legend: grey = a DM-path, blue = the min-max pair.
-        ax.add_patch(MplPolygon([[0, 0]], closed=True, facecolor=GREY_FILL,
-                                edgecolor=GREY_EDGE, label="DM-path (corridor)"))
-        ax.add_patch(MplPolygon([[0, 0]], closed=True, facecolor=BLUE_FILL,
-                                edgecolor=BLUE_EDGE, label="min–max pair"))
-        ax.legend(loc="upper right", frameon=False, fontsize=17,
-                  handlelength=1.3, borderaxespad=0.2,
-                  bbox_to_anchor=(1.0, 1.0))
+        if legend:
+            ax.add_patch(MplPolygon([[0, 0]], closed=True, facecolor=GREY_FILL,
+                                    edgecolor=GREY_EDGE, label="DM-path (corridor)"))
+            ax.add_patch(MplPolygon([[0, 0]], closed=True, facecolor=BLUE_FILL,
+                                    edgecolor=BLUE_EDGE, label="min–max pair"))
+            ax.legend(loc="upper right", frameon=False, fontsize=17,
+                      handlelength=1.3, borderaxespad=0.2,
+                      bbox_to_anchor=(1.0, 1.0))
 
         ax.set_xlim(-4.7, 4.7)
         ax.set_ylim(y0, y1 + 0.15)
@@ -492,17 +495,17 @@ def main() -> None:
     top_row.paste(panel_b_lab, (panel_a_lab.size[0], 0))
 
     print("Rendering panel C (density-terrain DM-G intuition)...")
-    c_w = target_w // 2
+    # D (the primitives pair) carries two sub-panels, so give it the wider
+    # column; C fills the narrower one nearly fully.
+    c_w = int(target_w * 0.34)
     d_w = target_w - c_w
-    # Render C a bit smaller than its column and centre it (terrain reads less
-    # dominant next to the schematic).
-    c_shrink = 0.84
+    c_shrink = 0.95
     panel_c = fit_width(render_panel_c(c_w), int(c_w * c_shrink))
     c_box = Image.new("RGB", (c_w, panel_c.size[1]), color=(255, 255, 255))
     c_box.paste(panel_c, ((c_w - panel_c.size[0]) // 2, 0))
     panel_c = c_box
-    print("Rendering panel D (DM-path decomposition schematic)...")
-    panel_d = fit_width(render_panel_d(d_w), d_w)
+    print("Rendering panel D (DM-cycle + DM-path primitives pair)...")
+    panel_d = fit_width(render_pair(d_w * 2), d_w)
     bottom_h = max(panel_c.size[1], panel_d.size[1])
     panel_c = pad_to_height(panel_c, bottom_h)
     panel_d = pad_to_height(panel_d, bottom_h)

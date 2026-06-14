@@ -2,15 +2,17 @@
 
 Small-multiples grid: ``n_families`` rows x 2 columns. Each row is a
 method family (DM-WKC, Mapper, KP-MoSeq); each column is a quality
-metric (negated internal consistency on the left, negated MMD on the
-right). Within a panel, one box per coverage tick pools per-(transition,
-seed) cells from that family at that coverage. Y-scale shared per
-column so families can be compared by eye-tracking down a column.
+metric (internal inconsistency = within-cluster DTW distance on the
+left, MMD distance to ground truth on the right). Within a panel, one
+box per coverage tick pools per-(transition, seed) cells from that
+family at that coverage. Y-scale shared per column so families can be
+compared by eye-tracking down a column.
 
-Both axes are negated so up-and-right is the ideal regime: tighter
-clusters, broader coverage. The earlier module name ``method_scatter``
-was a holdover from a literal scatter prototype; the rendered figure has
-been boxplot panels for some time.
+Both axes are raw distances, so lower is better: down-and-right is the
+ideal regime (tighter clusters / closer to ground truth, broader
+coverage). The earlier module name ``method_scatter`` was a holdover
+from a literal scatter prototype; the rendered figure has been boxplot
+panels for some time.
 
 Reads:
   outputs/analysis/feature_analysis/dtw_comparison_table.csv
@@ -192,8 +194,8 @@ def render(df: pd.DataFrame, cfg: PanelsConfig) -> Path:
     # (metric key, y-axis label). Metric goes on the y-axis; each row is one
     # family (a single color), named only in the legend below.
     panels = [
-        ("consistency", "Internal consistency"),
-        ("mmd", "Similarity to ground truth"),
+        ("consistency", "Internal inconsistency (DTW distance)"),
+        ("mmd", "GT alignment difference (MMD distance)"),
     ]
 
     fam_visible = [f for f in FAMILY_ORDER if (summary["family"] == f).any()]
@@ -217,8 +219,9 @@ def render(df: pd.DataFrame, cfg: PanelsConfig) -> Path:
             color = FAMILY_COLOR[fam]
             sub = summary[summary["family"] == fam]
             for cov_val in sorted(sub["coverage"].unique()):
-                cells = -sub.loc[sub["coverage"] == cov_val,
-                                 key].astype(float).to_numpy()
+                # Raw distances (DTW consistency, MMD): lower is better, no negation.
+                cells = sub.loc[sub["coverage"] == cov_val,
+                                key].astype(float).to_numpy()
                 cells = cells[~np.isnan(cells)]
                 if cells.size == 0:
                     continue

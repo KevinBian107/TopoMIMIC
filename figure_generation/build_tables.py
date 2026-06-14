@@ -19,6 +19,7 @@ FA   = REPO / "outputs/analysis/feature_analysis"
 WA   = REPO / "outputs/analysis/tables/warping_analysis"
 SS   = REPO / "outputs/analysis/scale_sweep/v1/v1/cfg_01f5a4b3/discovery"
 KS   = REPO / "outputs/analysis/method_analysis/k_sweep"
+PPS  = REPO / "outputs/analysis/method_analysis/path_persistence_sweep"
 OUT  = REPO / "paper/tables"
 
 # Drop the uniform-Wasserstein control + all classifier columns.
@@ -1171,6 +1172,46 @@ def appendix_k_sweep() -> TableSpec:
     return TableSpec("appendix_k_sweep", "\n".join(lines) + "\n")
 
 
+def _pp_table(df, value_cols: list[tuple[str, str, str]], header: str) -> str:
+    """Path-persistence table body grouped by space, one row per delta multiplier
+    (production mult=0 in bold). value_cols = [(csv_col, fmt, _)]."""
+    spaces = [("intention", "Intention"), ("qpos", "Qpos"), ("ekp", "EKP")]
+    ncol = "c" * (len(value_cols))
+    lines = [rf"\begin{{tabular}}{{ll{ncol}}}", r"\toprule", header, r"\midrule"]
+    for si, (sp, disp) in enumerate(spaces):
+        sub = df[df.space == sp].sort_values("mult")
+        for ki, (_, r) in enumerate(sub.iterrows()):
+            m = r["mult"]
+            mc = rf"\textbf{{{m:g}}}" if m == 0 else f"{m:g}"
+            cell = disp if ki == 0 else ""
+            vals = " & ".join(fmt.format(r[c]) for c, fmt, _ in value_cols)
+            lines.append(f"{cell} & {mc} & {vals} \\\\")
+        if si < len(spaces) - 1:
+            lines.append(r"\midrule")
+    lines += [r"\bottomrule", r"\end{tabular}"]
+    return "\n".join(lines) + "\n"
+
+
+def appendix_path_persistence_ami() -> TableSpec:
+    """appendix_path_persistence_ami.tex — transition information of the DMP
+    coarse-graining vs the path-selection persistence multiplier."""
+    df = pd.read_csv(PPS / "ami_vs_delta.csv")
+    header = r"Space & $\delta_{\mathrm{path}}/\delta$ & paths & $I(T;Y)$ & AMI & $H(T)$ \\"
+    text = _pp_table(df, [("n_paths", "{:.0f}", ""), ("I_TY", "{:.3f}", ""),
+                          ("AMI", "{:.3f}", ""), ("H_T", "{:.2f}", "")], header)
+    return TableSpec("appendix_path_persistence_ami", text)
+
+
+def appendix_path_persistence_down() -> TableSpec:
+    """appendix_path_persistence_down.tex — downstream DMP alignment vs the
+    path-selection persistence multiplier (mult=0 = production DMP)."""
+    df = pd.read_csv(PPS / "downstream_vs_delta.csv")
+    header = r"Space & $\delta_{\mathrm{path}}/\delta$ & DTW & MMD & KID & cov \\"
+    text = _pp_table(df, [("dtw", "{:.3f}", ""), ("mmd", "{:.3f}", ""),
+                          ("kid", "{:.3f}", ""), ("cov", "{:.1f}", "")], header)
+    return TableSpec("appendix_path_persistence_down", text)
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--check", action="store_true", help="dry-run; print but don't write")
@@ -1188,6 +1229,8 @@ def main():
         appendix_coverage(),
         appendix_scale_sweep(),
         appendix_k_sweep(),
+        appendix_path_persistence_ami(),
+        appendix_path_persistence_down(),
     ]
     write_tables(specs, dry=args.check)
 

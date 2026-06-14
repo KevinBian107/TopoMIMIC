@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Build paper/figures/figure2.png from the transition_projections demo
-outputs.
+"""Build paper/figures/figure3.png from the transition_projections demo
+outputs (manuscript Figure 3: DM-cycles).
 
-Main figure 2 = vertical stack of (A) the intention-only t-SNE panel and
+Main figure = vertical stack of (A) the intention-only t-SNE panel and
 (B) the intention-only DM-path filmstrip. Both source PNGs are produced
 directly by demos.demo_transition_projections (with stripped suptitles).
 
@@ -22,7 +22,7 @@ FILM_INT_SRC = REPO / "outputs/demos/illustrative/transition_projections/transit
 PANEL_FULL_SRC = REPO / "outputs/demos/illustrative/transition_projections/transition_panel_tsne.png"
 FILM_FULL_SRC = REPO / "outputs/demos/illustrative/transition_projections/transition_filmstrips.png"
 
-FIG2_OUT = REPO / "paper/figures/figure2.png"
+FIG2_OUT = REPO / "paper/figures/figure3.png"
 APPENDIX_PANEL = REPO / "paper/appendix_figures/appendix_transition_panel_tsne.png"
 APPENDIX_FILM = REPO / "paper/appendix_figures/appendix_transition_filmstrips.png"
 

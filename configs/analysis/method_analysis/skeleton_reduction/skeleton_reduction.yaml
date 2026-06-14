@@ -1,0 +1,8 @@
+# Trajectory-to-skeleton reduction summary (Appendix table).
+# Reads the cached DM-skeletons and reports the Step-1 compression per space.
+spaces: [intention, qpos, ekp]
+extraction_out: outputs/extraction/dm_pipeline_{space}
+extraction_cfg: configs/extraction/dm_pipeline_{space}.yaml
+target_len: 100
+out_csv: outputs/analysis/method_analysis/skeleton_reduction/reduction.csv
+out_tex: paper/tables/appendix_skeleton_reduction.tex

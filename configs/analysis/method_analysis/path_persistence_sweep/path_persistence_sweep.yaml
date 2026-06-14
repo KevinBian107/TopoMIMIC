@@ -1,0 +1,27 @@
+# Sweep of the path-SELECTION persistence threshold (dm.path_persistence_delta).
+# delta_path = multiplier x per-space construction delta (Table tab:dm-hp).
+# Reuses cached DM graph + filtration; regenerates paths with the production
+# code at each delta (no C++ re-extraction).
+
+delta_multipliers: [0.0, 0.5, 1.0, 2.0, 4.0]
+construct_delta: {intention: 1.0, qpos: 0.2, ekp: 0.1}
+spaces: ["intention", "qpos", "ekp"]
+
+prod_extraction_out: "outputs/extraction/dm_pipeline_{space}"
+sandbox_dir: "outputs/analysis/method_analysis/path_persistence_sweep"
+
+labels_csv: "behavior_labels/rodent_labels.csv"
+n_clips: 842
+frames_per_clip: 500
+y_granularity: "directed"
+min_class_count: 5
+n_bootstrap: 100
+
+segment_gap_limit: 50
+min_primitive_frames: 30
+
+# delta_m0 == production DMP (path_persistence_delta=0.0), reused from
+# outputs/analysis/feature_analysis/; only the new multipliers are computed.
+downstream_multipliers: [1.0, 4.0]
+dm_path_methods: ["w2_dmp_int_kmeans", "w2_dmp_qpos_kmeans", "w2_dmp_ekp_kmeans"]
+python_bin: "/home/jovyan/vast/kaiwen/track-mjx/.venv/bin/python3"
