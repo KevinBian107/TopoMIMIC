@@ -37,7 +37,7 @@ stationary:
 clustering:
   target_len: 100
   only_max: true
-  mds_components: 3
+  mds_components: 20   # matches the DMC-intention selection (Appendix MDS sweep)
 
 redundancy:
   enabled: true

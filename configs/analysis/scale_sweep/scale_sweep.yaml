@@ -22,6 +22,7 @@ kpms:
   full_iters: 300
   latent_dim: 10
   model_type: arhmm
+  modalities: [keypoint, intention]
   selection:
     criterion: eml
     min_usage_ratio: 0.8

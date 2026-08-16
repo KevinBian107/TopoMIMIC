@@ -38,7 +38,7 @@ stationary:
 clustering:
   target_len: 100
   only_max: true
-  mds_components: 3
+  mds_components: 40   # matches the DMC-qpos selection (Appendix MDS sweep)
 
 redundancy:
   enabled: true

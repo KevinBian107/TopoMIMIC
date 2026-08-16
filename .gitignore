@@ -2,6 +2,7 @@
 .claude
 scratch/
 tmp_code
+tmp/
 
 # logging, data, ckpts
 wandb/
@@ -17,6 +18,7 @@ walker/
 outputs/
 outputs_archive/
 paper/tables
+paper/tables_reduced
 paper/appendix_figures
 paper/figures
 paper/
@@ -30,4 +32,7 @@ figure_generation/external_data/
 
 __pycache__
 
-TopoMimic-website/
+TopoMimic-website/backups/
+
+# local pre-rerun backups (2026-08-04)
+/backups/

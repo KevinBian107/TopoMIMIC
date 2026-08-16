@@ -1,0 +1,46 @@
+# Reduced-manuscript variant of information_loss.yaml.
+#
+# Identical to that config except that the GRU-VAE method is omitted: our VAE
+# implementation is fully posterior-collapsed, so its labels partition
+# numerical noise and reporting them would misrepresent VAME. See the
+# "Posterior Collapse in the GRU-VAE Baseline" appendix in paper/main_reduced.tex.
+#
+# Writes to its own output_dir so the full-manuscript products under
+# outputs/analysis/method_analysis/information_loss/ stay intact.
+
+output_dir: outputs/analysis/method_analysis/information_loss_reduced
+
+dataset: rodent
+n_clips: 842
+frames_per_clip: 500
+labels_csv: behavior_labels/rodent_labels.csv
+
+# 8-class directed transition labels (collapsed to whatever survives
+# min_class_count). Set to "unordered" for 6 unordered pairs, or
+# "directed_turn" for the 15-class direction-aware variant.
+y_granularity: directed
+min_class_count: 5
+
+n_bootstrap: 100
+rng_seed: 0
+
+methods:
+  # DM cycles: instance-level per-frame primitive ID (each cycle = own pid).
+  - {name: DMC-Int,  kind: dm_cycle, feature_space: intention, extraction_dir: outputs/extraction/dm_pipeline_intention}
+  - {name: DMC-Qpos, kind: dm_cycle, feature_space: qpos,      extraction_dir: outputs/extraction/dm_pipeline_qpos}
+  - {name: DMC-EKP,  kind: dm_cycle, feature_space: ekp,       extraction_dir: outputs/extraction/dm_pipeline_ekp}
+
+  # DM paths.
+  - {name: DMP-Int,  kind: dm_path,  feature_space: intention, extraction_dir: outputs/extraction/dm_pipeline_intention}
+  - {name: DMP-Qpos, kind: dm_path,  feature_space: qpos,      extraction_dir: outputs/extraction/dm_pipeline_qpos}
+  - {name: DMP-EKP,  kind: dm_path,  feature_space: ekp,       extraction_dir: outputs/extraction/dm_pipeline_ekp}
+
+  # KPMS: T = (from-syllable, to-syllable) pair-type CATEGORY id, reused across
+  # all instances and all clips. ~10 distinct pair types.
+  - {name: KPMS-Int, kind: kpms, kpms_variant: intention, seeds: [0, 1, 2], results_pkl: outputs/experiment/transitions/kpms_intention/results.pkl, primitive_level: pair_type}
+  - {name: KPMS-KP,  kind: kpms, kpms_variant: keypoint,  seeds: [0, 1, 2], results_pkl: outputs/experiment/transitions/kpms_keypoint/results.pkl,  primitive_level: pair_type}
+
+  # Mapper: T = (node A, node B) pair-type CATEGORY id, ~5-25 distinct types.
+  - {name: Mapper-Int,  kind: mapper, feature_space: intention, seeds: [0, 1, 2], results_pkl: outputs/experiment/transitions/mapper_int/results.pkl,  primitive_level: pair_type}
+  - {name: Mapper-Qpos, kind: mapper, feature_space: qpos,      seeds: [0, 1, 2], results_pkl: outputs/experiment/transitions/mapper_qpos/results.pkl, primitive_level: pair_type}
+  - {name: Mapper-EKP,  kind: mapper, feature_space: ekp,       seeds: [0, 1, 2], results_pkl: outputs/experiment/transitions/mapper_ekp/results.pkl,  primitive_level: pair_type}

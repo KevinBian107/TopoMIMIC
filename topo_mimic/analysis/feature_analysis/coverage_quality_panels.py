@@ -208,7 +208,7 @@ def render(df: pd.DataFrame, cfg: PanelsConfig) -> Path:
     # cols = metrics; y shared per column so families compare down a column.
     fig, axes = plt.subplots(
         n_fams, 2,
-        figsize=(cfg.figsize[0] * 1.2, cfg.figsize[1] * 1.7),
+        figsize=(cfg.figsize[0] * 1.2, cfg.figsize[1] * 1.2),
         dpi=cfg.dpi, sharex="col", sharey="col", squeeze=False,
     )
 
@@ -261,7 +261,7 @@ def render(df: pd.DataFrame, cfg: PanelsConfig) -> Path:
                frameon=False, fontsize=14, bbox_to_anchor=(0.5, -0.005),
                handlelength=1.3, columnspacing=1.8)
 
-    fig.tight_layout(rect=[0.06, 0.05, 1, 0.99], h_pad=0.5, w_pad=4.5)
+    fig.tight_layout(rect=[0.05, 0.04, 1, 0.99], h_pad=0.3, w_pad=2.0)
 
     # Metric name centered on each column's y-axis, placed just left of the actual
     # tick labels (measured via get_tightbbox so it never overlaps the numbers).

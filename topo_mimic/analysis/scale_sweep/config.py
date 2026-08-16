@@ -43,6 +43,9 @@ class KPMSCfg:
     full_iters: int = 300
     latent_dim: int = 10
     model_type: str = "arhmm"
+    # Feature streams to sweep. Both are reported in the discovery table;
+    # the benchmark KPMS baselines use intention and keypoints alike.
+    modalities: list[str] = field(default_factory=lambda: ["keypoint"])
     selection: KPMSSelectionCfg = field(default_factory=KPMSSelectionCfg)
 
 

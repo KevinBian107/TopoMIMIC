@@ -57,42 +57,42 @@ methods:
     dm_source: "intention"
     enabled: true
     params:
-      mds_components: 3
+      mds_components: 20   # selected by within-cluster consistency (2026-08 sweep)
 
   - name: "w2_dmc_qpos_kmeans"
     type: "clustering"
     dm_source: "qpos"
     enabled: true
     params:
-      mds_components: 3
+      mds_components: 40   # selected by within-cluster consistency (2026-08 sweep)
 
   - name: "w2_dmc_ekp_kmeans"
     type: "clustering"
     dm_source: "ekp"
     enabled: true
     params:
-      mds_components: 3
+      mds_components: 5   # selected by within-cluster consistency (2026-08 sweep)
 
   - name: "w2_dmp_int_kmeans"
     type: "clustering"
     dm_source: "intention"
     enabled: true
     params:
-      mds_components: 3
+      mds_components: 10   # selected by within-cluster consistency (2026-08 sweep)
 
   - name: "w2_dmp_qpos_kmeans"
     type: "clustering"
     dm_source: "qpos"
     enabled: true
     params:
-      mds_components: 3
+      mds_components: 40   # selected by within-cluster consistency (2026-08 sweep)
 
   - name: "w2_dmp_ekp_kmeans"
     type: "clustering"
     dm_source: "ekp"
     enabled: true
     params:
-      mds_components: 3
+      mds_components: 40   # selected by within-cluster consistency (2026-08 sweep)
 
   - name: "w2_unif_kmeans"
     type: "clustering"
@@ -117,44 +117,51 @@ methods:
       loss_fun: "square_loss"
       max_iter: 1000
 
-  # KPMS Intention Method (tuned hyperparameters from sweep)
-  # Best config: kappa=1.35e4, latent_dim=10, num_states=15, model_type=slds
-  # Achieves intention reconstruction MSE ~0.57
+  # KPMS Intention Method.
+  # num_states comes from k_selection.n_clusters (25), NOT the value in any
+  # historical comment here. fix_heading=true because intention is fed as
+  # (T,k,1): KPMS's egocentric alignment is undefined at d=1 and silently
+  # degrades into a per-frame sign flip (2026-08 audit).
   - name: "kpms_intention"
     type: "state_space"
     enabled: true
     params:
       model_type: "slds"
+      fix_heading: true
       latent_dim: 10
       kappa: 13500
       ar_iters: 100
       full_iters: 300
       min_sustained_duration: 25
-      top_k_transitions: 10
-      min_instances: 1
+      top_k_transitions: 25
+      min_transition_instances: 3
 
-  # KPMS Keypoint Method (tuned hyperparameters from sweep)
-  # Best config: kappa=1.09e6, latent_dim=15, num_states=10, model_type=arhmm
-  # Achieves keypoint reconstruction MSE ~0.002
+  # KPMS Keypoint Method.
+  # num_states comes from k_selection.n_clusters (25). Keypoints are allocentric
+  # MuJoCo site positions, so fix_heading=false lets KPMS remove heading; the
+  # axis must be a real body axis (head vs hips), not kp_names[0]/[-1].
   - name: "kpms_keypoint"
     type: "state_space"
     enabled: true
     params:
       model_type: "arhmm"
+      fix_heading: false
+      anterior_bodyparts: ["head"]
+      posterior_bodyparts: ["hip_L", "hip_R"]
       latent_dim: 15
       kappa: 1090000
       ar_iters: 100
       full_iters: 300
       min_sustained_duration: 25
-      top_k_transitions: 10
-      min_instances: 1
+      top_k_transitions: 25
+      min_transition_instances: 3
 
   # Custom VAE Method (tuned hyperparameters from wandb sweep, run 0etcc386)
   # Best config: latent_dim=30, time_window=30, hidden_dim=512, beta=8.51
   # Achieves intention reconstruction MSE ~2.71e-05
   - name: "custom_vae"
     type: "state_space"
-    enabled: true
+    enabled: false  # excluded: posterior collapse (2026-08 audit)
     params:
       latent_dim: 30
       time_window: 30
@@ -165,8 +172,8 @@ methods:
       max_epochs: 50
       segmentation_algo: "kmeans"
       min_sustained_duration: 25
-      top_k_transitions: 10
-      min_instances: 1
+      top_k_transitions: 25
+      min_transition_instances: 3
 
   # Mapper baseline: each node on the Mapper graph becomes a cluster.
   # Inverse-density lens + CubicalCover + DBSCAN inner clustering.
@@ -181,6 +188,8 @@ methods:
       overlap_frac: 0.5
       dbscan_min_samples: 5
       min_total_frames: 0
+      top_k_transitions: 25
+      min_transition_instances: 3
 
   - name: "mapper_qpos"
     type: "state_space"
@@ -193,6 +202,8 @@ methods:
       overlap_frac: 0.5
       dbscan_min_samples: 5
       min_total_frames: 0
+      top_k_transitions: 25
+      min_transition_instances: 3
 
   - name: "mapper_ekp"
     type: "state_space"
@@ -205,6 +216,8 @@ methods:
       overlap_frac: 0.5
       dbscan_min_samples: 5
       min_total_frames: 0
+      top_k_transitions: 25
+      min_transition_instances: 3
 
 # Video rendering settings
 rendering:

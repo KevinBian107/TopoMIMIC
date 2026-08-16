@@ -63,6 +63,8 @@ def fit_kpms_model(
     modality_name: str,
     bodyparts: list[str] | None = None,
     fix_heading: bool = False,
+    anterior_bodyparts: list[str] | None = None,
+    posterior_bodyparts: list[str] | None = None,
     clear_project: bool = True,
 ) -> KPMSFitResult:
     if not HAS_KPMS:
@@ -101,8 +103,10 @@ def fit_kpms_model(
             fix_heading=fix_heading,
             bodyparts=bodyparts,
             use_bodyparts=bodyparts,
-            anterior_bodyparts=[bodyparts[0]],
-            posterior_bodyparts=[bodyparts[-1]],
+            # bodyparts[0]/[-1] is an arbitrary pair (hip_L/palm_R on the rodent
+            # marker set), which only mattered once fix_heading became False.
+            anterior_bodyparts=list(anterior_bodyparts or [bodyparts[0]]),
+            posterior_bodyparts=list(posterior_bodyparts or [bodyparts[-1]]),
             verbose=False,
             latent_dim=hyperparams.latent_dim,
             num_states=n_states,
@@ -191,7 +195,10 @@ def fit_kpms_intention(
         seed=seed,
         modality_name="intention",
         bodyparts=bodyparts,
-        fix_heading=False,
+        # Intention is fed as (T, k, 1). KPMS's egocentric alignment is undefined
+        # at d=1 and degrades silently into a per-frame sign flip, so the heading
+        # must be pinned rather than estimated (2026-08 audit).
+        fix_heading=True,
         clear_project=clear_project,
     )
 
@@ -220,7 +227,11 @@ def fit_kpms_keypoints(
         seed=seed,
         modality_name="keypoint",
         bodyparts=kp_names,
-        fix_heading=True,
+        # Keypoints are allocentric MuJoCo site positions, so heading must be
+        # estimated and removed, from a real body axis (2026-08 audit).
+        fix_heading=False,
+        anterior_bodyparts=[b for b in ("head",) if b in kp_names] or None,
+        posterior_bodyparts=[b for b in ("hip_L", "hip_R") if b in kp_names] or None,
         clear_project=clear_project,
     )
 

@@ -93,6 +93,51 @@ def _assign_frame_to_single_node(
     return assignments
 
 
+class _AdaptiveDBSCAN:
+    """DBSCAN whose radius tracks the local scale of each cover element.
+
+    tda-mapper applies one clustering object to every cover element. Because the
+    lens here is an inverse-density score, those elements are density strata, so
+    a single global eps is far too large in the dense strata (they collapse to
+    one node) and too small in the sparse ones (they become all noise). This
+    derives eps from each element's own k-NN distances instead.
+
+    Must never raise: tda-mapper's FailSafeClustering turns an exception into a
+    single all-points cluster without surfacing it.
+    """
+
+    def __init__(self, scale: float, k: int = 3, min_samples: int = 5):
+        self.scale = float(scale)
+        self.k = int(k)
+        self.min_samples = int(min_samples)
+        self.labels_ = None
+        self.eps_ = None
+
+    def fit(self, X, y=None):
+        from sklearn.cluster import DBSCAN
+        from sklearn.neighbors import NearestNeighbors
+
+        X = np.asarray(X)
+        n = len(X)
+        if n < self.min_samples:
+            self.labels_ = np.full(n, -1, dtype=np.int64)
+            return self
+
+        nn = NearestNeighbors(n_neighbors=min(self.k + 1, n)).fit(X)
+        dists, _ = nn.kneighbors(X)
+        local = float(np.median(np.sqrt(np.mean(dists[:, 1:] ** 2, axis=1))))
+        if not np.isfinite(local) or local <= 0:
+            # degenerate element (duplicate points); one cluster is the sane read
+            self.labels_ = np.zeros(n, dtype=np.int64)
+            return self
+
+        self.eps_ = self.scale * local
+        self.labels_ = DBSCAN(
+            eps=self.eps_, min_samples=self.min_samples
+        ).fit_predict(X)
+        return self
+
+
 class MapperMethod(BaseMethod):
     """
     Mapper-based benchmark baseline. Each node on the Mapper graph becomes its
@@ -121,6 +166,11 @@ class MapperMethod(BaseMethod):
         self.overlap_frac = float(self.params.get("overlap_frac", 0.5))
         self.dbscan_eps = self.params.get("dbscan_eps", "auto")
         self.dbscan_min_samples = int(self.params.get("dbscan_min_samples", 5))
+        # "global" reproduces the published runs (one eps for every cover
+        # element). "per_bin" scales eps to each element's own k-NN distance,
+        # which the inverse-density lens makes necessary; see _AdaptiveDBSCAN.
+        self.eps_mode = str(self.params.get("eps_mode", "global"))
+        self.eps_scale = float(self.params.get("eps_scale", 3.0))
         self.min_total_frames = int(self.params.get("min_total_frames", 0))
         # When the concatenated Takens-embedded point cloud has more points
         # than this cap, build the Mapper graph on a random subsample of size
@@ -200,16 +250,23 @@ class MapperMethod(BaseMethod):
 
         cover = CubicalCover(n_intervals=self.n_intervals, overlap_frac=self.overlap_frac)
         eps = self.dbscan_eps
-        if eps == "auto":
-            rng = np.random.default_rng(seed)
-            sub_n = min(1000, len(sub_pts))
-            sub = sub_pts[rng.choice(len(sub_pts), size=sub_n, replace=False)]
-            from sklearn.metrics import pairwise_distances
-            d = pairwise_distances(sub)
-            eps = float(np.median(d[d > 0]))
-            print(f"[Mapper/{self.dm_key}] auto dbscan_eps = {eps:.4f}")
-
-        inner = DBSCAN(eps=float(eps), min_samples=self.dbscan_min_samples)
+        if self.eps_mode == "per_bin":
+            inner = _AdaptiveDBSCAN(
+                scale=self.eps_scale, k=self.knn_k,
+                min_samples=self.dbscan_min_samples,
+            )
+            eps = float("nan")  # set per cover element, not globally
+            print(f"[Mapper/{self.dm_key}] per-bin eps, scale={self.eps_scale}")
+        else:
+            if eps == "auto":
+                rng = np.random.default_rng(seed)
+                sub_n = min(1000, len(sub_pts))
+                sub = sub_pts[rng.choice(len(sub_pts), size=sub_n, replace=False)]
+                from sklearn.metrics import pairwise_distances
+                d = pairwise_distances(sub)
+                eps = float(np.median(d[d > 0]))
+                print(f"[Mapper/{self.dm_key}] auto dbscan_eps = {eps:.4f}")
+            inner = DBSCAN(eps=float(eps), min_samples=self.dbscan_min_samples)
         mapper = MapperAlgorithm(cover=cover, clustering=inner)
         graph = mapper.fit_transform(sub_pts, sub_lens)
         print(f"[Mapper/{self.dm_key}] mapper graph: {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges")
@@ -253,6 +310,8 @@ class MapperMethod(BaseMethod):
         stats["mapper_n_nodes"] = int(graph.number_of_nodes())
         stats["mapper_n_edges"] = int(graph.number_of_edges())
         stats["mapper_dbscan_eps"] = float(eps)
+        stats["mapper_eps_mode"] = self.eps_mode
+        stats["mapper_eps_scale"] = self.eps_scale
         stats["dm_key"] = self.dm_key
 
         print_transition_stats(stats)

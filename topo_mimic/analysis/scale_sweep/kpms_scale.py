@@ -1,4 +1,5 @@
-"""KPMS scale sweep: kappa x num_states, keypoints only, EML + usage-ratio selector.
+"""KPMS scale sweep: kappa x num_states over a chosen modality (keypoint or
+intention), EML + usage-ratio selector.
 
 Per kappa, multiple num_states fits share a project_dir so that
 `kpms.expected_marginal_likelihoods(project_dir, model_names)` can compare them.
@@ -26,6 +27,7 @@ import yaml
 from topo_mimic.hyperparam_sweep.kpms.config import KPMSHyperparams
 from topo_mimic.hyperparam_sweep.kpms.dual_fit import (
     KPMSFitResult,
+    fit_kpms_intention,
     fit_kpms_keypoints,
 )
 from topo_mimic.hyperparam_sweep.metrics import (
@@ -79,8 +81,11 @@ def _kappa_tag(kappa: float) -> str:
     return f"1e{exponent}"
 
 
-def _variant_id(kappa: float, num_states: int) -> str:
-    return f"kpms_k{_kappa_tag(kappa)}_n{num_states}"
+def _variant_id(kappa: float, num_states: int, modality: str = "keypoint") -> str:
+    """Variant id, tagged by modality so intention and keypoint columns stay distinct
+    in the discovery tables."""
+    tag = {"keypoint": "kp", "intention": "int"}[modality]
+    return f"kpms_{tag}_k{_kappa_tag(kappa)}_n{num_states}"
 
 
 def _kpms_fit_result_to_cluster_dict(
@@ -165,6 +170,7 @@ def run_kpms_sweep(
     output_root: Path,
     force: bool = False,
     max_fits: int | None = None,
+    modality: str = "keypoint",
 ) -> tuple[list[KPMSVariantResult], dict[float, KPMSSelection]]:
     """Sweep kappa x num_states; per kappa compute EML across num_states models and select best.
 
@@ -199,7 +205,7 @@ def run_kpms_sweep(
                 log.info(f"[KPMS] max_fits reached; stopping at κ={kappa} n_states={num_states}")
                 break
 
-            variant_id = _variant_id(kappa, num_states)
+            variant_id = _variant_id(kappa, num_states, modality)
             variant_out_dir = kappa_dir / f"states_{num_states}" / f"seed_{seed}"
             metrics_path = variant_out_dir / "metrics.json"
 
@@ -249,8 +255,9 @@ def run_kpms_sweep(
                     num_states=num_states,
                     kappa=float(kappa),
                 )
-            fit_result = fit_kpms_keypoints(
-                keypoint_data=keypoints,
+            fit_fn = fit_kpms_keypoints if modality == "keypoint" else fit_kpms_intention
+            data_kw = "keypoint_data" if modality == "keypoint" else "intention_data"
+            fit_result = fit_fn(**{data_kw: keypoints},
                 n_states=num_states,
                 project_dir=str(kpms_project_dir),
                 hyperparams=hp,
