@@ -1,21 +1,17 @@
 #!/usr/bin/env python3
 """Build paper/appendix_figures/appendix_stationary.png.
 
-Four panels:
+Three panels, in one row at a single shared height:
   (A) Root displacement per frame ($|\\Delta x|, |\\Delta y|, |\\Delta z|$),
       with-cycle vs no-cycle clips ($n=50$ each).
   (B) Pool size $n=5$ bar: moving vs stationary mean longest DM-loop length.
   (C) Stationary-vs-moving line plot, sweeping pool size $n\\in\\{2,3,4,5\\}$
       with shaded SEM.
-  (D) Chronophotography filmstrip grid of 8 representative no-cycle clips.
-
-Top row carries (A) (B) (C) at a single shared height; (D) sits beneath at
-full width.
 
 Panels A and B inherit their data from the old main Figure 3 (root
-displacement bars and pool=5 stationary-vs-moving bar). Panel C is the
-original line-sweep panel; panel D is the filmstrip grid (was panel E
-before the body-variance panel was removed).
+displacement bars and pool=5 stationary-vs-moving bar); C is the original
+line-sweep panel. A filmstrip grid of no-cycle clips was panel D; it restated
+the same claim as A-C in a weaker form and was dropped.
 """
 from __future__ import annotations
 
@@ -38,8 +34,10 @@ from topo_mimic.analysis.method_analysis.property.stationary import (  # noqa: E
     find_cycle_and_no_cycle_clips,
 )
 
-FILMSTRIP_SRC = REPO / "outputs/analysis/method_analysis/stationary_clips/stationary_filmstrip_grid.png"
+# Panel width used to be inherited from the (now dropped) filmstrip grid.
+PANEL_ROW_WIDTH = 3204
 OUT_PATH = REPO / "paper/appendix_figures/appendix_stationary.png"
+NEURREPS_OUT_PATH = REPO / "paper/bian_NeurReps_2026/appendix_figures/appendix_stationary.png"
 H5_PATH = REPO / "data/rodent_ar.h5"
 DM_RESULTS_DIR = REPO / "outputs/extraction/dm_pipeline_intention"
 BATCH_PKL = REPO / "outputs/analysis/method_analysis/batch_incompressibility/all_results.pkl"
@@ -264,10 +262,9 @@ def add_label(img: Image.Image, label: str, pad: int = 70,
 
 
 def main() -> None:
-    film = Image.open(FILMSTRIP_SRC).convert("RGB")
-    target_w = film.size[0]
+    target_w = PANEL_ROW_WIDTH
 
-    # Top row: A (root displacement) + B (pool=5 bar) + C (n in {2..5} line).
+    # A (root displacement) + B (pool=5 bar) + C (n in {2..5} line).
     # All three rendered at the same absolute pixel height so axes line up.
     panel_a_w = target_w // 3
     panel_b_w = target_w // 4
@@ -292,25 +289,15 @@ def main() -> None:
     b_labeled = add_label(b_img, "(B)", pad=70, font_size=60)
     c_labeled = add_label(c_img, "(C)", pad=70, font_size=60)
 
-    top_row = Image.new("RGB", (target_w, a_labeled.size[1]),
-                        color=(255, 255, 255))
-    top_row.paste(a_labeled, (0, 0))
-    top_row.paste(b_labeled, (a_labeled.size[0], 0))
-    top_row.paste(c_labeled, (a_labeled.size[0] + b_labeled.size[0], 0))
+    out = Image.new("RGB", (target_w, a_labeled.size[1]), color=(255, 255, 255))
+    out.paste(a_labeled, (0, 0))
+    out.paste(b_labeled, (a_labeled.size[0], 0))
+    out.paste(c_labeled, (a_labeled.size[0] + b_labeled.size[0], 0))
 
-    # Bottom row: D (filmstrip) at full width — was panel E before the
-    # body-variance panel was removed.
-    d_labeled = add_label(film, "(D)", pad=70, font_size=60)
-
-    gap = 16
-    total_h = top_row.size[1] + gap + d_labeled.size[1]
-    out = Image.new("RGB", (target_w, total_h), color=(255, 255, 255))
-    out.paste(top_row, (0, 0))
-    out.paste(d_labeled, (0, top_row.size[1] + gap))
-
-    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    out.save(OUT_PATH, dpi=(200, 200))
-    print(f"wrote {OUT_PATH}  (size={out.size})")
+    for path in (OUT_PATH, NEURREPS_OUT_PATH):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        out.save(path, dpi=(200, 200))
+        print(f"wrote {path}  (size={out.size})")
 
 
 if __name__ == "__main__":

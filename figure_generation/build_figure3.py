@@ -21,7 +21,7 @@ from topo_mimic.analysis.feature_analysis.coverage_quality_panels import (  # no
     build_coverage_quality_panels,
 )
 
-OUT_PATH = REPO / "paper/figures/figure4.png"
+OUT_PATH = REPO / "paper/bian_NeurReps_2026/figures/figure4.png"
 
 
 def main() -> None:

@@ -61,6 +61,115 @@ def _knn_inverse_density(points: np.ndarray, k: int) -> np.ndarray:
     return np.sqrt(np.mean(neigh_dist ** 2, axis=1))
 
 
+def _canonical_sign(v: np.ndarray) -> np.ndarray:
+    """Pin the sign of an eigenvector deterministically.
+
+    Eigensolvers return +/-v arbitrarily. This is not cosmetic here: CubicalCover
+    enumerates intervals in increasing lens order, so node ids are monotone in bin
+    index, and `_assign_frame_to_single_node` breaks ties toward the smallest id,
+    sending every overlap point to the lower-lens bin. Flipping the sign mirrors
+    the lens and re-partitions every overlap region, silently changing all cluster
+    ids between two runs of an identical config.
+    """
+    s = float(np.sum(v ** 3))
+    if s == 0.0 or not np.isfinite(s):
+        s = float(v[int(np.argmax(np.abs(v)))])
+    if s == 0.0:
+        nz = np.flatnonzero(v)
+        s = float(v[nz[0]]) if nz.size else 1.0
+    return v if s >= 0 else -v
+
+
+def _fiedler_lens(
+    points: np.ndarray,
+    k: int = 15,
+    max_k: int = 100,
+    rank_normalize: bool = False,
+    random_state: int = 0,
+    min_giant_frac: float = 0.90,
+) -> np.ndarray:
+    """First non-trivial eigenvector of the normalized Laplacian of a k-NN graph.
+
+    A disconnected graph is the dominant silent-failure mode: `spectral_embedding`
+    does not raise on one, it returns an eigenvector of eigenvalue 0, i.e. a
+    component indicator, which is finite and non-constant and so passes every
+    validator downstream while being piecewise constant. We therefore grow k until
+    the graph is connected, and only then fall back to the giant component.
+
+    Unweighted connectivity is used rather than distance-weighted edges because the
+    qpos/ekp spaces have heterogeneous per-dimension scales, so one global Gaussian
+    bandwidth would be dominated by the densest region.
+    """
+    import warnings
+
+    from scipy.sparse.csgraph import connected_components
+    from sklearn.manifold import spectral_embedding
+    from sklearn.neighbors import NearestNeighbors, kneighbors_graph
+
+    n = len(points)
+    k_used = int(min(k, max(1, n - 1)))
+    k_cap = int(min(max_k, n - 1))
+    while True:
+        adj = kneighbors_graph(points, k_used, mode="connectivity", include_self=False)
+        # maximum(), not 0.5*(A+A.T): the latter half-weights one-directional edges.
+        adj = adj.maximum(adj.T)
+        n_comp, comp_labels = connected_components(adj, directed=False)
+        if n_comp == 1 or k_used >= k_cap:
+            break
+        k_used = int(min(k_used * 2, k_cap))
+
+    if n_comp == 1:
+        keep = np.arange(n)
+        adj_sub = adj
+    else:
+        giant = int(np.argmax(np.bincount(comp_labels)))
+        keep = np.flatnonzero(comp_labels == giant)
+        frac = len(keep) / n
+        if frac < min_giant_frac:
+            raise RuntimeError(
+                f"Fiedler lens: graph still has {n_comp} components at k={k_used} and the "
+                f"giant one holds only {frac:.1%} of points; refusing to invent lens values."
+            )
+        adj_sub = adj[keep][:, keep]
+
+    vec, failures = None, []
+    for solver in ("amg", "arpack", "lobpcg"):
+        try:
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "error", message=".*not fully connected.*", category=UserWarning
+                )
+                vec = spectral_embedding(
+                    adj_sub, n_components=1, drop_first=True, norm_laplacian=True,
+                    eigen_solver=solver, random_state=random_state,
+                ).ravel()
+            break
+        except Exception as exc:  # noqa: BLE001 - fall through to the next solver
+            failures.append(f"{solver}: {type(exc).__name__}: {exc}")
+            vec = None
+    if vec is None:
+        raise RuntimeError("Fiedler lens: every eigensolver failed -> " + " | ".join(failures))
+
+    out = np.empty(n, dtype=float)
+    out[keep] = vec
+    if len(keep) < n:
+        rest = np.setdiff1d(np.arange(n), keep)
+        nn = NearestNeighbors(n_neighbors=1).fit(points[keep])
+        out[rest] = vec[nn.kneighbors(points[rest])[1][:, 0]]
+
+    out = _canonical_sign(out)
+    if out.std() > 0:
+        out = out / out.std()
+    if rank_normalize:
+        out = np.argsort(np.argsort(out)) / max(1, n - 1)
+
+    print(
+        f"[fiedler] n={n} k_used={k_used} components={n_comp} "
+        f"giant_frac={len(keep)/n:.3f} rank_norm={rank_normalize}"
+    )
+    return out
+
+
 def _assign_frame_to_single_node(
     graph: Any,
     lens_values: np.ndarray,
@@ -162,6 +271,13 @@ class MapperMethod(BaseMethod):
         self.takens_m = int(self.params.get("takens_m", 3))
         self.takens_tau = int(self.params.get("takens_tau", 6))
         self.knn_k = int(self.params.get("knn_k", 3))
+        # Lens is selectable so the historical inverse-density runs stay reproducible.
+        # Default stays "knn_density" so untouched configs are byte-identical; the
+        # shipped Mapper configs select "fiedler" explicitly.
+        self.lens_name = str(self.params.get("lens", "knn_density"))
+        self.lens_params = dict(self.params.get("lens_params", {}))
+        if self.lens_name == "knn_density":
+            self.lens_params.setdefault("knn_k", self.knn_k)
         self.n_intervals = int(self.params.get("n_intervals", 10))
         self.overlap_frac = float(self.params.get("overlap_frac", 0.5))
         self.dbscan_eps = self.params.get("dbscan_eps", "auto")
@@ -231,22 +347,32 @@ class MapperMethod(BaseMethod):
         all_pts = np.concatenate(pts_list, axis=0)
         print(f"[Mapper/{self.dm_key}] embedded points: {all_pts.shape}")
 
-        lens = _knn_inverse_density(all_pts, k=self.knn_k)
-        print(f"[Mapper/{self.dm_key}] lens range: [{lens.min():.4f}, {lens.max():.4f}]")
-
         # Subsample for graph fit if the full point cloud is too large for
         # tdamapper. Assignments for non-subsample points are propagated via
-        # 1-NN in the subsample at the end.
+        # 1-NN in the subsample at the end. This must happen BEFORE the lens is
+        # computed, because a graph-scoped lens has to be built on exactly the
+        # set Mapper will cover.
         if len(all_pts) > self.max_points:
             rng_sub = np.random.default_rng(seed + 991)
             sub_idx = rng_sub.choice(len(all_pts), size=self.max_points, replace=False)
             sub_pts = all_pts[sub_idx]
-            sub_lens = lens[sub_idx]
             print(f"[Mapper/{self.dm_key}] subsampling {len(all_pts)} -> {self.max_points} points for graph fit")
         else:
             sub_idx = np.arange(len(all_pts))
             sub_pts = all_pts
-            sub_lens = lens
+
+        from topo_mimic.analysis.scale_sweep.lenses import LENS_SCOPE, compute_lens
+
+        if LENS_SCOPE.get(self.lens_name, "pointwise") == "graph":
+            # The Fiedler vector of the full cloud restricted to a random subsample
+            # is not the Fiedler vector of that subsample, so compute it directly.
+            sub_lens = compute_lens(self.lens_name, sub_pts, self.lens_params)
+        else:
+            sub_lens = compute_lens(self.lens_name, all_pts, self.lens_params)[sub_idx]
+        print(
+            f"[Mapper/{self.dm_key}] lens={self.lens_name} "
+            f"range: [{sub_lens.min():.4f}, {sub_lens.max():.4f}]"
+        )
 
         cover = CubicalCover(n_intervals=self.n_intervals, overlap_frac=self.overlap_frac)
         eps = self.dbscan_eps

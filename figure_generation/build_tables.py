@@ -43,7 +43,7 @@ def _latest_scale_sweep_discovery() -> Path:
 SS   = _latest_scale_sweep_discovery()
 KS   = REPO / "outputs/analysis/method_analysis/k_sweep"
 PPS  = REPO / "outputs/analysis/method_analysis/path_persistence_sweep"
-OUT  = REPO / "paper/tables"
+OUT  = REPO / "paper/bian_NeurReps_2026/tables"
 
 # Drop the uniform-Wasserstein control + all classifier columns.
 DROP_METHODS = {"w2_unif_kmeans", "classification"}
@@ -90,6 +90,40 @@ FAMILIES = {
     "KPMS"    : ["kpms_intention", "kpms_keypoint"],
 }
 FAMILY_ORDER = ["DMC$^*$", "DMP$^*$", "Mapper", "KPMS"]
+
+# One fixed variant per family, held constant down every column of Tables 1-2.
+# Chosen by transition information I(T;Y) (tab:information-loss): DMC-Int 0.873,
+# DMP-Qpos 0.895, Mapper-EKP 0.328, KPMS-KP 0.525. Mapper moved qpos -> ekp when
+# the lens changed from inverse-density to the Fiedler vector.
+# Column headers name the fixed variant, so a column can never be misread as a
+# family-best mixture (it was, before 2026-08).
+def _two_line(disp: str) -> str:
+    """Header as family on one line, feature space parenthesised and small below.
+
+    Saves a lot of horizontal room in tables whose columns are method-variants,
+    which is what forces the \\resizebox on the wide grids.
+    """
+    star = "$^*$" if "$^*$" in disp else ""
+    d = disp.replace("$^*$", "")
+    if "-" not in d:
+        return disp
+    fam, space = d.split("-", 1)
+    return r"\shortstack{" + fam + star + r"\\{\tiny (" + space + r")}}"
+
+
+FAMILY_HEADER = {
+    "DMC$^*$": _two_line("DMC-Int$^*$"),
+    "DMP$^*$": _two_line("DMP-Qpos$^*$"),
+    "Mapper" : _two_line("Mapper-EKP"),
+    "KPMS"   : _two_line("KPMS-KP"),
+}
+
+FAMILY_FIXED = {
+    "DMC$^*$": "w2_dmc_int_kmeans",
+    "DMP$^*$": "w2_dmp_qpos_kmeans",
+    "Mapper" : "mapper_ekp",
+    "KPMS"   : "kpms_keypoint",
+}
 
 # Single-method transition pairs (only one method discovers each, so a best-of-
 # family comparison is meaningless): Turn<->Walk (only DMP-Qpos) and Rear<->Walk
@@ -638,10 +672,18 @@ def _family_best_per_row(
     pair_col: str = "Pair",
     std_wide: pd.DataFrame | None = None,
 ) -> tuple[list[tuple[str, list[float]]], list[list[float]], dict[str, list[str]]]:
-    """For each transition row and each family, pick the variant with the best mean value.
+    """One FIXED variant per family, held constant down every column.
 
-    Returns (rows, stds, picks). stds is per-row list aligned to family order; std comes
-    from the same variant chosen as best mean.
+    Each family is represented by the variant with the highest transition information
+    (Table~\\ref{tab:information-loss}); see FAMILY_FIXED. A row where that variant is
+    unpopulated is reported as missing rather than being backfilled by a sibling.
+
+    This deliberately does NOT pick the best variant per row. Doing so is a
+    within-family oracle: it lets a column be assembled from whichever feature space
+    happens to win each transition, which inflates every family, ours included, and
+    makes the column correspond to no runnable configuration.
+
+    Returns (rows, stds, picks); stds is aligned to family order.
     """
     rows: list[tuple[str, list[float]]] = []
     stds: list[list[float]] = []
@@ -654,23 +696,21 @@ def _family_best_per_row(
         best_vals: list[float] = []
         best_stds: list[float] = []
         best_picks: list[str] = []
-        for fam_methods in families:
-            cands = []
-            for m in fam_methods:
-                if m in sel.columns and not sel.empty:
-                    v = sel.iloc[0][m]
-                    if pd.notna(v):
-                        sv = np.nan
-                        if s_sel is not None and not s_sel.empty and m in s_sel.columns:
-                            raw = s_sel.iloc[0][m]
-                            sv = float(raw) if pd.notna(raw) else np.nan
-                        cands.append((float(v), sv, m))
-            if not cands:
+        # `lower_better` is unused: the variant is fixed per family, not chosen per row.
+        for fam_name, fam_methods in zip(FAMILY_ORDER, families):
+            m = FAMILY_FIXED.get(fam_name)
+            if m is None or m not in fam_methods:
+                m = fam_methods[0]
+            v = sel.iloc[0][m] if (m in sel.columns and not sel.empty) else np.nan
+            if pd.isna(v):
                 best_vals.append(np.nan); best_stds.append(np.nan); best_picks.append("---")
-            else:
-                best = min(cands, key=lambda x: x[0]) if lower_better else max(cands, key=lambda x: x[0])
-                best_vals.append(best[0]); best_stds.append(best[1])
-                best_picks.append(METHOD_DISPLAY[best[2]])
+                continue
+            sv = np.nan
+            if s_sel is not None and not s_sel.empty and m in s_sel.columns:
+                raw = s_sel.iloc[0][m]
+                sv = float(raw) if pd.notna(raw) else np.nan
+            best_vals.append(float(v)); best_stds.append(sv)
+            best_picks.append(METHOD_DISPLAY[m])
         rows.append((rname, best_vals)); stds.append(best_stds)
         picks[t] = best_picks
     return rows, stds, picks
@@ -705,7 +745,9 @@ def _emit_three_block_with_std(
         r"\begin{tabular}{l|" + cspec + r"}",
         r"\toprule",
         " & " + " & ".join(titles) + r" \\",
-        "Transition & " + " & ".join(FAMILY_ORDER * len(block_specs)) + r" \\",
+        "Transition & " + " & ".join(
+            [FAMILY_HEADER[f] for f in FAMILY_ORDER] * len(block_specs)
+        ) + r" \\",
         r"\midrule",
     ]
     n_rows = len(block_specs[0][2])
@@ -742,6 +784,46 @@ def _emit_three_block_with_std(
     out.append(r"\end{tabular}%")
     out.append(r"}")
     return "\n".join(out) + "\n"
+
+
+def main_combined_table() -> TableSpec:
+    """main_combined.tex — the single main-text results table.
+
+    Merges the former alignment and warping tables and keeps only the three
+    metrics the text argues from: DTW, KID and consistency. Rows where none of
+    the four reported variants discovers anything are dropped, which matters now
+    that each column is pinned to one variant rather than a family-best mixture.
+    """
+    dtw_mean_long, dtw_std_long = load_dtw_meanstd()
+    dtw_mean = _add_rowkey(long_to_wide(dtw_mean_long))
+    dtw_std = _add_rowkey(long_to_wide(dtw_std_long.rename(columns={"std": "value"})))
+    mmd_m, mmd_s = load_wide_meanstd(FA / "tables/kid_table.csv",
+                                     FA / "tables/kid_table_std.csv")
+    mmd_m, mmd_s = _add_rowkey(mmd_m), _add_rowkey(mmd_s)
+    cons_mean_long, cons_std_long = load_consistency_meanstd()
+    cons_m = _add_rowkey(long_to_wide(cons_mean_long))
+    cons_s = _add_rowkey(long_to_wide(cons_std_long.rename(columns={"std": "value"})))
+    nd_mean_long, nd_std_long = load_non_diag_meanstd()
+    nd_m = _add_rowkey(long_to_wide(nd_mean_long))
+    nd_s = _add_rowkey(long_to_wide(nd_std_long.rename(columns={"std": "value"})))
+
+    transitions = _directed_keys(dtw_mean)
+    d_r, d_s, _ = _family_best_per_row(dtw_mean, transitions, True, "RowKey", dtw_std)
+    m_r, m_s, _ = _family_best_per_row(mmd_m, transitions, True, "RowKey", mmd_s)
+    c_r, c_s, _ = _family_best_per_row(cons_m, transitions, True, "RowKey", cons_s)
+    n_r, n_s, _ = _family_best_per_row(nd_m, transitions, True, "RowKey", nd_s)
+
+    keep = [i for i in range(len(transitions))
+            if any(not pd.isna(v) for rows in (d_r, m_r, c_r, n_r) for v in rows[i][1])]
+    sel = lambda rows: [rows[i] for i in keep]
+    # every block is lower-is-better, so the table reads in one direction throughout
+    body = _emit_three_block_with_std([
+        (r"DTW to GT ($\downarrow$)", "down", sel(d_r), sel(d_s), True),
+        (r"Consistency ($\downarrow$)", "down", sel(c_r), sel(c_s), True),
+        (r"Non-diag ($\downarrow$)", "down", sel(n_r), sel(n_s), True),
+        (r"KID ($\downarrow$)", "down", sel(m_r), sel(m_s), True),
+    ])
+    return TableSpec("main_combined", body)
 
 
 def main_alignment_dtw_mmd_kid() -> TableSpec:
@@ -868,7 +950,7 @@ def _emit_color_table_with_std(
         r"\resizebox{\textwidth}{!}{%",
         r"\begin{tabular}{l|" + "c" * n_m + r"}",
         r"\toprule",
-        "Transition & " + " & ".join(METHOD_DISPLAY.get(m, m) for m in methods) + r" \\",
+        "Transition & " + " & ".join(_two_line(METHOD_DISPLAY.get(m, m)) for m in methods) + r" \\",
         r"\midrule",
     ]
     # Per-cell: value only (no inline ±); $^\dagger$ marks single-seed cells. Color from per-row rank.
@@ -972,8 +1054,10 @@ def appendix_non_diag() -> TableSpec:
     return appendix_directional_table(
         "appendix_non_diag_frac", wide_m,
         metric_name="Non-diagonal fraction of DTW warping path",
-        label="tab:warping-non-diag", lower_better=False,
-        caption_extra=" Higher means a more compressed primitive stretched to longer GT.",
+        label="tab:warping-non-diag", lower_better=True,
+        caption_extra=(" Lower means the warping path runs closer to the diagonal, so the "
+                       "primitive matches the annotated window at its own timescale rather "
+                       "than being stretched or compressed onto it."),
         wide_std=wide_s,
     )
 
@@ -1010,7 +1094,7 @@ def appendix_coverage() -> TableSpec:
         r"\resizebox{\textwidth}{!}{%",
         r"\begin{tabular}{lr" + "c" * len(methods) + r"}",
         r"\toprule",
-        "Transition & GT $n$ & " + " & ".join(METHOD_DISPLAY[m] for m in methods) + r" \\",
+        "Transition & GT $n$ & " + " & ".join(_two_line(METHOD_DISPLAY[m]) for m in methods) + r" \\",
         r"\midrule",
     ]
     totals = [0] * len(methods)
@@ -1154,8 +1238,8 @@ def appendix_mds_sweep() -> TableSpec:
         block(cons, ".3f"), r"\midrule",
         r"\multicolumn{%d}{l}{\textit{(b) DTW to ground truth $\downarrow$}} \\" % (1+len(dims)),
         block(dtw, ".3f"), r"\midrule",
-        r"\multicolumn{%d}{l}{\textit{(c) MMD $\downarrow$}} \\" % (1+len(dims)),
-        block(mmd, ".3f"), r"\midrule",
+        r"\multicolumn{%d}{l}{\textit{(c) KID $\downarrow$}} \\" % (1+len(dims)),
+        block(kid, ".3f"), r"\midrule",
         r"\multicolumn{%d}{l}{\textit{(d) Transitions discovered (mean over 3 seeds)}} \\" % (1+len(dims)),
         block(cov, ".1f", higher_better=True),
         r"\bottomrule", r"\end{tabular}", r"\end{table}",
@@ -1165,13 +1249,16 @@ def appendix_mds_sweep() -> TableSpec:
 
 def appendix_family_breakdown() -> TableSpec:
     """Distributional fidelity (MMD, KID) split by the behaviour family of the
-    transition, showing that the DM-vs-KPMS difference is confined to rearing."""
+    transition, under the fixed per-family variants used in Tables 1-2."""
     def load(f):
         d = pd.read_csv(FA / "tables" / f, index_col=0)
-        dm = [c for c in d.columns if "ours" in c]
-        kp = [c for c in d.columns if "KPMS" in c]
-        A = d[dm].apply(pd.to_numeric, errors="coerce").min(axis=1)
-        B = d[kp].apply(pd.to_numeric, errors="coerce").min(axis=1)
+        # Fixed variants, matching Tables 1-2. Taking a per-row min over every DM
+        # column is a within-family oracle and it manufactured the "rearing-only"
+        # story this table used to tell.
+        dmc = next(c for c in d.columns if "DMC" in c and "Int" in c)
+        kpc = next(c for c in d.columns if "KPMS-KP" in c)
+        A = pd.to_numeric(d[dmc], errors="coerce")
+        B = pd.to_numeric(d[kpc], errors="coerce")
         m = A.notna() & B.notna()
         return A[m], B[m]
 
@@ -1200,13 +1287,12 @@ def appendix_family_breakdown() -> TableSpec:
     out = [
         r"\begin{table}[h]", r"\centering",
         r"\caption{\textbf{Distributional fidelity by transition family.} MMD and KID "
-        r"(both $\downarrow$) for the best DM variant and the best KPMS variant on each "
-        r"directed transition, averaged within the behaviour family the transition involves. "
-        r"Only rows discovered by both families are included. The DM--KPMS difference is "
-        r"confined to rearing transitions; on turning and walking transitions the two are "
-        r"equivalent to within the seed spread. Rearing involves a large vertical excursion "
-        r"of the body, which the keypoint stream represents directly as a height change, so "
-        r"KPMS-KP models it particularly well. \emph{DM wins} counts MMD rows.}",
+        r"(both $\downarrow$) for DMC-Int and KPMS-KP, the same fixed variants used in "
+        r"Tables~\ref{tab:alignment-rat} and~\ref{tab:warping-rat}, averaged within the "
+        r"behaviour family the transition involves. Only rows both variants discover are "
+        r"included. The MMD difference is small and does not single out any one behaviour "
+        r"family, and on KID the two are effectively tied. Few rows survive per family, so "
+        r"the split is indicative rather than conclusive. \emph{DM wins} counts MMD rows.}",
         r"\label{tab:family-breakdown}", r"\small",
         r"\begin{tabular}{lcccccccc}", r"\toprule",
         r"& & \multicolumn{3}{c}{MMD} & \multicolumn{3}{c}{KID} & \\",
@@ -1285,14 +1371,15 @@ def appendix_scale_sweep() -> TableSpec:
         ns_set.add(m.group(3))
     n_order = sorted(ns_set, key=int)
     space_map = {"intention": "Intention", "qpos": "Qpos", "ekp": "EKP"}
-    lens_map = {"knn_density": "kNN-density", "pca_1d": "PCA-1D", "eccentricity": "Eccentricity"}
+    lens_map = {"fiedler": "Fiedler", "knn_density": "kNN-density",
+                "pca_1d": "PCA-1D", "eccentricity": "Eccentricity"}
 
     b = [r"\begin{tabular}{ll" + "c" * len(n_order) + "}", r"\toprule",
          r"& & \multicolumn{%d}{c}{$n_{\text{intervals}}$} \\" % len(n_order),
          r"\cmidrule(lr){3-%d}" % (2 + len(n_order)),
          "Feature space & Lens & " + " & ".join(n_order) + r" \\", r"\midrule"]
     for sp in ("intention", "qpos", "ekp"):
-        lenses = [l for l in ("knn_density", "pca_1d", "eccentricity") if (sp, l) in mp_cells]
+        lenses = [l for l in ("fiedler", "knn_density", "pca_1d", "eccentricity") if (sp, l) in mp_cells]
         if not lenses:
             continue
         b.append(rf"\multicolumn{{{2+len(n_order)}}}{{l}}{{\textit{{{space_map[sp]}}}}} \\")
@@ -1320,23 +1407,30 @@ def appendix_scale_sweep() -> TableSpec:
         r"share a denominator. "
         r"\textbf{(a)} Keypoint-MoSeq over stickiness $\kappa$ and $N_{\text{states}}$ on both "
         r"feature streams (50 fits). \textbf{(b)} Mapper over lens and $n_{\text{intervals}}$ on "
-        r"all three feature spaces (45 variants). Primitives are built exactly as for the benchmark "
+        r"all three feature spaces (60 variants). Primitives are built exactly as for the benchmark "
         r"baselines, from sustained syllable or node pairs, and each cluster is majority-voted to a "
         r"class by the same labeller used for Table~\ref{tab:coverage}. Every fit is scored with no "
         r"model-selection criterion applied first, so the union line is a true oracle union over all "
-        r"95 variants. Remaining settings are held at a common default rather than at the "
+        r"110 variants. Remaining settings are held at a common default rather than at the "
         r"per-stream tuned values of Appendix~\ref{app:baseline-hp}, and no swept setting improves "
         r"on the tuned configurations reported in Table~\ref{tab:coverage}.}"
         % n_total,
         r"\label{tab:scale-sweep}", "",
-        r"\textit{(a) Keypoint-MoSeq.}", r"\\[2pt]", r"\scriptsize",
-        r"\setlength{\tabcolsep}{4pt}", r"\renewcommand{\arraystretch}{0.95}",
-        kpms_block, "", r"\vspace{8pt}", "",
-        r"\textit{(b) Mapper.}", r"\\[2pt]", r"\scriptsize",
-        r"\setlength{\tabcolsep}{4pt}", r"\renewcommand{\arraystretch}{0.95}",
-        mapper_block, r"\vspace{4pt}", "",
-        rf"\scriptsize{{Oracle union over all 50 KPMS variants: {u_k} of {n_total}. "
-        rf"Over all 45 Mapper variants: {u_m} of {n_total}. "
+        # Side by side. The size command is scoped to each tabular with braces so it
+        # cannot leak past the sub-caption, which previously rendered (a) and (b) at
+        # different sizes.
+        r"\begin{minipage}[t]{0.46\textwidth}", r"\centering",
+        r"\textit{(a) Keypoint-MoSeq.}\\[2pt]",
+        r"{\scriptsize", r"\setlength{\tabcolsep}{3pt}",
+        r"\renewcommand{\arraystretch}{0.95}",
+        kpms_block, r"}", r"\end{minipage}\hfill",
+        r"\begin{minipage}[t]{0.52\textwidth}", r"\centering",
+        r"\textit{(b) Mapper.}\\[2pt]",
+        r"{\scriptsize", r"\setlength{\tabcolsep}{3pt}",
+        r"\renewcommand{\arraystretch}{0.95}",
+        mapper_block, r"}", r"\end{minipage}", "", r"\vspace{4pt}", "",
+        rf"\scriptsize{{Oracle union over all {len(all_kpms)} KPMS variants: {u_k} of {n_total}. "
+        rf"Over all {len(all_mapper)} Mapper variants: {u_m} of {n_total}. "
         rf"Combined baseline union: {u_c} of {n_total}.}}",
         r"\end{table}",
     ]
@@ -1410,7 +1504,7 @@ def appendix_k_sweep() -> TableSpec:
     down = down[down["primitive"] == "cycle"]
     spaces = [("intention", "Intention"), ("qpos", "Qpos"), ("ekp", "EKP")]
     lines = [r"\begin{tabular}{llcccccc}", r"\toprule",
-             r"Space & $k$ & $\beta_1$ & giant-CC & DTW & MMD & KID & cov \\",
+             r"Space & $k$ & $\beta_1$ & giant-CC & DTW & KID & cov \\",
              r"\midrule"]
     for si, (sp, disp) in enumerate(spaces):
         for ki, k in enumerate([3, 5, 8]):
@@ -1423,7 +1517,7 @@ def appendix_k_sweep() -> TableSpec:
             cell = disp if ki == 0 else ""
             lines.append(
                 f"{cell} & {kc} & {s.n_cycles_mean:.2f} & {s.giant_cc_frac_mean:.2f} & "
-                f"{d.dtw_mean:.2f} & {d.mmd_mean:.3f} & {d.kid_mean:.3f} & "
+                f"{d.dtw_mean:.2f} & {d.kid_mean:.3f} & "
                 f"{d.coverage_mean:.1f} \\\\")
         if si < len(spaces) - 1:
             lines.append(r"\midrule")
@@ -1465,8 +1559,8 @@ def appendix_path_persistence_down() -> TableSpec:
     """appendix_path_persistence_down.tex — downstream DMP alignment vs the
     path-selection persistence multiplier (mult=0 = production DMP)."""
     df = pd.read_csv(PPS / "downstream_vs_delta.csv")
-    header = r"Space & $\delta_{\mathrm{path}}/\delta$ & DTW & MMD & KID & cov \\"
-    text = _pp_table(df, [("dtw", "{:.3f}", ""), ("mmd", "{:.3f}", ""),
+    header = r"Space & $\delta_{\mathrm{path}}/\delta$ & DTW & KID & cov \\"
+    text = _pp_table(df, [("dtw", "{:.3f}", ""),
                           ("kid", "{:.3f}", ""), ("cov", "{:.1f}", "")], header)
     return TableSpec("appendix_path_persistence_down", text)
 
@@ -1477,18 +1571,16 @@ def main():
     args = p.parse_args()
 
     specs: list[TableSpec] = [
-        main_alignment_dtw_mmd_kid(),
-        main_warping_table(),
+        main_combined_table(),
+
         appendix_dtw_detailed(),
         appendix_consistency(),
-        appendix_mmd(),
         appendix_kid(),
         appendix_dtw_sync_ratio(),
         appendix_non_diag(),
         appendix_coverage(),
         appendix_scale_sweep(),
         appendix_mds_sweep(),
-        appendix_family_breakdown(),
         appendix_k_sweep(),
         appendix_path_persistence_ami(),
         appendix_path_persistence_down(),

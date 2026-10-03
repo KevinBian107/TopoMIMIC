@@ -1,0 +1,254 @@
+# Unified Benchmark Experiment Configuration
+# Single entry point for all clustering methods
+
+dataset: "rodent"
+output_dir: "outputs/experiment/transitions"
+data_path: "data/rodent_ar.h5"
+behavior_labels_csv: "behavior_labels/rodent_labels.csv"
+split: "all"
+n_clips: null  # Number of clips to use from split (null = all clips in split)
+
+# Data configuration (legacy)
+data:
+  dm_key: "intention"
+  evaluation_key: "qpos"
+
+# DM results directory (legacy field, used as fallback when dm_sources not set)
+dm:
+  results_dir: "outputs/extraction/dm_pipeline_intention"
+
+# Multi-feature-space DM sources
+dm_sources:
+  intention:
+    results_dir: "outputs/extraction/dm_pipeline_intention"
+    dm_key: "intention"
+  qpos:
+    results_dir: "outputs/extraction/dm_pipeline_qpos"
+    dm_key: "qpos"
+  ekp:
+    results_dir: "outputs/extraction/dm_pipeline_ekp"
+    dm_key: "ekp"
+
+# Keypoint configuration (for kpms_keypoint method)
+keypoint:
+  xml_path: "topo_mimic/extraction/xml/rodent.xml"
+  stac_data_path: "data/rodent_reference_clips.h5"
+
+# Window extraction settings
+clustering:
+  min_len: 0
+  max_len: 500
+  target_len: 100
+  only_max: true
+  skip_clips: [80, 187, 227, 246, 267, 392, 434, 456, 475, 491, 562, 610, 685]
+
+# K selection configuration
+k_selection:
+  n_clusters: 25
+
+# Seeds for reproducibility (multiple seeds for stability analysis)
+seeds: [0, 1, 2]
+aggregate_seeds: true
+
+# Methods to run
+methods:
+  - name: "w2_dmc_int_kmeans"
+    type: "clustering"
+    dm_source: "intention"
+    enabled: false
+    params:
+      mds_components: 20   # selected by within-cluster consistency (2026-08 sweep)
+
+  - name: "w2_dmc_qpos_kmeans"
+    type: "clustering"
+    dm_source: "qpos"
+    enabled: false
+    params:
+      mds_components: 40   # selected by within-cluster consistency (2026-08 sweep)
+
+  - name: "w2_dmc_ekp_kmeans"
+    type: "clustering"
+    dm_source: "ekp"
+    enabled: false
+    params:
+      mds_components: 5   # selected by within-cluster consistency (2026-08 sweep)
+
+  - name: "w2_dmp_int_kmeans"
+    type: "clustering"
+    dm_source: "intention"
+    enabled: false
+    params:
+      mds_components: 10   # selected by within-cluster consistency (2026-08 sweep)
+
+  - name: "w2_dmp_qpos_kmeans"
+    type: "clustering"
+    dm_source: "qpos"
+    enabled: false
+    params:
+      mds_components: 40   # selected by within-cluster consistency (2026-08 sweep)
+
+  - name: "w2_dmp_ekp_kmeans"
+    type: "clustering"
+    dm_source: "ekp"
+    enabled: false
+    params:
+      mds_components: 40   # selected by within-cluster consistency (2026-08 sweep)
+
+  - name: "w2_unif_kmeans"
+    type: "clustering"
+    dm_source: "intention"
+    enabled: false
+    params:
+      mds_components: 3
+
+  - name: "w2_full_kmeans"
+    type: "clustering"
+    dm_source: "intention"
+    enabled: false
+    params:
+      mds_components: 3
+
+  - name: "gw_dmc_int_kmeans"
+    type: "clustering"
+    dm_source: "intention"
+    enabled: false
+    params:
+      mds_components: 3
+      loss_fun: "square_loss"
+      max_iter: 1000
+
+  # KPMS Intention Method.
+  # num_states comes from k_selection.n_clusters (25), NOT the value in any
+  # historical comment here. fix_heading=true because intention is fed as
+  # (T,k,1): KPMS's egocentric alignment is undefined at d=1 and silently
+  # degrades into a per-frame sign flip (2026-08 audit).
+  - name: "kpms_intention"
+    type: "state_space"
+    enabled: false
+    params:
+      model_type: "slds"
+      fix_heading: true
+      latent_dim: 10
+      kappa: 13500
+      ar_iters: 100
+      full_iters: 300
+      min_sustained_duration: 25
+      top_k_transitions: 25
+      min_transition_instances: 3
+
+  # KPMS Keypoint Method.
+  # num_states comes from k_selection.n_clusters (25). Keypoints are allocentric
+  # MuJoCo site positions, so fix_heading=false lets KPMS remove heading; the
+  # axis must be a real body axis (head vs hips), not kp_names[0]/[-1].
+  - name: "kpms_keypoint"
+    type: "state_space"
+    enabled: false
+    params:
+      model_type: "arhmm"
+      fix_heading: false
+      anterior_bodyparts: ["head"]
+      posterior_bodyparts: ["hip_L", "hip_R"]
+      latent_dim: 15
+      kappa: 1090000
+      ar_iters: 100
+      full_iters: 300
+      min_sustained_duration: 25
+      top_k_transitions: 25
+      min_transition_instances: 3
+
+  # Custom VAE Method (tuned hyperparameters from wandb sweep, run 0etcc386)
+  # Best config: latent_dim=30, time_window=30, hidden_dim=512, beta=8.51
+  # Achieves intention reconstruction MSE ~2.71e-05
+  - name: "custom_vae"
+    type: "state_space"
+    enabled: false
+    params:
+      latent_dim: 30
+      time_window: 30
+      hidden_dim: 512
+      beta: 8.51
+      learning_rate: 0.000245
+      batch_size: 256
+      max_epochs: 50
+      segmentation_algo: "kmeans"
+      min_sustained_duration: 25
+      top_k_transitions: 25
+      min_transition_instances: 3
+
+  # Mapper baseline: each node on the Mapper graph becomes a cluster.
+  # Fiedler-vector lens + CubicalCover + DBSCAN inner clustering. rank_normalize
+  # is required, not cosmetic: the raw Fiedler vector is heavy-tailed and puts
+  # 98.6% of points in one decile, which collapses the uniform cover to a single
+  # bin. Rank-normalizing is a monotone reparameterization, so the lens ordering
+  # and level sets are unchanged (2026-08 measurement).
+  - name: "mapper_int"
+    type: "state_space"
+    enabled: true
+    params:
+      takens_m: 3
+      takens_tau: 6
+      knn_k: 3
+      lens: fiedler
+      lens_params: {fiedler_k: 15, rank_normalize: true}
+      n_intervals: 10
+      overlap_frac: 0.5
+      dbscan_min_samples: 5
+      min_total_frames: 0
+      top_k_transitions: 25
+      min_transition_instances: 3
+
+  - name: "mapper_qpos"
+    type: "state_space"
+    enabled: true
+    params:
+      takens_m: 3
+      takens_tau: 9
+      knn_k: 3
+      lens: fiedler
+      lens_params: {fiedler_k: 15, rank_normalize: true}
+      n_intervals: 10
+      overlap_frac: 0.5
+      dbscan_min_samples: 5
+      min_total_frames: 0
+      top_k_transitions: 25
+      min_transition_instances: 3
+
+  - name: "mapper_ekp"
+    type: "state_space"
+    enabled: true
+    params:
+      takens_m: 3
+      takens_tau: 8
+      knn_k: 3
+      lens: fiedler
+      lens_params: {fiedler_k: 15, rank_normalize: true}
+      n_intervals: 10
+      overlap_frac: 0.5
+      dbscan_min_samples: 5
+      min_total_frames: 0
+      top_k_transitions: 25
+      min_transition_instances: 3
+
+# Video rendering settings
+rendering:
+  enabled: false
+  pad: 0
+  max_samples: 5
+  framerate: 50
+  target_size: [320, 240]
+  per_cluster_videos: false
+
+# Cluster merging analysis
+# Identifies similar clusters based on DTW distance between cluster centroids
+# Computes both fixed and percentile thresholds (like granularity/redundancy.py)
+# Renders video showing similar cluster pairs side-by-side for verification
+cluster_merging:
+  enabled: false
+  # Threshold method: "fixed", "percentile", or "both" (computes both separately)
+  threshold_method: "fixed"
+  dtw_threshold: 0.2  # Fixed DTW threshold (pairs below this are similar)
+  dtw_percentile: 10.0  # Percentile threshold (bottom X% are similar)
+  top_k_similar_pairs: 5  # Return top-k most similar pairs
+  render_similar_pairs: true  # Render grid video of top similar pairs
+  samples_per_cluster: 3  # Number of samples per cluster in rendered video
+  skip_root_dims: 7  # Skip first N dims of qpos (root pos + quat) for DTW

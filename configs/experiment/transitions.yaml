@@ -176,7 +176,11 @@ methods:
       min_transition_instances: 3
 
   # Mapper baseline: each node on the Mapper graph becomes a cluster.
-  # Inverse-density lens + CubicalCover + DBSCAN inner clustering.
+  # Fiedler-vector lens + CubicalCover + DBSCAN inner clustering. rank_normalize
+  # is required, not cosmetic: the raw Fiedler vector is heavy-tailed and puts
+  # 98.6% of points in one decile, which collapses the uniform cover to a single
+  # bin. Rank-normalizing is a monotone reparameterization, so the lens ordering
+  # and level sets are unchanged (2026-08 measurement).
   - name: "mapper_int"
     type: "state_space"
     enabled: true  # point-cap subsample added 2026-04-22, safe on 842 clips
@@ -184,6 +188,8 @@ methods:
       takens_m: 3
       takens_tau: 6
       knn_k: 3
+      lens: fiedler
+      lens_params: {fiedler_k: 15, rank_normalize: true}
       n_intervals: 10
       overlap_frac: 0.5
       dbscan_min_samples: 5
@@ -198,6 +204,8 @@ methods:
       takens_m: 3
       takens_tau: 9
       knn_k: 3
+      lens: fiedler
+      lens_params: {fiedler_k: 15, rank_normalize: true}
       n_intervals: 10
       overlap_frac: 0.5
       dbscan_min_samples: 5
@@ -212,6 +220,8 @@ methods:
       takens_m: 3
       takens_tau: 8
       knn_k: 3
+      lens: fiedler
+      lens_params: {fiedler_k: 15, rank_normalize: true}
       n_intervals: 10
       overlap_frac: 0.5
       dbscan_min_samples: 5
