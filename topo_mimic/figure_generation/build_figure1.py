@@ -51,12 +51,12 @@ from scipy.interpolate import splev, splprep
 from scipy.stats import gaussian_kde
 from shapely.geometry import LineString
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "PCD-Graph-Recon-DM"))
 
 from demos.demo_saddle import MorseConfig, run_dm_analysis  # noqa: E402
-from figure_generation.dm_primitives import render_pair  # noqa: E402
+from topo_mimic.figure_generation.dm_primitives import render_pair  # noqa: E402
 from topo_mimic.extraction.skeletonization.skeletonization import (  # noqa: E402
     extract_all_corridors,
     extract_all_cycles,

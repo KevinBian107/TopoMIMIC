@@ -190,7 +190,7 @@ def render_pair(target_w_px: int = 2200, dpi: int = 200) -> Image.Image:
 
 def main() -> None:
     from pathlib import Path
-    out = Path(__file__).resolve().parents[1] / "paper/bian_NeurReps_2026/figures"
+    out = Path(__file__).resolve().parents[2] / "paper/bian_NeurReps_2026/figures"
     out.mkdir(parents=True, exist_ok=True)
     render_skeleton().save(out / "dm_skeleton.png")
     render_dm_cycle().save(out / "dm_cycle.png")

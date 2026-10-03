@@ -26,7 +26,7 @@ TopoVNL/
 ├── demos/                     # pedagogical / concept demos (not method results)
 ├── behavior_labels/           # rodent GT CSV
 ├── data/                      # input rollouts (.h5)
-├── figures/                   # static figures referenced by the paper
+├── docs/figures/              # README demo media
 ├── paper/                     # paper manuscript + tables
 ├── docs/                      # documentation (this file lives here)
 └── scratch/                   # investigation logs (gitignored)
@@ -82,7 +82,8 @@ topo_mimic/
 ├── labeling/                # auto-label + render-for-label
 │   ├── main.py                  # auto-label + optional GUI
 │   └── render_for_label.py      # TRACK vs STAC side-by-side videos for annotation
-└── hyperparam_sweep/         # KPMS + VAE W&B sweeps
+├── hyperparam_sweep/         # KPMS + VAE W&B sweeps
+└── figure_generation/        # paper tables + figures (python -m topo_mimic.figure_generation.build_tables)
 ```
 
 ## `configs/` — mirrors `topo_mimic/`

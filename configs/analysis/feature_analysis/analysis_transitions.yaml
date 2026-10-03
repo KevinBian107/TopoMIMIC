@@ -100,6 +100,13 @@ run_dtw_visualization: false  # Enable detailed DTW visualization (slower)
 # own source clips are excluded from the real pool to avoid clip-level
 # leakage.
 run_mmd_analysis: true
+# KID sample unit. "frame": every native frame of a cluster's members and of the
+# matching GT instances is one sample (order-invariant frame distributions),
+# scored as the mean unbiased MMD^2 over kid_n_subsets equal-size subsets.
+# "window" reproduces the pre-camera-ready runs (flattened 200-frame windows).
+kid_unit: frame
+kid_subset_size: 1000
+kid_n_subsets: 10
 run_c2st_analysis: true
 c2st_raw_h5_path: "data/rodent_ar.h5"
 c2st_window_frames: 200

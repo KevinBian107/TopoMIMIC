@@ -202,6 +202,49 @@ def _assign_frame_to_single_node(
     return assignments
 
 
+def _assign_frame_to_nearest_bin(
+    graph: Any,
+    lens_values: np.ndarray,
+    n_points: int,
+    n_intervals: int,
+) -> np.ndarray:
+    """Frame-to-node partition by nearest cover-interval centre.
+
+    For a 1D standard cubical cover the j-th interval is centred at
+    c_j = lo + (j + 0.5) w with w = (hi - lo) / n_intervals and half-width w, so a
+    point lies in at most two consecutive intervals. Each node is mapped to the
+    centre of the interval containing all of its members (median-nearest among the
+    candidates), and each point goes to the containing node with the nearest centre,
+    ties to the smallest node id. This partitions the lens into n_intervals equal
+    bins regardless of the order in which the cover enumerates its sets, unlike the
+    smallest-id rule, whose bins depend on that order.
+
+    Returns:
+        assignments: (n_points,) int array; -1 means unassigned (noise).
+    """
+    lens = np.asarray(lens_values, dtype=float).reshape(-1)
+    lo, hi = float(lens.min()), float(lens.max())
+    w = (hi - lo) / n_intervals if hi > lo else 1.0
+    centers = lo + (np.arange(n_intervals) + 0.5) * w
+
+    assignments = np.full(n_points, -1, dtype=np.int64)
+    best = np.full(n_points, np.inf)
+    for node_id in sorted(graph.nodes):
+        ids = np.asarray(graph.nodes[node_id].get("ids", []), dtype=np.int64)
+        if ids.size == 0:
+            continue
+        member = lens[ids]
+        tol = 1e-9 * max(1.0, abs(w))
+        fits = (centers - w <= member.min() + tol) & (member.max() <= centers + w + tol)
+        cand = np.flatnonzero(fits) if fits.any() else np.arange(n_intervals)
+        center = centers[cand[np.argmin(np.abs(centers[cand] - np.median(member)))]]
+        d = np.abs(member - center)
+        closer = d < best[ids]
+        best[ids[closer]] = d[closer]
+        assignments[ids[closer]] = int(node_id)
+    return assignments
+
+
 class _AdaptiveDBSCAN:
     """DBSCAN whose radius tracks the local scale of each cover element.
 
@@ -294,6 +337,17 @@ class MapperMethod(BaseMethod):
         # the subsample. Without this, tdamapper's fit_transform hangs for
         # >~300k points.
         self.max_points = int(self.params.get("max_points", 100000))
+        # PCA applied to the transformed features before Takens, matching DM-G's
+        # per-space pca_dims; read by the benchmark loader, not by fit().
+        pca = self.params.get("pca_dims")
+        self.pca_dims = int(pca) if pca is not None else None
+        # Defaults reproduce the historical runs: tda-mapper's proximity-net cover
+        # and the smallest-id overlap rule. The shipped configs select the standard
+        # cubical cover and the nearest-bin rule explicitly.
+        self.cover_algorithm = str(self.params.get("cover_algorithm", "proximity"))
+        self.overlap_rule = str(self.params.get("overlap_rule", "smallest_id"))
+        if self.overlap_rule not in ("smallest_id", "nearest_bin"):
+            raise ValueError(f"overlap_rule must be 'smallest_id' or 'nearest_bin', got {self.overlap_rule!r}")
 
     @property
     def method_type(self) -> MethodType:
@@ -314,8 +368,9 @@ class MapperMethod(BaseMethod):
         frames into nodes-as-clusters.
 
         Args:
-            data: (n_clips, n_frames, n_dim) after DM-key transform (root strip +
-                PCA applied upstream by the caller).
+            data: (n_clips, n_frames, n_dim) after the DM-key transform (root
+                strip or egocentric keypoints) and optional PCA, applied upstream
+                by the caller (see ``pca_dims``).
             n_states: ignored; Mapper chooses node count via hyperparameters.
             project_dir: unused, accepted for KPMS-signature parity.
             seed: DBSCAN random_state.
@@ -374,7 +429,11 @@ class MapperMethod(BaseMethod):
             f"range: [{sub_lens.min():.4f}, {sub_lens.max():.4f}]"
         )
 
-        cover = CubicalCover(n_intervals=self.n_intervals, overlap_frac=self.overlap_frac)
+        cover = CubicalCover(
+            n_intervals=self.n_intervals,
+            overlap_frac=self.overlap_frac,
+            algorithm=self.cover_algorithm,
+        )
         eps = self.dbscan_eps
         if self.eps_mode == "per_bin":
             inner = _AdaptiveDBSCAN(
@@ -398,7 +457,12 @@ class MapperMethod(BaseMethod):
         print(f"[Mapper/{self.dm_key}] mapper graph: {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges")
 
         # Sub-assignment on the subsample (graph ids reference sub_pts indices).
-        sub_assign = _assign_frame_to_single_node(graph, sub_lens, n_points=len(sub_pts))
+        if self.overlap_rule == "nearest_bin":
+            sub_assign = _assign_frame_to_nearest_bin(
+                graph, sub_lens, n_points=len(sub_pts), n_intervals=self.n_intervals,
+            )
+        else:
+            sub_assign = _assign_frame_to_single_node(graph, sub_lens, n_points=len(sub_pts))
 
         if len(sub_pts) < len(all_pts):
             from sklearn.neighbors import NearestNeighbors
@@ -439,6 +503,10 @@ class MapperMethod(BaseMethod):
         stats["mapper_eps_mode"] = self.eps_mode
         stats["mapper_eps_scale"] = self.eps_scale
         stats["dm_key"] = self.dm_key
+        stats["mapper_pca_dims"] = self.pca_dims
+        stats["mapper_cover_algorithm"] = self.cover_algorithm
+        stats["mapper_overlap_rule"] = self.overlap_rule
+        stats["mapper_input_dim"] = int(data.shape[-1])
 
         print_transition_stats(stats)
 

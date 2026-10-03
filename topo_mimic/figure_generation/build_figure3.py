@@ -14,7 +14,7 @@ import shutil
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 
 from topo_mimic.analysis.feature_analysis.coverage_quality_panels import (  # noqa: E402

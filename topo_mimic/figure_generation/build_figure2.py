@@ -15,7 +15,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 
 PANEL_INT_SRC = REPO / "outputs/demos/illustrative/transition_projections/transition_panel_tsne_intention.png"
 FILM_INT_SRC = REPO / "outputs/demos/illustrative/transition_projections/transition_filmstrips_intention.png"

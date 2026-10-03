@@ -48,7 +48,7 @@ def _agg_dir(adir: str) -> dict:
 
 
 def write_downstream_vs_delta(cfg: PPSweepConfig) -> str:
-    sources = {0.0: str(REPO / "outputs/analysis/feature_analysis")}
+    sources = {0.0: str(REPO / cfg.baseline_analysis_dir)}
     for m in cfg.downstream_multipliers:
         sources[m] = str(REPO / cfg.sandbox_dir / f"delta_m{m}" / "analysis")
 

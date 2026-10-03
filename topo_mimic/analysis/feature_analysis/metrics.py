@@ -317,9 +317,9 @@ class DTWResult:
 
 @dataclass
 class MMDResult:
-    """One row per (directed_label, turn) group — the KID and RBF-MMD
-    between flattened cluster-window distribution and flattened real-GT-
-    window distribution for that group."""
+    """One row per (directed_label, turn) group: the KID and RBF-MMD between
+    the cluster samples and the real-GT samples for that group (windows or
+    pooled frames, per ``kid_unit``)."""
     label: str                   # "A -> B"
     turn_direction: str | None
     cluster_ids: list[int]
@@ -328,6 +328,8 @@ class MMDResult:
     sigma: float                 # bandwidth used for RBF
     n_cluster_seqs: int
     n_gt_seqs: int
+    n_cluster_samples: int       # kernel samples: windows or pooled frames, per kid_unit
+    n_gt_samples: int
 
 
 def run_dtw_analysis(
@@ -620,19 +622,30 @@ def run_mmd_analysis(
     skip_root_dims: int = 7,
     min_seq_length: int = 3,
     resample_K: int = 100,
+    kid_unit: str = "window",
+    kid_subset_size: int = 1000,
+    kid_n_subsets: int = 10,
 ) -> list[MMDResult]:
-    """Per-(directed label, turn) KID + RBF-MMD between cluster and GT windows.
+    """Per-(directed label, turn) KID + RBF-MMD between cluster and GT samples.
 
-    Mirrors ``run_dtw_analysis``'s grouping and GT-lookup. Each cluster window
-    is flattened from (K, D) to (K*D,), and the two resulting point clouds
-    (cluster vs matching GT) are fed to ``compute_mmd_kid``.
+    Mirrors ``run_dtw_analysis``'s grouping and GT-lookup. With
+    ``kid_unit="window"`` (at most ``max_samples`` windows per side) each window is
+    resampled to ``resample_K`` frames and flattened from (K, D) to (K*D,) for
+    ``compute_mmd_kid``. With ``kid_unit="frame"`` the native frames of every
+    cluster member and every matching GT instance are pooled and compared as
+    frame distributions by ``compute_frame_kid``.
 
     Writes ``{method}_seed{seed}_mmd_results.csv`` to ``output_dir`` and
     returns a list of ``MMDResult``.
     """
     import os
     import pandas as pd
-    from .mmd_kid import compute_mmd_kid
+    from .mmd_kid import compute_frame_kid, compute_mmd_kid
+
+    if kid_unit not in ("window", "frame"):
+        raise ValueError(f"kid_unit must be 'window' or 'frame', got {kid_unit!r}")
+    per_frame = kid_unit == "frame"
+    seq_K = None if per_frame else resample_K
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -681,7 +694,7 @@ def run_mmd_analysis(
         for cid in cluster_ids:
             entries = cluster_dict.get(cid, [])
             seqs = extract_sequences_from_cluster(
-                entries, data, min_seq_length, resample_K=resample_K,
+                entries, data, min_seq_length, resample_K=seq_K,
             )
             combined_seqs.extend(seqs)
 
@@ -690,7 +703,7 @@ def run_mmd_analysis(
             skipped.append((cluster_ids, label_str, "no valid sequences"))
             continue
 
-        if len(combined_seqs) > max_samples:
+        if not per_frame and len(combined_seqs) > max_samples:
             idx = rng.choice(len(combined_seqs), size=max_samples, replace=False)
             combined_seqs = [combined_seqs[i] for i in idx]
 
@@ -700,18 +713,25 @@ def run_mmd_analysis(
             target_behaviors,
             turn_direction=turn_dir,
             min_seq_length=min_seq_length,
-            max_seqs=max_samples,
+            max_seqs=len(all_transitions) if per_frame else max_samples,
             directed=True,
-            resample_K=resample_K,
+            resample_K=seq_K,
         )
         if not gt_seqs:
             turn_info = f" (turn={turn_dir_str})" if turn_dir_str else ""
             skipped.append((cluster_ids, label_str, f"no GT sequences{turn_info}"))
             continue
 
-        X = np.stack(combined_seqs, axis=0).astype(np.float32, copy=False)
-        Y = np.stack(gt_seqs, axis=0).astype(np.float32, copy=False)
-        out = compute_mmd_kid(X, Y, rng=rng)
+        if per_frame:
+            X = np.concatenate(combined_seqs, axis=0).astype(np.float32, copy=False)
+            Y = np.concatenate(gt_seqs, axis=0).astype(np.float32, copy=False)
+            out = compute_frame_kid(
+                X, Y, rng=rng, subset_size=kid_subset_size, n_subsets=kid_n_subsets,
+            )
+        else:
+            X = np.stack(combined_seqs, axis=0).astype(np.float32, copy=False)
+            Y = np.stack(gt_seqs, axis=0).astype(np.float32, copy=False)
+            out = compute_mmd_kid(X, Y, rng=rng)
 
         results.append(MMDResult(
             label=label_str,
@@ -720,8 +740,10 @@ def run_mmd_analysis(
             kid=out["kid"],
             mmd_rbf=out["mmd_rbf"],
             sigma=out["sigma"],
-            n_cluster_seqs=out["n_cluster"],
-            n_gt_seqs=out["n_real"],
+            n_cluster_seqs=len(combined_seqs),
+            n_gt_seqs=len(gt_seqs),
+            n_cluster_samples=out["n_cluster"],
+            n_gt_samples=out["n_real"],
         ))
 
         turn_info = f" [{turn_dir_str}]" if turn_dir_str else ""
@@ -744,6 +766,9 @@ def run_mmd_analysis(
             "Sigma": round(r.sigma, 4) if not np.isnan(r.sigma) else "",
             "N_Cluster_Seqs": r.n_cluster_seqs,
             "N_GT_Seqs": r.n_gt_seqs,
+            "N_Cluster_Samples": r.n_cluster_samples,
+            "N_GT_Samples": r.n_gt_samples,
+            "KID_Unit": kid_unit,
         })
     df = pd.DataFrame(rows)
     out_csv = os.path.join(output_dir, f"{method_name}_seed{seed}_mmd_results.csv")

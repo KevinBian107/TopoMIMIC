@@ -1,7 +1,10 @@
-"""MMD and KID (Kernel Inception Distance) on flattened trajectory windows.
+"""MMD and KID (Kernel Inception Distance) between cluster and GT samples.
 
-Each (K, D) trajectory window is flattened to a (K*D,)-dim vector. The two
-distributions — cluster windows X and real-GT windows Y — are compared via:
+Two sample units are supported. ``compute_mmd_kid`` flattens each (K, D)
+trajectory window to one (K*D,)-dim sample, which makes the kernel
+frame-synchronous and therefore order-sensitive. ``compute_frame_kid`` treats
+every frame as one D-dim sample, comparing the pooled frame distributions,
+which is order-invariant. Either way the two samples X and Y are compared via:
 
   - Polynomial kernel (KID, Bińkowski 2018):
         k(x, y) = ((x · y) / d + 1)^3
@@ -109,6 +112,49 @@ def compute_mmd_kid(
     return {
         "kid": kid,
         "mmd_rbf": mmd_rbf,
+        "n_cluster": int(n),
+        "n_real": int(m),
+        "sigma": float(sigma),
+    }
+
+
+def compute_frame_kid(
+    cluster_frames: np.ndarray,
+    real_frames: np.ndarray,
+    rng: np.random.Generator,
+    subset_size: int = 1000,
+    n_subsets: int = 10,
+) -> dict[str, float]:
+    """KID and RBF-MMD² between two pooled frame distributions, each (N, D).
+
+    Every frame is one sample, so both estimates are invariant to frame order.
+    Following Bińkowski et al. (2018), the unbiased MMD² is averaged over
+    ``n_subsets`` random subsets of equal size min(subset_size, N_x, N_y) drawn
+    from each side, so the pool sizes of different methods do not enter the score.
+    """
+    # float64: MMD² is a small difference of large kernel sums, and float32
+    # cancellation alone moves it by ~1% at s=1000.
+    X = np.asarray(cluster_frames, dtype=np.float64)
+    Y = np.asarray(real_frames, dtype=np.float64)
+    n, m = X.shape[0], Y.shape[0]
+    s = min(subset_size, n, m)
+    if s < 2:
+        return {"kid": float("nan"), "mmd_rbf": float("nan"),
+                "n_cluster": int(n), "n_real": int(m), "sigma": float("nan")}
+
+    sigma = median_heuristic_sigma(np.concatenate([X, Y], axis=0), rng=rng)
+    kids, rbfs = [], []
+    for _ in range(n_subsets):
+        Xs = X[rng.choice(n, size=s, replace=False)]
+        Ys = Y[rng.choice(m, size=s, replace=False)]
+        kids.append(mmd2_unbiased(
+            polynomial_kernel(Xs, Xs), polynomial_kernel(Ys, Ys), polynomial_kernel(Xs, Ys)))
+        rbfs.append(mmd2_unbiased(
+            rbf_kernel(Xs, Xs, sigma), rbf_kernel(Ys, Ys, sigma), rbf_kernel(Xs, Ys, sigma)))
+
+    return {
+        "kid": float(np.mean(kids)),
+        "mmd_rbf": float(np.mean(rbfs)),
         "n_cluster": int(n),
         "n_real": int(m),
         "sigma": float(sigma),

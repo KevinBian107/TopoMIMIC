@@ -25,10 +25,10 @@ import numpy as np
 from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
 from PIL import Image
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 
-from figure_generation.dm_primitives import (  # noqa: E402
+from topo_mimic.figure_generation.dm_primitives import (  # noqa: E402
     render_dm_cycle, render_dm_path_2d, render_skeleton)
 
 TRAJ = Path(__file__).resolve().parent / "external_data/trajectory.png"

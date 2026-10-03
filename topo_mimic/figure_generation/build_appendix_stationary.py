@@ -25,7 +25,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 
 from topo_mimic.analysis.method_analysis.property.stationary import (  # noqa: E402

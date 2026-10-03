@@ -9,7 +9,7 @@ Classical manifold learning methods (PCA, UMAP, t-SNE) learn a low-dimensional *
 
 These sub-trajectories are the learned manifold coordinates. The natural metric on them is the **Wasserstein-2 distance**, which compares sub-trajectories as distributions rather than fixed-length vectors.
 
-![Demo](figures/dmpc_demo.gif)
+![Demo](docs/figures/dmpc_demo.gif)
 > Demonstration of discrete Morse cycles and paths in an inverse density space.
 
 ## Documentation

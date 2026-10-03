@@ -190,6 +190,9 @@ methods:
       knn_k: 3
       lens: fiedler
       lens_params: {fiedler_k: 15, rank_normalize: true}
+      pca_dims: null  # same input space as DM-G (Table 14)
+      cover_algorithm: standard  # tda-mapper's default 'proximity' net drops cubes and overlap
+      overlap_rule: nearest_bin  # overlap frames go to the nearest interval centre
       n_intervals: 10
       overlap_frac: 0.5
       dbscan_min_samples: 5
@@ -206,6 +209,9 @@ methods:
       knn_k: 3
       lens: fiedler
       lens_params: {fiedler_k: 15, rank_normalize: true}
+      pca_dims: 10  # same input space as DM-G (Table 14)
+      cover_algorithm: standard  # tda-mapper's default 'proximity' net drops cubes and overlap
+      overlap_rule: nearest_bin  # overlap frames go to the nearest interval centre
       n_intervals: 10
       overlap_frac: 0.5
       dbscan_min_samples: 5
@@ -222,6 +228,9 @@ methods:
       knn_k: 3
       lens: fiedler
       lens_params: {fiedler_k: 15, rank_normalize: true}
+      pca_dims: 10  # same input space as DM-G (Table 14)
+      cover_algorithm: standard  # tda-mapper's default 'proximity' net drops cubes and overlap
+      overlap_rule: nearest_bin  # overlap frames go to the nearest interval centre
       n_intervals: 10
       overlap_frac: 0.5
       dbscan_min_samples: 5

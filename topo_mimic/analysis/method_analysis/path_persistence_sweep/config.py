@@ -20,6 +20,10 @@ class PPSweepConfig:
 
     prod_extraction_out: str = "outputs/extraction/dm_pipeline_{space}"
     sandbox_dir: str = "outputs/analysis/method_analysis/path_persistence_sweep"
+    # delta_path = 0 row. The delta_path > 0 sandboxes cluster at MDS dimension 3, so
+    # the baseline must too: the k=3 sandbox is the same skeleton at the same MDS
+    # dimension, whereas production feature_analysis uses the per-variant dimensions.
+    baseline_analysis_dir: str = "outputs/analysis/method_analysis/k_sweep/k_3/analysis"
 
     # GT / info-theoretic settings (mirror configs/.../information_loss.yaml).
     labels_csv: str = "behavior_labels/rodent_labels.csv"

@@ -25,7 +25,7 @@ paper/
 logs/
 
 # figure-generation external assets (not pushed to GitHub)
-figure_generation/external_data/
+topo_mimic/figure_generation/external_data/
 
 # labeling framework
 .gradio

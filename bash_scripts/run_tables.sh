@@ -22,7 +22,7 @@ $PYTHON -m topo_mimic.analysis.tables "$SUB"
 # sync_ratio_comparison_table.csv and non_diag_comparison_table.csv produced
 # by the dtw_metrics feature_analysis block.
 if [ "$SUB" = "all" ] || [ "$SUB" = "paper" ]; then
-  $PYTHON figure_generation/build_tables.py
+  $PYTHON -m topo_mimic.figure_generation.build_tables
 fi
 
 echo ""
