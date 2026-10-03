@@ -24,4 +24,3 @@ dm_methods:
 
 run_c2st: false
 disable_rendering: true
-python_bin: "/home/jovyan/vast/kaiwen/track-mjx/.venv/bin/python3"

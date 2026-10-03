@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Build paper/figures/figure3.png from the transition_projections demo
+"""Build paper/bian_NeurReps_2026/figures/figure3.png from the transition_projections demo
 outputs (manuscript Figure 3: DM-cycles).
 
 Main figure = vertical stack of (A) the intention-only t-SNE panel and
 (B) the intention-only DM-path filmstrip. Both source PNGs are produced
 directly by demos.demo_transition_projections (with stripped suptitles).
 
-Full 3-feature-space versions are copied to paper/appendix_figures/.
+Full 3-feature-space versions are copied to paper/bian_NeurReps_2026/appendix_figures/.
 """
 from __future__ import annotations
 
@@ -22,9 +22,9 @@ FILM_INT_SRC = REPO / "outputs/demos/illustrative/transition_projections/transit
 PANEL_FULL_SRC = REPO / "outputs/demos/illustrative/transition_projections/transition_panel_tsne.png"
 FILM_FULL_SRC = REPO / "outputs/demos/illustrative/transition_projections/transition_filmstrips.png"
 
-FIG2_OUT = REPO / "paper/figures/figure3.png"
-APPENDIX_PANEL = REPO / "paper/appendix_figures/appendix_transition_panel_tsne.png"
-APPENDIX_FILM = REPO / "paper/appendix_figures/appendix_transition_filmstrips.png"
+FIG2_OUT = REPO / "paper/bian_NeurReps_2026/figures/figure3.png"
+APPENDIX_PANEL = REPO / "paper/bian_NeurReps_2026/appendix_figures/appendix_transition_panel_tsne.png"
+APPENDIX_FILM = REPO / "paper/bian_NeurReps_2026/appendix_figures/appendix_transition_filmstrips.png"
 
 
 def fit_width(img: Image.Image, target_w: int) -> Image.Image:

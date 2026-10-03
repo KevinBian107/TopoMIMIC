@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate every .tex table under paper/tables/ from the master CSVs.
+"""Generate every .tex table under paper/bian_NeurReps_2026/tables/ from the master CSVs.
 
 Usage:
     python -m topo_mimic.figure_generation.build_tables           # writes all tables
@@ -659,7 +659,7 @@ def _wide_rows_for_methods_with_std(
 
 @dataclass
 class TableSpec:
-    name: str          # output file stem under paper/tables/
+    name: str          # output file stem under paper/bian_NeurReps_2026/tables/
     text: str
 
 def write_tables(specs: list[TableSpec], dry: bool = False) -> None:

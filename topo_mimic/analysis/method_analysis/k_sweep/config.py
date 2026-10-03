@@ -1,5 +1,6 @@
 """Config for the k-sweep driver."""
 from __future__ import annotations
+import sys
 
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -34,7 +35,7 @@ class KSweepConfig:
 
     run_c2st: bool = False          # slow, outside the requested metric set
     disable_rendering: bool = True  # videos don't affect primitives/metrics
-    python_bin: str = "/home/jovyan/vast/kaiwen/track-mjx/.venv/bin/python3"
+    python_bin: str = field(default_factory=lambda: sys.executable)
 
 
 def load_config(path: str | Path) -> KSweepConfig:

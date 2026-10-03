@@ -1,5 +1,6 @@
 """Main entry point for granularity analysis pipeline."""
 
+from topo_mimic.paths import DMPCD_ROOT
 import os
 import sys
 from pathlib import Path
@@ -195,7 +196,7 @@ def run_granularity_analysis(config: GranularityConfig) -> None:
     Args:
         config: Configuration object
     """
-    sys.path.append("/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM")
+    sys.path.append(str(DMPCD_ROOT))
 
     original_cwd = os.getcwd()
 

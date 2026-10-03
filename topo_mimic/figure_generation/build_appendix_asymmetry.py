@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build paper/appendix_figures/appendix_asymmetry.png.
+"""Build paper/bian_NeurReps_2026/appendix_figures/appendix_asymmetry.png.
 
 Three violin panels (one per feature space) of bootstrap-mean
 cycle-counts-per-100-frames for asymmetric vs. symmetric A->B->A triplets.

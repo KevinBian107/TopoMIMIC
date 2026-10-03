@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build paper/figures/figure1.png: the method data-flow overview (Figure 1).
+"""Build paper/bian_NeurReps_2026/figures/figure1.png: the method data-flow overview (Figure 1).
 
   trajectory T_i --Step 1--> DM skeleton G_i
        skeleton --Step 2 decompose--> DM-path (split tree)  and  DM-cycle (loop)
@@ -32,7 +32,7 @@ from topo_mimic.figure_generation.dm_primitives import (  # noqa: E402
     render_dm_cycle, render_dm_path_2d, render_skeleton)
 
 TRAJ = Path(__file__).resolve().parent / "external_data/trajectory.png"
-OUT = REPO / "paper/figures/figure1.png"
+OUT = REPO / "paper/bian_NeurReps_2026/figures/figure1.png"
 
 
 def _img(p) -> np.ndarray:

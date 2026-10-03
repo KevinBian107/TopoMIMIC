@@ -5,6 +5,7 @@ Refactored from dm_latent_subspace.py
 Provides DM extraction, cycle detection, and optional W2-based clustering.
 """
 
+from topo_mimic.paths import DMPCD_ROOT
 import os
 
 os.environ["MUJOCO_GL"] = "egl"
@@ -111,7 +112,7 @@ def plot_ami_fnn_diagnostics(
 class DataConfig:
     dataset: str = "rodent"
     dm_key: str = "intention"
-    rodent_rollout_dir: str = "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
+    rodent_rollout_dir: str = "data/rodent_ar.h5"
     split: str = "train"
     pca_dims: int | None = None
     xml_path: str = "topo_mimic/extraction/xml/rodent.xml"
@@ -443,7 +444,7 @@ def get_path_statistics(all_path_dm: list) -> dict:
 
 
 def run_pipeline(config: PipelineConfig) -> tuple[list, list, list | None]:
-    sys.path.append("/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM")
+    sys.path.append(str(DMPCD_ROOT))
     os.makedirs(config.output_dir, exist_ok=True)
 
     print("=" * 60)

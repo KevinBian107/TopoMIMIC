@@ -1,7 +1,7 @@
 output_dir: "outputs/hyperparam_sweep"
 
 data:
-  rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
+  rodent_rollout_dir: "data/rodent_ar.h5"
   train_clips: [0, 642]
   test_clips: [642, 742]
 

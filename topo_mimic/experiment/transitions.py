@@ -6,6 +6,7 @@ with fixed number of clusters, integrated seed handling, and auto-generated
 labels.yaml files for each method.
 """
 
+from topo_mimic.paths import DMPCD_ROOT
 import os
 
 os.environ.setdefault("MUJOCO_GL", "egl")
@@ -1114,7 +1115,7 @@ def run_rendering(
 
 
 def run_experiment(config: ExperimentConfig) -> ExperimentResults:
-    sys.path.append("/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM")
+    sys.path.append(str(DMPCD_ROOT))
     os.makedirs(config.output_dir, exist_ok=True)
 
     print("=" * 60)

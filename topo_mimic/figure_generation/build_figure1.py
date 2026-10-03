@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build paper/figures/figure2.png (manuscript Figure 2: pipeline + primitives).
+"""Build paper/bian_NeurReps_2026/figures/figure2.png (manuscript Figure 2: pipeline + primitives).
 
 Four-panel layout (data on top, method-intuition on the bottom):
 
@@ -27,7 +27,7 @@ Four-panel layout (data on top, method-intuition on the bottom):
 
 External assets (``external_data/mimice_pipeline.pdf``) live in this
 directory's ``external_data/`` subfolder, which is gitignored; populate it
-locally before running the script. Output goes to ``paper/figures/figure1.png``.
+locally before running the script. Output goes to ``paper/bian_NeurReps_2026/figures/figure1.png``.
 
 NOTE: panel letters changed (old A/B topology panels removed; MIMIC moved up
 to A/B; the two intuition panels are the new C/D). The LaTeX caption and any
@@ -64,7 +64,7 @@ from topo_mimic.extraction.skeletonization.skeletonization import (  # noqa: E40
 
 EXTERNAL_DATA = Path(__file__).resolve().parent / "external_data"
 MIMIC_PIPELINE_PDF = EXTERNAL_DATA / "mimice_pipeline.pdf"
-OUT_PATH = REPO / "paper/figures/figure2.png"
+OUT_PATH = REPO / "paper/bian_NeurReps_2026/figures/figure2.png"
 
 # Fraction of mimice_pipeline.pdf width that belongs to (A) (general-space
 # demo, left side); the remainder is (B) (encoder-decoder schematic).

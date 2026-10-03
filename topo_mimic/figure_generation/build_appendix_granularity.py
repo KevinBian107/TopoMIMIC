@@ -19,7 +19,7 @@ Frame index extraction follows the original code in
 indices).
 
 Outputs:
-    paper/appendix_figures/appendix_lifetime_wholebody_<space>.pdf
+    paper/bian_NeurReps_2026/appendix_figures/appendix_lifetime_wholebody_<space>.pdf
     outputs/analysis/method_analysis/granularity_<space>/stationary/plots/wholebody_cycle_variance.pdf
 """
 from __future__ import annotations

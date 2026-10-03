@@ -2,7 +2,7 @@
 # Benchmark clustering experiment (all methods, all feature spaces).
 set -e
 
-PYTHON="${PYTHON:-/home/jovyan/vast/kaiwen/track-mjx/.venv/bin/python3}"
+PYTHON="${PYTHON:-python}"
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
 

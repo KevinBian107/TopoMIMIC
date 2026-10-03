@@ -27,6 +27,7 @@ Outputs:
     - summary.yaml: Summary statistics
 """
 
+from topo_mimic.paths import DMPCD_ROOT
 import os
 import sys
 
@@ -69,7 +70,7 @@ from topo_mimic.extraction.skeletonization.skeletonization import extract_skelet
 
 @dataclass
 class DataConfig:
-    rodent_rollout_dir: str = "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar_latest.h5"
+    rodent_rollout_dir: str = "data/rodent_ar_latest.h5"
     split: str = "train"
     intention_key: str = "intention"
     qpos_key: str = "qpos_rollout"
@@ -598,7 +599,7 @@ def run_dm_analysis_combined(
         pts: Combined Takens-embedded points
         clip_ranges: List of (start_idx, end_idx) for each clip in pts
     """
-    sys.path.append("/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM")
+    sys.path.append(str(DMPCD_ROOT))
 
     original_dir = os.getcwd()
 

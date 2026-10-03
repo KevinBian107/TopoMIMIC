@@ -5,7 +5,7 @@ output_dir: "outputs/analysis/method_analysis/granularity_intention"
 data:
   dm_key: "intention"
   qpos_key: "qpos"
-  rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
+  rodent_rollout_dir: "data/rodent_ar.h5"
   split: "train"
   pca_dims: null
   xml_path: "topo_mimic/extraction/xml/rodent.xml"

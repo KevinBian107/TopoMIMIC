@@ -1,5 +1,6 @@
 '''Functions for doing skeletonization of the intention space via discrete Morse graph'''
 
+from topo_mimic.paths import DMPCD_ROOT
 import numpy as np
 import networkx as nx
 import os
@@ -276,7 +277,7 @@ def extract_skeleton_pcd_dm(
         output_dir = os.path.abspath(output_dir)
 
     orig_cwd = os.getcwd()
-    repo_path = "/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM"
+    repo_path = str(DMPCD_ROOT)
     os.chdir(repo_path)
     import dmpcd.pcd as pcd
 

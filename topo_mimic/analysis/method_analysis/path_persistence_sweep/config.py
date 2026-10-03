@@ -1,5 +1,6 @@
 """Config for the path-persistence sweep."""
 from __future__ import annotations
+import sys
 
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -41,7 +42,7 @@ class PPSweepConfig:
     downstream_multipliers: list[float] = field(default_factory=lambda: [0.0, 1.0, 4.0])
     dm_path_methods: list[str] = field(default_factory=lambda: [
         "w2_dmp_int_kmeans", "w2_dmp_qpos_kmeans", "w2_dmp_ekp_kmeans"])
-    python_bin: str = "/home/jovyan/vast/kaiwen/track-mjx/.venv/bin/python3"
+    python_bin: str = field(default_factory=lambda: sys.executable)
 
     def deltas_for(self, space: str) -> list[float]:
         d = self.construct_delta[space]

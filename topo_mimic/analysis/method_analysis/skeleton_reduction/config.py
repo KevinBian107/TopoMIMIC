@@ -24,7 +24,7 @@ class ReductionConfig:
     target_len: int = 100
 
     out_csv: str = "outputs/analysis/method_analysis/skeleton_reduction/reduction.csv"
-    out_tex: str = "paper/tables/appendix_skeleton_reduction.tex"
+    out_tex: str = "paper/bian_NeurReps_2026/tables/appendix_skeleton_reduction.tex"
 
 
 def load_config(path: str | Path) -> ReductionConfig:

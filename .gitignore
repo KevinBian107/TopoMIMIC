@@ -10,6 +10,7 @@ videos/
 data/
 checkpoints/
 PCD-Graph-Recon-DM/
+TopoMimic-website/
 stac-mjx/
 track-mjx/
 walker/
@@ -38,5 +39,4 @@ TopoMimic-website/backups/
 /backups/
 
 # paper PDFs
-bian_NeurReps_2026.pdf
-TopoMimic-website/
+bian_NeurReps_2026_camera.pdf

@@ -1,10 +1,31 @@
-# build upon regular track-mjx
-POT
-umap-learn
-networkx
-ripser
-gudhi
-seaborn
-keypoint-moseq[cuda]
-jax-moseq[cuda]
-gradio
+# Analysis dependencies, pinned to the versions that produced the NeurReps 2026 results.
+# JAX, MuJoCo and MuJoCo-MJX come from the MIMIC-MJX track-mjx install (see README).
+
+# Core: Takens embedding, W2 clustering, metrics, tables
+numpy==1.26.4
+scipy==1.17.0
+scikit-learn==1.7.2
+networkx==2.8.8
+POT==0.9.6.post1
+pandas==3.0.1
+h5py==3.12.1
+PyYAML==6.0.3
+tqdm==4.67.3
+matplotlib==3.10.0
+pillow==12.1.1
+umap-learn==0.5.11
+
+# Baselines: Keypoint-MoSeq and Mapper
+keypoint-moseq==0.6.8
+jax-moseq==0.3.3
+tda-mapper==0.12.0
+
+# Rendering and figures
+imageio==2.37.0
+imageio-ffmpeg==0.6.0
+opencv-python-headless==4.11.0.86
+shapely==2.1.2
+PyMuPDF==1.27.2.2
+
+# Optional: annotation GUI (topo_mimic.labeling)
+gradio==6.12.0

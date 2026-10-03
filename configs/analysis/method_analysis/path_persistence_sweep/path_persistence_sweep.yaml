@@ -24,4 +24,3 @@ min_primitive_frames: 30
 # outputs/analysis/feature_analysis/; only the new multipliers are computed.
 downstream_multipliers: [1.0, 4.0]
 dm_path_methods: ["w2_dmp_int_kmeans", "w2_dmp_qpos_kmeans", "w2_dmp_ekp_kmeans"]
-python_bin: "/home/jovyan/vast/kaiwen/track-mjx/.venv/bin/python3"

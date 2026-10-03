@@ -10,8 +10,8 @@ import yaml
 class AnalysisConfig:
     experiment_dir: str
     output_dir: str = "analysis_output"
-    rodent_rollout_dir: str = "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
-    behavior_labels_csv: str = "/home/jovyan/vast/kaiwen/TopoVNL/behavior_labels.csv"
+    rodent_rollout_dir: str = "data/rodent_ar.h5"
+    behavior_labels_csv: str = "behavior_labels/rodent_labels.csv"
 
     methods: list[str] = None
     seeds: list[int] = None

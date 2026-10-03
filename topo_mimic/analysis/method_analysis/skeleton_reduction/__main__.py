@@ -3,7 +3,7 @@
   python -m topo_mimic.analysis.method_analysis.skeleton_reduction [CONFIG]
 
 Reads the cached DM-skeletons and writes outputs/.../reduction.csv and
-paper/tables/appendix_skeleton_reduction.tex.
+paper/bian_NeurReps_2026/tables/appendix_skeleton_reduction.tex.
 """
 from __future__ import annotations
 

@@ -23,7 +23,7 @@ import h5py
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from topo_mimic.analysis.feature_analysis.data_loading import (
     load_experiment_results,

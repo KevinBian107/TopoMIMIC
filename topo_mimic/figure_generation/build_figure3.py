@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build paper/figures/figure4.png (manuscript Figure 4: coverage-vs-quality).
+"""Build paper/bian_NeurReps_2026/figures/figure4.png (manuscript Figure 4: coverage-vs-quality).
 
 This is the coverage-vs-quality small-multiples panel: per-(family,
 coverage) box distributions of negated internal consistency (panel A)

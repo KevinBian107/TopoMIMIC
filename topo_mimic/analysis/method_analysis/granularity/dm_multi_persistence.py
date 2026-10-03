@@ -1,5 +1,6 @@
 """Multi-persistence DM extraction with caching."""
 
+from topo_mimic.paths import DMPCD_ROOT
 import os
 import pickle as pkl
 import shutil
@@ -287,7 +288,7 @@ def run_dm_multi_persistence(
     Returns:
         Dict mapping pers_delta value to DMExtractionResult
     """
-    sys.path.append("/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM")
+    sys.path.append(str(DMPCD_ROOT))
 
     original_cwd = os.getcwd()
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build paper/appendix_figures/appendix_stationary.png.
+"""Build paper/bian_NeurReps_2026/appendix_figures/appendix_stationary.png.
 
 Three panels, in one row at a single shared height:
   (A) Root displacement per frame ($|\\Delta x|, |\\Delta y|, |\\Delta z|$),
@@ -36,7 +36,7 @@ from topo_mimic.analysis.method_analysis.property.stationary import (  # noqa: E
 
 # Panel width used to be inherited from the (now dropped) filmstrip grid.
 PANEL_ROW_WIDTH = 3204
-OUT_PATH = REPO / "paper/appendix_figures/appendix_stationary.png"
+OUT_PATH = REPO / "paper/bian_NeurReps_2026/appendix_figures/appendix_stationary.png"
 NEURREPS_OUT_PATH = REPO / "paper/bian_NeurReps_2026/appendix_figures/appendix_stationary.png"
 H5_PATH = REPO / "data/rodent_ar.h5"
 DM_RESULTS_DIR = REPO / "outputs/extraction/dm_pipeline_intention"
