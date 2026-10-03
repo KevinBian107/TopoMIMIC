@@ -53,7 +53,7 @@ import networkx as nx
 import numpy as np
 from scipy.spatial.distance import pdist, squareform
 
-REPO_ROOT = Path("/home/jovyan/vast/kaiwen/TopoVNL")
+REPO_ROOT = Path(__file__).resolve().parents[1]
 PCD_REPO = REPO_ROOT / "PCD-Graph-Recon-DM"
 OUT_DIR = REPO_ROOT / "outputs/demos/illustrative/dm_walkthrough"
 OUT_DIR.mkdir(parents=True, exist_ok=True)

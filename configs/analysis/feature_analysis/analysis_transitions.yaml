@@ -4,13 +4,13 @@
 experiment_dir: "outputs/experiment/transitions"
 output_dir: "outputs/analysis/feature_analysis"
 
-rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
+rodent_rollout_dir: "data/rodent_ar.h5"
 behavior_labels_csv: "behavior_labels/rodent_labels.csv"
 
 # Filter to specific methods and seeds (null = all)
 # Example: methods: ["gw_kmeans", "w2_kmeans"]
 # Example: seeds: [0, 123]
-methods: ["w2_dmc_int_kmeans", "w2_dmc_ekp_kmeans", "w2_dmc_qpos_kmeans", "w2_dmp_int_kmeans", "w2_dmp_qpos_kmeans", "w2_dmp_ekp_kmeans", "w2_unif_kmeans", "w2_full_kmeans", "kpms_intention", "kpms_keypoint", "custom_vae", "mapper_int", "mapper_qpos", "mapper_ekp"]
+methods: ["w2_dmc_int_kmeans", "w2_dmc_ekp_kmeans", "w2_dmc_qpos_kmeans", "w2_dmp_int_kmeans", "w2_dmp_qpos_kmeans", "w2_dmp_ekp_kmeans", "w2_unif_kmeans", "w2_full_kmeans", "kpms_intention", "kpms_keypoint", "mapper_int", "mapper_qpos", "mapper_ekp"]
 seeds: [0, 1, 2]
 
 # =============================================================================
@@ -99,6 +99,14 @@ run_dtw_visualization: false  # Enable detailed DTW visualization (slower)
 # Real-GT windows are subsampled to match the cluster size; the cluster's
 # own source clips are excluded from the real pool to avoid clip-level
 # leakage.
+run_mmd_analysis: true
+# KID sample unit. "frame": every native frame of a cluster's members and of the
+# matching GT instances is one sample (order-invariant frame distributions),
+# scored as the mean unbiased MMD^2 over kid_n_subsets equal-size subsets.
+# "window" reproduces the pre-camera-ready runs (flattened 200-frame windows).
+kid_unit: frame
+kid_subset_size: 1000
+kid_n_subsets: 10
 run_c2st_analysis: true
 c2st_raw_h5_path: "data/rodent_ar.h5"
 c2st_window_frames: 200

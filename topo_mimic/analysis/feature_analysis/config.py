@@ -10,8 +10,8 @@ import yaml
 class AnalysisConfig:
     experiment_dir: str
     output_dir: str = "analysis_output"
-    rodent_rollout_dir: str = "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar"
-    behavior_labels_csv: str = "/home/jovyan/vast/kaiwen/TopoVNL/behavior_labels.csv"
+    rodent_rollout_dir: str = "data/rodent_ar.h5"
+    behavior_labels_csv: str = "behavior_labels/rodent_labels.csv"
 
     methods: list[str] = None
     seeds: list[int] = None
@@ -44,6 +44,10 @@ class AnalysisConfig:
     dtw_max_comparisons: int = 100
     dtw_min_seq_length: int = 3
     dtw_skip_root_dims: int = 7
+
+    kid_unit: str = "window"  # "window" (flattened resampled windows) | "frame" (pooled frames)
+    kid_subset_size: int = 1000
+    kid_n_subsets: int = 10
 
     pure_behavior_labels: list[str] = None
     pure_behavior_min_length: int = 30
@@ -108,6 +112,9 @@ def load_config(config_path: str | Path) -> AnalysisConfig:
         dtw_max_comparisons=cfg.get("dtw_max_comparisons", 100),
         dtw_min_seq_length=cfg.get("dtw_min_seq_length", 3),
         dtw_skip_root_dims=cfg.get("dtw_skip_root_dims", 7),
+        kid_unit=str(cfg.get("kid_unit", "window")),
+        kid_subset_size=int(cfg.get("kid_subset_size", 1000)),
+        kid_n_subsets=int(cfg.get("kid_n_subsets", 10)),
         pure_behavior_labels=cfg.get("pure_behavior_labels", None),
         pure_behavior_min_length=cfg.get("pure_behavior_min_length", 30),
         gt_render_max_samples=cfg.get("gt_render_max_samples", 5),

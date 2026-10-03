@@ -257,7 +257,15 @@ def _kpms_variant_meta(
     kpms_selections: dict[float, Any],
 ) -> dict[str, Any] | None:
     """Only include KPMS variants that were SELECTED as best-per-kappa."""
+    # Accept both the flat kappa key (single-modality runs) and the
+    # (modality, kappa) key used when several feature streams are swept.
     sel = kpms_selections.get(vr.kappa)
+    if sel is None:
+        for _k, _v in kpms_selections.items():
+            if isinstance(_k, tuple) and _k[1] == vr.kappa \
+                    and _v.selected_variant_id == vr.variant_id:
+                sel = _v
+                break
     if sel is None or sel.selected_variant_id != vr.variant_id:
         return None
     return {

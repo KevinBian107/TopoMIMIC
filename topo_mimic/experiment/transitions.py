@@ -6,10 +6,11 @@ with fixed number of clusters, integrated seed handling, and auto-generated
 labels.yaml files for each method.
 """
 
+from topo_mimic.paths import DMPCD_ROOT
 import os
 
-os.environ["MUJOCO_GL"] = "egl"
-os.environ["PYOPENGL_PLATFORM"] = "egl"
+os.environ.setdefault("MUJOCO_GL", "egl")
+os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
 os.environ["JAX_ENABLE_X64"] = "True"
 
 import sys
@@ -1114,7 +1115,7 @@ def run_rendering(
 
 
 def run_experiment(config: ExperimentConfig) -> ExperimentResults:
-    sys.path.append("/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM")
+    sys.path.append(str(DMPCD_ROOT))
     os.makedirs(config.output_dir, exist_ok=True)
 
     print("=" * 60)
@@ -1383,19 +1384,22 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
 
             all_results[method_entry.name] = method_results
 
-    dm_data_cache: dict[str, np.ndarray] = {}
+    dm_data_cache: dict[tuple[str, int | None], np.ndarray] = {}
 
-    def _load_dm_data_for_ss(dm_key: str) -> np.ndarray:
-        if dm_key in dm_data_cache:
-            return dm_data_cache[dm_key]
-        hdf5_key = get_hdf5_key_for_dm_key(dm_key)
-        data, _ = load_data(
-            hdf5_key, config.rodent_rollout_dir, config.split, config.n_clips,
-            total_clips=preset.total_clips, test_size=preset.test_size,
+    def _load_dm_data_for_ss(dm_key: str, pca_dims: int | None = None) -> np.ndarray:
+        # Same construction as the DM-G inputs: DM-key transform (root strip or
+        # egocentric keypoints), then optional PCA fit on every loaded frame.
+        cache_key = (dm_key, pca_dims)
+        if cache_key in dm_data_cache:
+            return dm_data_cache[cache_key]
+        data, _ = load_source_data(
+            DMSourceConfig(dm_key=dm_key, pca_dims=pca_dims),
+            config.rodent_rollout_dir, config.split, config.n_clips,
+            dataset=config.dataset,
         )
         min_frames = min(data.shape[1], eval_data.shape[1])
         data = data[:, :min_frames, :]
-        dm_data_cache[dm_key] = data
+        dm_data_cache[cache_key] = data
         return data
 
     for method_entry in state_space_methods:
@@ -1405,8 +1409,9 @@ def run_experiment(config: ExperimentConfig) -> ExperimentResults:
 
         method = get_method(method_entry.name, method_entry.params)
         method_dm_key = getattr(method, "dm_key", config.data.dm_key)
-        dm_data_for_ss = _load_dm_data_for_ss(method_dm_key)
-        print(f"  Using dm_key={method_dm_key}, shape={dm_data_for_ss.shape}")
+        method_pca_dims = getattr(method, "pca_dims", None)
+        dm_data_for_ss = _load_dm_data_for_ss(method_dm_key, method_pca_dims)
+        print(f"  Using dm_key={method_dm_key}, pca_dims={method_pca_dims}, shape={dm_data_for_ss.shape}")
 
         method_output_dir = os.path.join(config.output_dir, method_entry.name)
         os.makedirs(method_output_dir, exist_ok=True)

@@ -5,7 +5,7 @@ output_dir: "outputs/extraction/dm_pipeline_qpos"
 
 data:
   dm_key: "qpos"  # Options: "intention (m3t6)", "qpos (m3t9)", "ekp (m3t8)"
-  rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
+  rodent_rollout_dir: "data/rodent_ar.h5"
   split: "all"
   pca_dims: 10  # Optional PCA pre-reduction before Takens (useful for high-D spaces)
   xml_path: "topo_mimic/extraction/xml/rodent.xml"  # Required for ekp transform

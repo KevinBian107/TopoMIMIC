@@ -19,7 +19,7 @@ Frame index extraction follows the original code in
 indices).
 
 Outputs:
-    paper/appendix_figures/appendix_lifetime_wholebody_<space>.pdf
+    paper/bian_NeurReps_2026/appendix_figures/appendix_lifetime_wholebody_<space>.pdf
     outputs/analysis/method_analysis/granularity_<space>/stationary/plots/wholebody_cycle_variance.pdf
 """
 from __future__ import annotations
@@ -31,7 +31,7 @@ import h5py
 import matplotlib.pyplot as plt
 import numpy as np
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 
 from topo_mimic.analysis.method_analysis.granularity.dm_multi_persistence import (  # noqa: E402

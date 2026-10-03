@@ -80,7 +80,7 @@ def run_scale_sweep(
     transition_counts: dict[str, int] = {}
     mapper_results = []
     kpms_results = []
-    kpms_selections: dict[float, object] = {}
+    kpms_selections: dict = {}   # keyed (modality, kappa); see discovery._kpms_variant_meta
 
     if 0 in phases:
         log.info("=== Phase 0: load data ===")
@@ -119,14 +119,21 @@ def run_scale_sweep(
         log.info("=== Phase 3: KPMS sweep ===")
         if data is None:
             data = load_scale_sweep_data(cfg)
-        kpms_results, kpms_selections = run_kpms_sweep(
-            keypoints=data.keypoints,
-            clip_ids=data.clip_ids,
-            cfg=cfg,
-            output_root=out_root / "kpms",
-            force=force,
-            max_fits=max_kpms_fits,
-        )
+        for _modality in cfg.kpms.modalities:
+            _stream = data.keypoints if _modality == "keypoint" else data.intention
+            _res, _sel = run_kpms_sweep(
+                keypoints=_stream,
+                clip_ids=data.clip_ids,
+                cfg=cfg,
+                output_root=out_root / f"kpms_{_modality}",
+                force=force,
+                max_fits=max_kpms_fits,
+                modality=_modality,
+            )
+            kpms_results.extend(_res)
+            # key by (modality, kappa): both streams sweep the same kappa grid,
+            # so a flat kappa key lets the second stream clobber the first.
+            kpms_selections.update({(_modality, k): v for k, v in _sel.items()})
         log.info(
             f"[P3] KPMS: {len(kpms_results)} fits, {len(kpms_selections)} kappa selections"
         )

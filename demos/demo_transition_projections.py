@@ -592,7 +592,7 @@ def nature_axis(ax):
         ax.spines[s].set_visible(False)
     for s in ("left", "bottom"):
         ax.spines[s].set_linewidth(0.8)
-    ax.tick_params(labelsize=6, width=0.8, length=2.5)
+    ax.tick_params(labelsize=10, width=0.8, length=2.5)
     ax.set_xticks([])
     ax.set_yticks([])
 
@@ -743,7 +743,7 @@ def render_direction_panel_figure(
     plt.rcParams.update({
         "font.family": "sans-serif",
         "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
-        "font.size": 8,
+        "font.size": 13,
     })
 
     n_rows = len(feature_spaces)
@@ -761,12 +761,12 @@ def render_direction_panel_figure(
     for col_idx, (A, B, dA, dB, cids) in enumerate(variant_specs):
         axes[0, col_idx].set_title(
             f"{A}-{dA}\n↔\n{B}-{dB}",
-            fontsize=9, fontweight="bold", pad=6,
+            fontsize=14, fontweight="bold", pad=6,
         )
 
     for row_idx, fs in enumerate(feature_spaces):
         axes[row_idx, 0].set_ylabel(
-            fs, fontsize=10, fontweight="bold", labelpad=12,
+            fs, fontsize=15, fontweight="bold", labelpad=12,
         )
         rows = grid_data.get(fs, [])
         for col_idx, spec in enumerate(variant_specs):
@@ -814,7 +814,7 @@ def render_direction_panel_figure(
                label="path endpoint (minimum)"),
     ]
     fig.legend(handles=handles, loc="lower center", ncol=len(handles),
-               frameon=False, fontsize=9, bbox_to_anchor=(0.5, -0.005))
+               frameon=False, fontsize=14, bbox_to_anchor=(0.5, -0.005))
 
     fig.suptitle(
         f"Transition x direction-variant panel — {PROJECTION_DISPLAY[projection]}",
@@ -860,12 +860,12 @@ def render_transition_filmstrip_figure(
     )
 
     for col_idx, (A, B) in enumerate(transitions):
-        _add_colored_transition_title(axes[0, col_idx], A, B, fontsize=11, y=1.04)
+        _add_colored_transition_title(axes[0, col_idx], A, B, fontsize=15, y=1.04)
 
     for row_idx, fs in enumerate(feature_spaces):
         if show_row_labels:
             axes[row_idx, 0].set_ylabel(
-                fs, fontsize=10, fontweight="bold", labelpad=12,
+                fs, fontsize=15, fontweight="bold", labelpad=12,
             )
         rows = grid_data.get(fs, [])
         for col_idx, (A, B) in enumerate(transitions):
@@ -921,7 +921,7 @@ def render_transition_filmstrip_figure(
               label="loop end" if cfg.primitive == "cycle" else "behavior B (end)"),
     ]
     fig.legend(handles=handles, loc="lower center", ncol=len(handles),
-               frameon=False, fontsize=9, bbox_to_anchor=(0.5, -0.005))
+               frameon=False, fontsize=14, bbox_to_anchor=(0.5, -0.005))
     fig.tight_layout(rect=(0, 0.03, 1, 0.99))
     plt.savefig(out_path, bbox_inches="tight", dpi=220)
     plt.savefig(out_path.with_suffix(".png"), bbox_inches="tight", dpi=220)
@@ -946,7 +946,7 @@ def render_combined_panel_figure(
     plt.rcParams.update({
         "font.family": "sans-serif",
         "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
-        "font.size": 8,
+        "font.size": 13,
     })
 
     n_rows = len(feature_spaces)
@@ -961,11 +961,11 @@ def render_combined_panel_figure(
         # Color-code the column title so the reader can read off which scatter
         # color is which behavior in this column (A = first/blue, B = second/red).
         # HPacker lays the three runs out side by side without overlap.
-        _add_colored_transition_title(axes[0, col_idx], A, B, fontsize=11, y=1.04)
+        _add_colored_transition_title(axes[0, col_idx], A, B, fontsize=15, y=1.04)
 
     for row_idx, fs in enumerate(feature_spaces):
         axes[row_idx, 0].set_ylabel(
-            fs, fontsize=10, fontweight="bold", labelpad=12,
+            fs, fontsize=15, fontweight="bold", labelpad=12,
         )
         rows = grid_data.get(fs, [])
         for col_idx, (A, B) in enumerate(transitions):
@@ -1035,7 +1035,7 @@ def render_combined_panel_figure(
                    linewidth=1.8, label="DM cycle" if cfg.primitive == "cycle" else "DM path"),
         ]
         fig.legend(handles=handles, loc="lower center", ncol=len(handles),
-                   frameon=False, fontsize=9, bbox_to_anchor=(0.5, -0.005))
+                   frameon=False, fontsize=14, bbox_to_anchor=(0.5, -0.005))
         fig.tight_layout(rect=(0, 0.04, 1, 0.99))
     else:
         fig.tight_layout(rect=(0, 0.0, 1, 0.99))
@@ -1106,7 +1106,7 @@ def render_figure(
                markeredgecolor="#222", markersize=10, label="path minima"),
     ]
     fig.legend(handles=handles, loc="lower center", ncol=len(handles),
-               frameon=False, fontsize=9, bbox_to_anchor=(0.5, -0.005))
+               frameon=False, fontsize=14, bbox_to_anchor=(0.5, -0.005))
 
     fig.tight_layout(rect=(0, 0.03, 1, 0.96))
     plt.savefig(out_path, bbox_inches="tight", dpi=220)

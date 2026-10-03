@@ -37,8 +37,9 @@ import networkx as nx
 from pathlib import Path
 from dataclasses import dataclass, field
 
-sys.path.insert(0, "/home/jovyan/vast/kaiwen/TopoVNL")
-sys.path.append("/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM")
+sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
+from topo_mimic.paths import DMPCD_ROOT
+sys.path.append(str(DMPCD_ROOT))
 
 from topo_mimic.analysis.method_analysis.property.cycle_asymmetry import (
     load_single_clip,

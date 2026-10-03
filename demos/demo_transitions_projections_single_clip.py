@@ -32,6 +32,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+from topo_mimic.paths import DMPCD_ROOT
 
 from topo_mimic.extraction.utils.dataset_config import get_dataset_preset
 from topo_mimic.extraction.utils.load_utils import get_aggregate_data, get_clip_indices
@@ -501,7 +502,7 @@ def _run_dm_pipeline(
     )
     from topo_mimic.extraction.skeletonization.preprocess import estimate_delay_embedding_params
 
-    sys.path.append("/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM")
+    sys.path.append(str(DMPCD_ROOT))
 
     pipeline_cfg = _build_dm_pipeline_config(config)
     output_dir = pipeline_cfg.output_dir

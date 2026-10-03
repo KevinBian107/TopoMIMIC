@@ -2,9 +2,9 @@ experiment_dir: "outputs/experiment/transitions"
 method: "w2_dmp_qpos_kmeans"
 seed: 0
 
-data_path: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
+data_path: "data/rodent_ar.h5"
 data_key: "qpos_rollout"
-xml_path: "/home/jovyan/vast/kaiwen/TopoVNL/topo_mimic/extraction/xml/rodent.xml"
+xml_path: "topo_mimic/extraction/xml/rodent.xml"
 dataset: "rodent"
 
 output_dir: "outputs/demos/cluster_filmstrips"

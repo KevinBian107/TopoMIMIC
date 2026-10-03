@@ -3,7 +3,7 @@
 # Skips any feature space whose all_cycle_dm.pkl already exists.
 set -e
 
-PYTHON="${PYTHON:-/home/jovyan/vast/kaiwen/track-mjx/.venv/bin/python3}"
+PYTHON="${PYTHON:-python}"
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
 

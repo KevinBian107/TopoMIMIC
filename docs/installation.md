@@ -1,10 +1,10 @@
 # Installation
 
-This project depends on the [Mimic-mjx](https://github.com/talmolab/track-mjx) and [Stac-mjx](https://github.com/talmolab/stac-mjx) ecosystems plus a handful of TDA packages, and requires building two C++ executables for the discrete Morse backend.
+This project depends on the [Mimic-mjx](https://github.com/talmolab/track-mjx) and [Stac-mjx](https://github.com/talmolab/stac-mjx) ecosystems plus the analysis packages in `requirements.txt`, and requires building two C++ executables for the discrete Morse backend.
 
 ## Python environment
 
-Follow the `jax` stack pinned by Mimic-mjx. Install `Stac-mjx` before the TopoVNL extras (KPMS prefers a newer jax than Stac-mjx; both can coexist). Then install the TDA packages:
+Follow the `jax` stack pinned by Mimic-mjx. Install `Stac-mjx` before the TopoMIMIC extras (KPMS prefers a newer jax than Stac-mjx; both can coexist). Then install the TDA packages:
 
 ```bash
 pip install -r requirements.txt
@@ -12,28 +12,31 @@ pip install -r requirements.txt
 
 ## Discrete Morse backend (C++)
 
-TopoVNL uses the DM-graph implementation from [PCD-Graph-Recon-DM](https://github.com/lucasjmagee/PCD-Graph-Recon-DM/tree/main). After cloning, build both executables:
+TopoMIMIC uses the DM-graph reference implementation [PCD-Graph-Recon-DM](https://github.com/lucasjmagee/PCD-Graph-Recon-DM) (tested at commit `711c58e`). Clone it into the repository root and build the two executables the pipeline calls:
 
 ```bash
 git clone https://github.com/lucasjmagee/PCD-Graph-Recon-DM.git
-
-cd dmpcd/code/persistence_swr
-g++ DiMoSC.cpp -I./phat/include -std=c++11 -o DiMoSC
-
-cd dmpcd/code/phat_morse_src
-g++ ComputeGraphReconstruction.cpp -std=c++11 -o ComputeGraphReconstruction
+cd PCD-Graph-Recon-DM/dmpcd/code/persistence_swr && g++ DiMoSC.cpp -I./phat/include -std=c++11 -o spt_cpp
+cd ../phat_morse_src && g++ ComputeGraphReconstruction.cpp
+cd ../../../..
 ```
 
 Verify:
 
 ```bash
-ls -lh dmpcd/code/persistence_swr/spt_cpp
-ls -lh dmpcd/code/phat_morse_src/a.out
+ls -lh PCD-Graph-Recon-DM/dmpcd/code/persistence_swr/spt_cpp
+ls -lh PCD-Graph-Recon-DM/dmpcd/code/phat_morse_src/a.out
 ```
+
+To keep the backend elsewhere, set `DMPCD_ROOT=/path/to/PCD-Graph-Recon-DM`.
+
+## Rendering
+
+Figures and videos render MuJoCo scenes. On GPU nodes use `MUJOCO_GL=egl`; this needs the GLVND loader `libEGL.so.1` (Ubuntu package `libegl1`) in addition to the NVIDIA driver. On CPU-only machines use `MUJOCO_GL=osmesa` with Mesa's `libOSMesa`.
 
 ## Data
 
-The rollouts can be regenerated from Mimic-mjx + Stac-mjx. Pre-generated sets used in the paper are available via gdown:
+The rollouts can be regenerated from Mimic-mjx + Stac-mjx. Pre-generated sets are available on Google Drive; the paper uses the clustering dataset, saved as `data/rodent_ar.h5`:
 
 - [Labeling dataset](https://drive.google.com/file/d/1sYFkKQGJ0qTJGm0fEigXRn4dKGzGv7qQ/view?usp=drive_link) (tighter KL bound, better visualization)
 - [Clustering dataset](https://drive.google.com/file/d/1exMwbJbJAqhJdKvT6ez9POY-bFGYbemN/view?usp=sharing) (looser KL bound, easier clustering)

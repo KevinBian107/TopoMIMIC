@@ -561,6 +561,11 @@ class KPMSIntentionMethod(BaseMethod):
         self.kappa = self.params.get("kappa", 1.35e4)
         self.ar_iters = self.params.get("ar_iters", 100)
         self.full_iters = self.params.get("full_iters", 300)
+        # Intention is fed as (T, k, 1). KPMS's egocentric alignment is undefined
+        # at d=1 and degrades silently under JAX's OOB rules into a per-frame
+        # sign flip, so fix_heading=True is the correct setting here. Default
+        # kept at False to preserve previously published runs; set True in config.
+        self.fix_heading = bool(self.params.get("fix_heading", False))
 
     @property
     def method_type(self) -> MethodType:
@@ -612,7 +617,7 @@ class KPMSIntentionMethod(BaseMethod):
 
         kpms.update_config(
             project_dir,
-            fix_heading=False,
+            fix_heading=self.fix_heading,
             bodyparts=[f'dim_{i}' for i in range(n_dim)],
             use_bodyparts=[f'dim_{i}' for i in range(n_dim)],
             anterior_bodyparts=['dim_0'],
@@ -753,6 +758,15 @@ class KPMSKeypointMethod(BaseMethod):
         self.kappa = self.params.get("kappa", 1.09e6)
         self.ar_iters = self.params.get("ar_iters", 100)
         self.full_iters = self.params.get("full_iters", 300)
+        # Keypoints are allocentric MuJoCo site positions, so fix_heading=True
+        # leaves the animal's heading in the observation and splits syllables by
+        # orientation. Setting it False makes KPMS estimate and remove heading,
+        # which only works if anterior/posterior name a real body axis: the
+        # historical defaults were kp_names[0]/[-1] = hip_L/palm_R, a limb-to-limb
+        # diagonal that swings with gait. Defaults preserve published runs.
+        self.fix_heading = bool(self.params.get("fix_heading", True))
+        self.anterior_bodyparts = self.params.get("anterior_bodyparts")
+        self.posterior_bodyparts = self.params.get("posterior_bodyparts")
 
     @property
     def method_type(self) -> MethodType:
@@ -805,13 +819,24 @@ class KPMSKeypointMethod(BaseMethod):
             overwrite=True,
         )
 
+        anterior = self.anterior_bodyparts or [kp_names[0]]
+        posterior = self.posterior_bodyparts or [kp_names[-1]]
+        missing = [b for b in list(anterior) + list(posterior) if b not in kp_names]
+        if missing:
+            raise ValueError(
+                f"anterior/posterior bodyparts not present in keypoints: {missing}. "
+                f"Available: {kp_names}"
+            )
+        if not self.fix_heading:
+            print(f"  heading axis: {posterior} -> {anterior}")
+
         kpms.update_config(
             project_dir,
-            fix_heading=True,
+            fix_heading=self.fix_heading,
             bodyparts=kp_names,
             use_bodyparts=kp_names,
-            anterior_bodyparts=[kp_names[0]],
-            posterior_bodyparts=[kp_names[-1]],
+            anterior_bodyparts=list(anterior),
+            posterior_bodyparts=list(posterior),
             verbose=False,
             latent_dim=self.latent_dim,
             num_states=n_states,

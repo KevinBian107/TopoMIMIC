@@ -1,5 +1,6 @@
 '''Functions for doing skeletonization of the intention space via discrete Morse graph'''
 
+from topo_mimic.paths import DMPCD_ROOT
 import numpy as np
 import networkx as nx
 import os
@@ -112,6 +113,142 @@ def extract_all_corridors(G: nx.Graph) -> list[np.ndarray]:
     return [np.array(c, dtype=int) for c in _maximal_bridge_chains(Hb) if len(c) > 0]
 
 
+def _lower_weight_spanning_forest(
+    G: nx.Graph, fval
+) -> nx.Graph:
+    """Kruskal spanning forest of G with edges ordered by saddle level max(f(u), f(v)).
+
+    This is the merge-tree carrier: a non-tree edge closes a cycle (an H1 feature,
+    handled elsewhere), so the forest holds only the H0 (component) structure.
+    """
+    T = nx.Graph()
+    T.add_nodes_from(G.nodes())
+    parent: dict[int, int] = {}
+
+    def find(x: int) -> int:
+        parent.setdefault(x, x)
+        r = x
+        while parent[r] != r:
+            r = parent[r]
+        while parent[x] != r:
+            parent[x], x = r, parent[x]
+        return r
+
+    for u, v in sorted(G.edges(), key=lambda e: max(fval(e[0]), fval(e[1]))):
+        ru, rv = find(u), find(v)
+        if ru != rv:
+            parent[rv] = ru
+            T.add_edge(u, v)
+    return T
+
+
+def extract_persistence_paths(
+    G: nx.Graph,
+    vertex_weight: dict[int, float],
+    persistence_delta: float = 0.0,
+) -> list[np.ndarray]:
+    """Extended-persistence branch decomposition of the DM skeleton into paths.
+
+    On the lower-weight spanning forest of G, every H0 persistence pair contributes
+    one branch: ordinary (min, saddle) branches plus one essential (min, max)
+    backbone per connected component. Unlike bridge-corridors, an elder branch flows
+    *through* a fork instead of being cut there, so a long trajectory stays one path;
+    the cut criterion is filtration persistence (density), not raw graph degree.
+    Branches partition the forest edges, so they are edge-disjoint and never lie
+    inside a DM-cycle (disjoint typing from DM-cycles).
+
+    Args:
+        G: DM skeleton graph; node indices share the indexing of vertex_weight.
+        vertex_weight: node -> filtration value f (lower weight = denser basin), so
+            minima of f are behavioral modes and saddles are basin boundaries.
+        persistence_delta: keep an ordinary branch when f(saddle) - f(min) >= this;
+            essential backbones are always kept. 0.0 keeps every branch present in G.
+
+    Returns:
+        One vertex-index array per kept branch (the minimum first, the saddle/max last).
+    """
+    if G.number_of_edges() == 0:
+        return []
+
+    def fval(n: int) -> float:
+        return vertex_weight.get(n, 0.0)
+
+    T = _lower_weight_spanning_forest(G, fval)
+
+    paths: list[np.ndarray] = []
+    for comp in nx.connected_components(T):
+        if len(comp) < 2:
+            continue
+        sub = T.subgraph(comp)
+        root = max(comp, key=fval)  # global max of the component
+
+        # Root the forest, record parents in a pre-order (parent before children).
+        par: dict[int, int | None] = {root: None}
+        order: list[int] = []
+        stack = [root]
+        visited = {root}
+        while stack:
+            n = stack.pop()
+            order.append(n)
+            for nb in sub.neighbors(n):
+                if nb not in visited:
+                    visited.add(nb)
+                    par[nb] = n
+                    stack.append(nb)
+
+        children: dict[int, list[int]] = {n: [] for n in comp}
+        for n in comp:
+            if par[n] is not None:
+                children[par[n]].append(n)
+
+        # Deepest (min-f) vertex in each subtree, accumulated children-before-parents.
+        deep: dict[int, int] = {n: n for n in comp}
+        for n in reversed(order):
+            p = par[n]
+            if p is not None and fval(deep[n]) < fval(deep[p]):
+                deep[p] = deep[n]
+
+        # Each forest edge (n, par[n]) is owned by deep[n]; an owner's owned edges form
+        # one contiguous chain from its minimum up to the junction where a deeper minimum
+        # takes over (the global minimum owns up to root => the essential min-max path).
+        global_min = deep[root]
+        owners = {deep[n] for n in comp if par[n] is not None}
+        for owner in owners:
+            seq = [owner]
+            cur = owner
+            while par[cur] is not None and deep[cur] == owner:
+                cur = par[cur]
+                seq.append(cur)
+            if len(seq) < 2:
+                continue
+
+            if owner == global_min:
+                # essential pair: deepest mode up to the global max (sparsest point).
+                paths.append(np.array(seq, dtype=int))
+                continue
+
+            # Ordinary pair: the feature dies where it merges into the deeper basin
+            # deep[junction]. The death level is the minimax barrier (max f along the
+            # full route min -> junction -> deeper-min), not the junction's own f, which
+            # is non-monotone on the connectivity spine.
+            junction = seq[-1]
+            deeper = deep[junction]
+            route = list(seq)
+            node = junction
+            while node != deeper:
+                nxt = next((c for c in children[node] if deep[c] == deeper), None)
+                if nxt is None:
+                    break
+                route.append(nxt)
+                node = nxt
+            pers = max(fval(x) for x in route) - fval(owner)
+            if pers < persistence_delta:
+                continue
+            paths.append(np.array(seq, dtype=int))
+
+    return paths
+
+
 def extract_skeleton_pcd_dm(
     points: np.ndarray,
     k: int = 10,
@@ -140,7 +277,7 @@ def extract_skeleton_pcd_dm(
         output_dir = os.path.abspath(output_dir)
 
     orig_cwd = os.getcwd()
-    repo_path = "/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM"
+    repo_path = str(DMPCD_ROOT)
     os.chdir(repo_path)
     import dmpcd.pcd as pcd
 

@@ -61,6 +61,115 @@ def _knn_inverse_density(points: np.ndarray, k: int) -> np.ndarray:
     return np.sqrt(np.mean(neigh_dist ** 2, axis=1))
 
 
+def _canonical_sign(v: np.ndarray) -> np.ndarray:
+    """Pin the sign of an eigenvector deterministically.
+
+    Eigensolvers return +/-v arbitrarily. This is not cosmetic here: CubicalCover
+    enumerates intervals in increasing lens order, so node ids are monotone in bin
+    index, and `_assign_frame_to_single_node` breaks ties toward the smallest id,
+    sending every overlap point to the lower-lens bin. Flipping the sign mirrors
+    the lens and re-partitions every overlap region, silently changing all cluster
+    ids between two runs of an identical config.
+    """
+    s = float(np.sum(v ** 3))
+    if s == 0.0 or not np.isfinite(s):
+        s = float(v[int(np.argmax(np.abs(v)))])
+    if s == 0.0:
+        nz = np.flatnonzero(v)
+        s = float(v[nz[0]]) if nz.size else 1.0
+    return v if s >= 0 else -v
+
+
+def _fiedler_lens(
+    points: np.ndarray,
+    k: int = 15,
+    max_k: int = 100,
+    rank_normalize: bool = False,
+    random_state: int = 0,
+    min_giant_frac: float = 0.90,
+) -> np.ndarray:
+    """First non-trivial eigenvector of the normalized Laplacian of a k-NN graph.
+
+    A disconnected graph is the dominant silent-failure mode: `spectral_embedding`
+    does not raise on one, it returns an eigenvector of eigenvalue 0, i.e. a
+    component indicator, which is finite and non-constant and so passes every
+    validator downstream while being piecewise constant. We therefore grow k until
+    the graph is connected, and only then fall back to the giant component.
+
+    Unweighted connectivity is used rather than distance-weighted edges because the
+    qpos/ekp spaces have heterogeneous per-dimension scales, so one global Gaussian
+    bandwidth would be dominated by the densest region.
+    """
+    import warnings
+
+    from scipy.sparse.csgraph import connected_components
+    from sklearn.manifold import spectral_embedding
+    from sklearn.neighbors import NearestNeighbors, kneighbors_graph
+
+    n = len(points)
+    k_used = int(min(k, max(1, n - 1)))
+    k_cap = int(min(max_k, n - 1))
+    while True:
+        adj = kneighbors_graph(points, k_used, mode="connectivity", include_self=False)
+        # maximum(), not 0.5*(A+A.T): the latter half-weights one-directional edges.
+        adj = adj.maximum(adj.T)
+        n_comp, comp_labels = connected_components(adj, directed=False)
+        if n_comp == 1 or k_used >= k_cap:
+            break
+        k_used = int(min(k_used * 2, k_cap))
+
+    if n_comp == 1:
+        keep = np.arange(n)
+        adj_sub = adj
+    else:
+        giant = int(np.argmax(np.bincount(comp_labels)))
+        keep = np.flatnonzero(comp_labels == giant)
+        frac = len(keep) / n
+        if frac < min_giant_frac:
+            raise RuntimeError(
+                f"Fiedler lens: graph still has {n_comp} components at k={k_used} and the "
+                f"giant one holds only {frac:.1%} of points; refusing to invent lens values."
+            )
+        adj_sub = adj[keep][:, keep]
+
+    vec, failures = None, []
+    for solver in ("amg", "arpack", "lobpcg"):
+        try:
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "error", message=".*not fully connected.*", category=UserWarning
+                )
+                vec = spectral_embedding(
+                    adj_sub, n_components=1, drop_first=True, norm_laplacian=True,
+                    eigen_solver=solver, random_state=random_state,
+                ).ravel()
+            break
+        except Exception as exc:  # noqa: BLE001 - fall through to the next solver
+            failures.append(f"{solver}: {type(exc).__name__}: {exc}")
+            vec = None
+    if vec is None:
+        raise RuntimeError("Fiedler lens: every eigensolver failed -> " + " | ".join(failures))
+
+    out = np.empty(n, dtype=float)
+    out[keep] = vec
+    if len(keep) < n:
+        rest = np.setdiff1d(np.arange(n), keep)
+        nn = NearestNeighbors(n_neighbors=1).fit(points[keep])
+        out[rest] = vec[nn.kneighbors(points[rest])[1][:, 0]]
+
+    out = _canonical_sign(out)
+    if out.std() > 0:
+        out = out / out.std()
+    if rank_normalize:
+        out = np.argsort(np.argsort(out)) / max(1, n - 1)
+
+    print(
+        f"[fiedler] n={n} k_used={k_used} components={n_comp} "
+        f"giant_frac={len(keep)/n:.3f} rank_norm={rank_normalize}"
+    )
+    return out
+
+
 def _assign_frame_to_single_node(
     graph: Any,
     lens_values: np.ndarray,
@@ -93,6 +202,94 @@ def _assign_frame_to_single_node(
     return assignments
 
 
+def _assign_frame_to_nearest_bin(
+    graph: Any,
+    lens_values: np.ndarray,
+    n_points: int,
+    n_intervals: int,
+) -> np.ndarray:
+    """Frame-to-node partition by nearest cover-interval centre.
+
+    For a 1D standard cubical cover the j-th interval is centred at
+    c_j = lo + (j + 0.5) w with w = (hi - lo) / n_intervals and half-width w, so a
+    point lies in at most two consecutive intervals. Each node is mapped to the
+    centre of the interval containing all of its members (median-nearest among the
+    candidates), and each point goes to the containing node with the nearest centre,
+    ties to the smallest node id. This partitions the lens into n_intervals equal
+    bins regardless of the order in which the cover enumerates its sets, unlike the
+    smallest-id rule, whose bins depend on that order.
+
+    Returns:
+        assignments: (n_points,) int array; -1 means unassigned (noise).
+    """
+    lens = np.asarray(lens_values, dtype=float).reshape(-1)
+    lo, hi = float(lens.min()), float(lens.max())
+    w = (hi - lo) / n_intervals if hi > lo else 1.0
+    centers = lo + (np.arange(n_intervals) + 0.5) * w
+
+    assignments = np.full(n_points, -1, dtype=np.int64)
+    best = np.full(n_points, np.inf)
+    for node_id in sorted(graph.nodes):
+        ids = np.asarray(graph.nodes[node_id].get("ids", []), dtype=np.int64)
+        if ids.size == 0:
+            continue
+        member = lens[ids]
+        tol = 1e-9 * max(1.0, abs(w))
+        fits = (centers - w <= member.min() + tol) & (member.max() <= centers + w + tol)
+        cand = np.flatnonzero(fits) if fits.any() else np.arange(n_intervals)
+        center = centers[cand[np.argmin(np.abs(centers[cand] - np.median(member)))]]
+        d = np.abs(member - center)
+        closer = d < best[ids]
+        best[ids[closer]] = d[closer]
+        assignments[ids[closer]] = int(node_id)
+    return assignments
+
+
+class _AdaptiveDBSCAN:
+    """DBSCAN whose radius tracks the local scale of each cover element.
+
+    tda-mapper applies one clustering object to every cover element. Because the
+    lens here is an inverse-density score, those elements are density strata, so
+    a single global eps is far too large in the dense strata (they collapse to
+    one node) and too small in the sparse ones (they become all noise). This
+    derives eps from each element's own k-NN distances instead.
+
+    Must never raise: tda-mapper's FailSafeClustering turns an exception into a
+    single all-points cluster without surfacing it.
+    """
+
+    def __init__(self, scale: float, k: int = 3, min_samples: int = 5):
+        self.scale = float(scale)
+        self.k = int(k)
+        self.min_samples = int(min_samples)
+        self.labels_ = None
+        self.eps_ = None
+
+    def fit(self, X, y=None):
+        from sklearn.cluster import DBSCAN
+        from sklearn.neighbors import NearestNeighbors
+
+        X = np.asarray(X)
+        n = len(X)
+        if n < self.min_samples:
+            self.labels_ = np.full(n, -1, dtype=np.int64)
+            return self
+
+        nn = NearestNeighbors(n_neighbors=min(self.k + 1, n)).fit(X)
+        dists, _ = nn.kneighbors(X)
+        local = float(np.median(np.sqrt(np.mean(dists[:, 1:] ** 2, axis=1))))
+        if not np.isfinite(local) or local <= 0:
+            # degenerate element (duplicate points); one cluster is the sane read
+            self.labels_ = np.zeros(n, dtype=np.int64)
+            return self
+
+        self.eps_ = self.scale * local
+        self.labels_ = DBSCAN(
+            eps=self.eps_, min_samples=self.min_samples
+        ).fit_predict(X)
+        return self
+
+
 class MapperMethod(BaseMethod):
     """
     Mapper-based benchmark baseline. Each node on the Mapper graph becomes its
@@ -117,10 +314,22 @@ class MapperMethod(BaseMethod):
         self.takens_m = int(self.params.get("takens_m", 3))
         self.takens_tau = int(self.params.get("takens_tau", 6))
         self.knn_k = int(self.params.get("knn_k", 3))
+        # Lens is selectable so the historical inverse-density runs stay reproducible.
+        # Default stays "knn_density" so untouched configs are byte-identical; the
+        # shipped Mapper configs select "fiedler" explicitly.
+        self.lens_name = str(self.params.get("lens", "knn_density"))
+        self.lens_params = dict(self.params.get("lens_params", {}))
+        if self.lens_name == "knn_density":
+            self.lens_params.setdefault("knn_k", self.knn_k)
         self.n_intervals = int(self.params.get("n_intervals", 10))
         self.overlap_frac = float(self.params.get("overlap_frac", 0.5))
         self.dbscan_eps = self.params.get("dbscan_eps", "auto")
         self.dbscan_min_samples = int(self.params.get("dbscan_min_samples", 5))
+        # "global" reproduces the published runs (one eps for every cover
+        # element). "per_bin" scales eps to each element's own k-NN distance,
+        # which the inverse-density lens makes necessary; see _AdaptiveDBSCAN.
+        self.eps_mode = str(self.params.get("eps_mode", "global"))
+        self.eps_scale = float(self.params.get("eps_scale", 3.0))
         self.min_total_frames = int(self.params.get("min_total_frames", 0))
         # When the concatenated Takens-embedded point cloud has more points
         # than this cap, build the Mapper graph on a random subsample of size
@@ -128,6 +337,17 @@ class MapperMethod(BaseMethod):
         # the subsample. Without this, tdamapper's fit_transform hangs for
         # >~300k points.
         self.max_points = int(self.params.get("max_points", 100000))
+        # PCA applied to the transformed features before Takens, matching DM-G's
+        # per-space pca_dims; read by the benchmark loader, not by fit().
+        pca = self.params.get("pca_dims")
+        self.pca_dims = int(pca) if pca is not None else None
+        # Defaults reproduce the historical runs: tda-mapper's proximity-net cover
+        # and the smallest-id overlap rule. The shipped configs select the standard
+        # cubical cover and the nearest-bin rule explicitly.
+        self.cover_algorithm = str(self.params.get("cover_algorithm", "proximity"))
+        self.overlap_rule = str(self.params.get("overlap_rule", "smallest_id"))
+        if self.overlap_rule not in ("smallest_id", "nearest_bin"):
+            raise ValueError(f"overlap_rule must be 'smallest_id' or 'nearest_bin', got {self.overlap_rule!r}")
 
     @property
     def method_type(self) -> MethodType:
@@ -148,8 +368,9 @@ class MapperMethod(BaseMethod):
         frames into nodes-as-clusters.
 
         Args:
-            data: (n_clips, n_frames, n_dim) after DM-key transform (root strip +
-                PCA applied upstream by the caller).
+            data: (n_clips, n_frames, n_dim) after the DM-key transform (root
+                strip or egocentric keypoints) and optional PCA, applied upstream
+                by the caller (see ``pca_dims``).
             n_states: ignored; Mapper chooses node count via hyperparameters.
             project_dir: unused, accepted for KPMS-signature parity.
             seed: DBSCAN random_state.
@@ -181,41 +402,67 @@ class MapperMethod(BaseMethod):
         all_pts = np.concatenate(pts_list, axis=0)
         print(f"[Mapper/{self.dm_key}] embedded points: {all_pts.shape}")
 
-        lens = _knn_inverse_density(all_pts, k=self.knn_k)
-        print(f"[Mapper/{self.dm_key}] lens range: [{lens.min():.4f}, {lens.max():.4f}]")
-
         # Subsample for graph fit if the full point cloud is too large for
         # tdamapper. Assignments for non-subsample points are propagated via
-        # 1-NN in the subsample at the end.
+        # 1-NN in the subsample at the end. This must happen BEFORE the lens is
+        # computed, because a graph-scoped lens has to be built on exactly the
+        # set Mapper will cover.
         if len(all_pts) > self.max_points:
             rng_sub = np.random.default_rng(seed + 991)
             sub_idx = rng_sub.choice(len(all_pts), size=self.max_points, replace=False)
             sub_pts = all_pts[sub_idx]
-            sub_lens = lens[sub_idx]
             print(f"[Mapper/{self.dm_key}] subsampling {len(all_pts)} -> {self.max_points} points for graph fit")
         else:
             sub_idx = np.arange(len(all_pts))
             sub_pts = all_pts
-            sub_lens = lens
 
-        cover = CubicalCover(n_intervals=self.n_intervals, overlap_frac=self.overlap_frac)
+        from topo_mimic.analysis.scale_sweep.lenses import LENS_SCOPE, compute_lens
+
+        if LENS_SCOPE.get(self.lens_name, "pointwise") == "graph":
+            # The Fiedler vector of the full cloud restricted to a random subsample
+            # is not the Fiedler vector of that subsample, so compute it directly.
+            sub_lens = compute_lens(self.lens_name, sub_pts, self.lens_params)
+        else:
+            sub_lens = compute_lens(self.lens_name, all_pts, self.lens_params)[sub_idx]
+        print(
+            f"[Mapper/{self.dm_key}] lens={self.lens_name} "
+            f"range: [{sub_lens.min():.4f}, {sub_lens.max():.4f}]"
+        )
+
+        cover = CubicalCover(
+            n_intervals=self.n_intervals,
+            overlap_frac=self.overlap_frac,
+            algorithm=self.cover_algorithm,
+        )
         eps = self.dbscan_eps
-        if eps == "auto":
-            rng = np.random.default_rng(seed)
-            sub_n = min(1000, len(sub_pts))
-            sub = sub_pts[rng.choice(len(sub_pts), size=sub_n, replace=False)]
-            from sklearn.metrics import pairwise_distances
-            d = pairwise_distances(sub)
-            eps = float(np.median(d[d > 0]))
-            print(f"[Mapper/{self.dm_key}] auto dbscan_eps = {eps:.4f}")
-
-        inner = DBSCAN(eps=float(eps), min_samples=self.dbscan_min_samples)
+        if self.eps_mode == "per_bin":
+            inner = _AdaptiveDBSCAN(
+                scale=self.eps_scale, k=self.knn_k,
+                min_samples=self.dbscan_min_samples,
+            )
+            eps = float("nan")  # set per cover element, not globally
+            print(f"[Mapper/{self.dm_key}] per-bin eps, scale={self.eps_scale}")
+        else:
+            if eps == "auto":
+                rng = np.random.default_rng(seed)
+                sub_n = min(1000, len(sub_pts))
+                sub = sub_pts[rng.choice(len(sub_pts), size=sub_n, replace=False)]
+                from sklearn.metrics import pairwise_distances
+                d = pairwise_distances(sub)
+                eps = float(np.median(d[d > 0]))
+                print(f"[Mapper/{self.dm_key}] auto dbscan_eps = {eps:.4f}")
+            inner = DBSCAN(eps=float(eps), min_samples=self.dbscan_min_samples)
         mapper = MapperAlgorithm(cover=cover, clustering=inner)
         graph = mapper.fit_transform(sub_pts, sub_lens)
         print(f"[Mapper/{self.dm_key}] mapper graph: {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges")
 
         # Sub-assignment on the subsample (graph ids reference sub_pts indices).
-        sub_assign = _assign_frame_to_single_node(graph, sub_lens, n_points=len(sub_pts))
+        if self.overlap_rule == "nearest_bin":
+            sub_assign = _assign_frame_to_nearest_bin(
+                graph, sub_lens, n_points=len(sub_pts), n_intervals=self.n_intervals,
+            )
+        else:
+            sub_assign = _assign_frame_to_single_node(graph, sub_lens, n_points=len(sub_pts))
 
         if len(sub_pts) < len(all_pts):
             from sklearn.neighbors import NearestNeighbors
@@ -253,7 +500,13 @@ class MapperMethod(BaseMethod):
         stats["mapper_n_nodes"] = int(graph.number_of_nodes())
         stats["mapper_n_edges"] = int(graph.number_of_edges())
         stats["mapper_dbscan_eps"] = float(eps)
+        stats["mapper_eps_mode"] = self.eps_mode
+        stats["mapper_eps_scale"] = self.eps_scale
         stats["dm_key"] = self.dm_key
+        stats["mapper_pca_dims"] = self.pca_dims
+        stats["mapper_cover_algorithm"] = self.cover_algorithm
+        stats["mapper_overlap_rule"] = self.overlap_rule
+        stats["mapper_input_dim"] = int(data.shape[-1])
 
         print_transition_stats(stats)
 

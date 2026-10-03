@@ -13,14 +13,22 @@ from typing import Any
 
 import numpy as np
 
-from topo_mimic.analysis.mapper.mapper_method import _knn_inverse_density
+from topo_mimic.analysis.mapper.mapper_method import _fiedler_lens, _knn_inverse_density
 
 LENS_REGISTRY: dict[str, Any] = {}
 
+# "pointwise" lenses are a per-point function of the cloud, so they may be computed
+# once on the full cloud and indexed down to a subsample. "graph" lenses depend on
+# the neighbourhood graph of whatever set they are given, so they MUST be computed
+# on exactly the set Mapper will cover: the Fiedler vector of a big cloud restricted
+# to a random subsample is not the Fiedler vector of that subsample.
+LENS_SCOPE: dict[str, str] = {}
 
-def register_lens(name: str):
+
+def register_lens(name: str, scope: str = "pointwise"):
     def _decorator(fn):
         LENS_REGISTRY[name] = fn
+        LENS_SCOPE[name] = scope
         return fn
     return _decorator
 
@@ -56,6 +64,25 @@ def eccentricity(points: np.ndarray, knn_k: int = 3, **_ignored) -> np.ndarray:
     nn.fit(points)
     distances, _ = nn.kneighbors(points)
     return distances[:, 1:].max(axis=1)
+
+
+@register_lens("fiedler", scope="graph")
+def fiedler(
+    points: np.ndarray,
+    fiedler_k: int = 15,
+    rank_normalize: bool = False,
+    random_state: int = 0,
+    **_ignored,
+) -> np.ndarray:
+    """Fiedler vector of the k-NN graph Laplacian — a standard Mapper filter.
+
+    `fiedler_k` is deliberately separate from `knn_k`: a k-NN *connectivity* graph
+    needs a far larger k than a k-NN *density estimate*. DM-G's k=3 sits well below
+    the k ~ log(n) connectivity threshold and would disconnect the graph.
+    """
+    return _fiedler_lens(
+        points, k=fiedler_k, rank_normalize=rank_normalize, random_state=random_state
+    )
 
 
 def compute_lens(name: str, points: np.ndarray, params: dict) -> np.ndarray:

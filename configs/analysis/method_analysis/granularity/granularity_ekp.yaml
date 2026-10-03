@@ -5,7 +5,7 @@ output_dir: "outputs/analysis/method_analysis/granularity_ekp"
 data:
   dm_key: "ekp"
   qpos_key: "qpos"
-  rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
+  rodent_rollout_dir: "data/rodent_ar.h5"
   split: "train"
   pca_dims: 10
   xml_path: "topo_mimic/extraction/xml/rodent.xml"
@@ -37,7 +37,7 @@ stationary:
 clustering:
   target_len: 100
   only_max: true
-  mds_components: 3
+  mds_components: 5   # matches the DMC-ekp selection (Appendix MDS sweep)
 
 redundancy:
   enabled: true

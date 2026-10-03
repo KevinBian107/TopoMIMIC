@@ -1,5 +1,6 @@
 """Multi-persistence DM extraction with caching."""
 
+from topo_mimic.paths import DMPCD_ROOT
 import os
 import pickle as pkl
 import shutil
@@ -115,10 +116,13 @@ def extract_dm_for_persistence(
     from topo_mimic.extraction.skeletonization.skeletonization import (
         extract_all_cycles,
         extract_all_corridors,
+        extract_persistence_paths,
     )
     from topo_mimic.extraction.skeletonization.dm_path import _parse_sorted_weights
 
     use_dm_path = getattr(config.dm, "use_dm_path", False)
+    path_method = getattr(config.dm, "path_method", "persistence")
+    path_persistence_delta = getattr(config.dm, "path_persistence_delta", 0.0)
 
     all_cycle_dm = []
     all_path_dm = [] if use_dm_path else None
@@ -180,7 +184,13 @@ def extract_dm_for_persistence(
                 segment_lengths.append(len(seg))
 
             if use_dm_path:
-                path_prims = _prims(extract_all_corridors(G))
+                if path_method == "corridor" or vweight is None:
+                    path_vlists = extract_all_corridors(G)
+                else:
+                    path_vlists = extract_persistence_paths(
+                        G, vweight, persistence_delta=path_persistence_delta
+                    )
+                path_prims = _prims(path_vlists)
                 all_path_dm.append(path_prims)
                 n_total_paths += len(path_prims)
                 for p in path_prims:
@@ -278,7 +288,7 @@ def run_dm_multi_persistence(
     Returns:
         Dict mapping pers_delta value to DMExtractionResult
     """
-    sys.path.append("/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM")
+    sys.path.append(str(DMPCD_ROOT))
 
     original_cwd = os.getcwd()
 

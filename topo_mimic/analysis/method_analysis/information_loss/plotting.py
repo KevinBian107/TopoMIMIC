@@ -179,7 +179,11 @@ def plot_mi_bar(
     """
     if not results:
         return
-    family_order = ["DMC", "DMP", "KPMS", "VAE", "Mapper"]
+    # Canonical order, restricted to the families the config actually ran, so
+    # dropping a method from the config does not leave an empty box slot.
+    _present = {r.family for r in results}
+    family_order = [f for f in ("DMC", "DMP", "KPMS", "VAE", "Mapper")
+                    if f in _present]
     attr_map = {"I_TY": "I_TY", "NMI": "NMI", "AMI": "AMI"}
     ylabel_map = {"I_TY": r"$I(T;Y)$ (bits)", "NMI": "NMI", "AMI": "AMI"}
     title_map = {"I_TY": r"$I(T;Y)$", "NMI": "NMI", "AMI": "AMI"}
@@ -350,11 +354,15 @@ def plot_combined_main(
     if not results:
         return
 
-    family_order = ["DMC", "DMP", "KPMS", "VAE", "Mapper"]
+    # Canonical order, restricted to the families the config actually ran, so
+    # dropping a method from the config does not leave an empty box slot.
+    _present = {r.family for r in results}
+    family_order = [f for f in ("DMC", "DMP", "KPMS", "VAE", "Mapper")
+                    if f in _present]
     from collections import defaultdict
 
     with mpl.rc_context(_rcparams()):
-        fig = plt.figure(figsize=(9.0, 3.5))
+        fig = plt.figure(figsize=(9.0, 2.8))
         gs = fig.add_gridspec(1, 3, width_ratios=[1.1, 1.0, 1.0], wspace=0.35)
         ax_ib = fig.add_subplot(gs[0, 0])
         ax_i = fig.add_subplot(gs[0, 1])
@@ -364,7 +372,7 @@ def plot_combined_main(
             ax.text(
                 -0.18, 1.02, text,
                 transform=ax.transAxes,
-                fontsize=12, fontweight="bold", va="bottom", ha="left",
+                fontsize=8, fontweight="bold", va="bottom", ha="left",
             )
 
         _panel_label(ax_ib, "(A)")
@@ -406,8 +414,8 @@ def plot_combined_main(
 
         ax_ib.set_xlim(x_lo, x_hi)
         ax_ib.set_ylim(y_lo, y_hi)
-        ax_ib.set_xlabel(r"$H(T)$ — representation capacity (bits)")
-        ax_ib.set_ylabel(r"$I(T;\,Y)$ — transition info preserved (bits)")
+        ax_ib.set_xlabel(r"$H(T)$ — capacity (bits)")
+        ax_ib.set_ylabel(r"$I(T;\,Y)$ — transition info (bits)")
         ax_ib.legend(handles=list(legend_handles.values()),
                      loc="upper left", fontsize=7, handlelength=1.0,
                      borderpad=0.4, labelspacing=0.4)
@@ -457,6 +465,9 @@ def plot_combined_main(
             ax.set_xticklabels(family_order, fontsize=8)
             ax.set_xlim(positions[0] - x_step * 0.7,
                         positions[-1] + x_step * 0.7)
+            # Panel A carries an xlabel; give B/C one too so all three panels
+            # end at the same baseline instead of leaving dead space under B/C.
+            ax.set_xlabel("Method family")
             ax.set_ylabel(ylabel)
             ax.set_ylim(bottom=0)
             ax.set_title(title)

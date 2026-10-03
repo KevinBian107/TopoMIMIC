@@ -1,0 +1,26 @@
+# kNN-k sensitivity sweep for the DM pipeline.
+# Reuses the EXACT main pipeline; overrides only dm.k_neighbors + path keys.
+# k=3 is the production value (extraction reused, also a fidelity anchor).
+
+k_values: [3, 5, 8]
+reuse_k: 3
+spaces: ["intention", "qpos", "ekp"]
+
+sandbox_dir: "outputs/analysis/method_analysis/k_sweep"
+
+prod_extraction_cfg: "configs/extraction/dm_pipeline_{space}.yaml"
+prod_experiment_cfg: "configs/experiment/transitions.yaml"
+prod_analysis_cfg: "configs/analysis/feature_analysis/analysis_transitions.yaml"
+prod_extraction_out: "outputs/extraction/dm_pipeline_{space}"
+
+# Only the k-dependent DM methods; k-invariant baselines are disabled.
+dm_methods:
+  - "w2_dmc_int_kmeans"
+  - "w2_dmc_qpos_kmeans"
+  - "w2_dmc_ekp_kmeans"
+  - "w2_dmp_int_kmeans"
+  - "w2_dmp_qpos_kmeans"
+  - "w2_dmp_ekp_kmeans"
+
+run_c2st: false
+disable_rendering: true

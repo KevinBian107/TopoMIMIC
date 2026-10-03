@@ -12,8 +12,10 @@ cycle basis) and DM-paths (branch-to-branch bridge corridors), as an animated gr
 
 The decomposition is recomputed from the cached skeleton (no C++ backend needed):
 cycles = nx.minimum_cycle_basis weighted by density (extract_all_cycles); paths =
-maximal non-branching chains of the bridge forest (extract_all_corridors). Both are
-mapped back to frames via the cached sparse-weighted-Rips remap.
+the extended-persistence branch decomposition of the skeleton's spanning forest
+(extract_persistence_paths), one branch per density basin from its floor up to the
+saddle at which it merges into a deeper basin. Both are mapped back to frames via the
+cached sparse-weighted-Rips remap.
 
 Usage:
     python -m demos.demo_primitive_decomposition --config configs/demos/demo_primitive_decomposition.yaml
@@ -46,6 +48,7 @@ from topo_mimic.extraction.dm_pipeline import takens_embedding
 from topo_mimic.extraction.skeletonization.skeletonization import (
     extract_all_cycles,
     extract_all_corridors,
+    extract_persistence_paths,
 )
 from topo_mimic.extraction.skeletonization.remap import (
     parse_swr_remap,
@@ -161,7 +164,9 @@ def load_decomposition(cfg: DecompVizConfig) -> Decomposition:
         return rows + offset, coords[rows]
 
     cyc = [p for p in (_to_prim(c) for c in extract_all_cycles(G, vertex_weight=vweight)) if p]
-    pth = [p for p in (_to_prim(c) for c in extract_all_corridors(G)) if p]
+    _path_vlists = (extract_all_corridors(G) if vweight is None
+                    else extract_persistence_paths(G, vweight))
+    pth = [p for p in (_to_prim(c) for c in _path_vlists) if p]
     # longest first, so the most prominent primitives get the lowest indices/colors
     cyc.sort(key=lambda p: len(p[0]), reverse=True)
     pth.sort(key=lambda p: len(p[0]), reverse=True)
@@ -434,7 +439,7 @@ def run_clip(cfg: DecompVizConfig, clip_id: int) -> None:
                          f"Cycles (min cycle basis, n={len(decomp.cycles_frames)})",
                          close_loops=True)
         draw_graph_panel(axes[2], decomp, decomp.paths_coords, _PATH_COLORS,
-                         f"Paths (branch corridors, n={len(decomp.paths_frames)})")
+                         f"Paths (persistence branches, n={len(decomp.paths_frames)})")
         _tag = f"  [{cfg.tag.replace('_', ' ')}]" if cfg.tag else ""
         figs.suptitle(f"Clip {clip_id} ({cfg.feature_space}) — DM decomposition in PCA-2D{_tag}",
                       fontsize=10, fontweight="bold")

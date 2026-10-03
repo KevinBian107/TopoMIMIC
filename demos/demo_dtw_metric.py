@@ -31,7 +31,7 @@ from matplotlib.colors import LinearSegmentedColormap
 import yaml
 import h5py
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from topo_mimic.analysis.feature_analysis.data_loading import (
     load_cluster_dict,

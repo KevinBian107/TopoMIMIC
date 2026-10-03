@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build paper/appendix_figures/appendix_asymmetry.png.
+"""Build paper/bian_NeurReps_2026/appendix_figures/appendix_asymmetry.png.
 
 Three violin panels (one per feature space) of bootstrap-mean
 cycle-counts-per-100-frames for asymmetric vs. symmetric A->B->A triplets.
@@ -16,11 +16,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 
 ASYM_DIR = REPO / "outputs/analysis/method_analysis/behavioral_asymmetry"
-OUT_PATH = REPO / "paper/appendix_figures/appendix_asymmetry.png"
+OUT_PATH = REPO / "paper/bian_NeurReps_2026/appendix_figures/appendix_asymmetry.png"
 
 ACTIVE_COLOR = "#E6A382"  # asymmetric (orange)
 QUIET_COLOR  = "#7E9FCB"  # symmetric (blue)

@@ -4,7 +4,7 @@
 # and writes to outputs/analysis/method_analysis/.
 set -e
 
-PYTHON="${PYTHON:-/home/jovyan/vast/kaiwen/track-mjx/.venv/bin/python3}"
+PYTHON="${PYTHON:-python}"
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
@@ -69,7 +69,7 @@ echo "Method Analysis - Information Loss (IB plane)"
 echo "=============================="
 
 $PYTHON -m topo_mimic.analysis.method_analysis.information_loss.main \
-        configs/analysis/method_analysis/information_loss/information_loss.yaml
+        configs/analysis/method_analysis/information_loss/information_loss_reduced.yaml
 
 echo ""
 echo "Method analysis complete."

@@ -4,7 +4,7 @@ data:
   # dm_key: feature space for DM extraction ("intention" (m3t6), "qpos" (m3t9), or "ekp" (m3t8))
   dm_key: "qpos"
   qpos_key: "qpos"
-  rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
+  rodent_rollout_dir: "data/rodent_ar.h5"
   split: "train"
   # pca_dims: optional PCA reduction (only applies to qpos/ekp, ignored for intention)
   pca_dims: 10
@@ -38,7 +38,7 @@ stationary:
 clustering:
   target_len: 100
   only_max: true
-  mds_components: 3
+  mds_components: 40   # matches the DMC-qpos selection (Appendix MDS sweep)
 
 redundancy:
   enabled: true

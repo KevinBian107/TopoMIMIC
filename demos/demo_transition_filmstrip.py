@@ -30,7 +30,7 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from collections import defaultdict
 
-sys.path.insert(0, "/home/jovyan/vast/kaiwen/TopoVNL")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from topo_mimic.analysis.method_analysis.property.theta_filmstrip import (
     FilmstripConfig,

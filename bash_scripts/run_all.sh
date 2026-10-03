@@ -11,6 +11,7 @@ bash bash_scripts/run_experiment.sh
 bash bash_scripts/run_feature_analysis.sh
 bash bash_scripts/run_method_analysis.sh
 bash bash_scripts/run_scale_sweep.sh
+bash bash_scripts/run_sensitivity.sh
 bash bash_scripts/run_tables.sh
 
 echo ""

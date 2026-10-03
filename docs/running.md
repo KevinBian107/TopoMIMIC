@@ -31,7 +31,7 @@ python -m topo_mimic.extraction.dm_pipeline configs/extraction/dm_pipeline_qpos.
 python -m topo_mimic.extraction.dm_pipeline configs/extraction/dm_pipeline_ekp.yaml
 ```
 
-With `use_dm_path: true` (default) this extracts both DM cycles (H1) and DM paths (H0 edge-disjoint paths between density minima). Outputs land under `outputs/extraction/dm_pipeline_<space>/`.
+With `use_dm_path: true` (default) this extracts both DM cycles (H1) and DM paths (H0 bridge-corridors: maximal non-branching chains between branch points). Outputs land under `outputs/extraction/dm_pipeline_<space>/`.
 
 ## Stage 2: Benchmark experiment
 

@@ -34,8 +34,9 @@ from pathlib import Path
 from typing import Tuple, List
 from dataclasses import dataclass
 
-sys.path.insert(0, "/home/jovyan/vast/kaiwen/TopoVNL")
-sys.path.append("/home/jovyan/vast/kaiwen/TopoVNL/PCD-Graph-Recon-DM")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from topo_mimic.paths import DMPCD_ROOT
+sys.path.append(str(DMPCD_ROOT))
 
 from topo_mimic.extraction.skeletonization.skeletonization import extract_skeleton_pcd_dm
 from topo_mimic.extraction.skeletonization.remap import (

@@ -291,8 +291,10 @@ def run_analysis(config: AnalysisConfig) -> None:
 
     dtw_data = None
 
-    if config.run_dtw_metrics:
-        print(f"\n=== Loading data for DTW metrics ({config.dtw_data_key}) ===")
+    # The MMD/KID block reads the same trajectories; without loading them here the
+    # atomic mmd block (run_dtw_metrics off) would skip silently.
+    if config.run_dtw_metrics or config.run_mmd_analysis:
+        print(f"\n=== Loading data for DTW/KID metrics ({config.dtw_data_key}) ===")
         try:
             dtw_data = load_trajectory_data(
                 config.rodent_rollout_dir,
@@ -657,6 +659,9 @@ def run_analysis(config: AnalysisConfig) -> None:
                             skip_root_dims=config.dtw_skip_root_dims,
                             min_seq_length=config.dtw_min_seq_length,
                             resample_K=config.c2st_window_frames,
+                            kid_unit=config.kid_unit,
+                            kid_subset_size=config.kid_subset_size,
+                            kid_n_subsets=config.kid_n_subsets,
                         )
                     except Exception as e:
                         print(f"    MMD/KID analysis failed: {e}")

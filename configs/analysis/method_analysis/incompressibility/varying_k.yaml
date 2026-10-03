@@ -4,7 +4,7 @@
 output_dir: "outputs/varying_k"
 
 data:
-  rodent_rollout_dir: "/home/jovyan/vast/kaiwen/TopoVNL/data/rodent_ar.h5"
+  rodent_rollout_dir: "data/rodent_ar.h5"
   split: "train"
   intention_key: "intention"
   qpos_key: "qpos_rollout"

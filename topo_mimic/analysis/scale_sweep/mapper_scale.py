@@ -203,8 +203,15 @@ def run_mapper_variant(
     cfg: MapperCfg,
     clip_ids: list[int],
     variant_out_dir: Path,
+    lens_cache: dict | None = None,
 ) -> MapperVariantResult:
-    """Fit one (lens, n_intervals, feature_space) Mapper variant."""
+    """Fit one (lens, n_intervals, feature_space) Mapper variant.
+
+    `lens_cache` is keyed by (feature_space, lens name, params) and matters for
+    graph-scoped lenses: the lens depends only on the point cloud, not on
+    n_intervals, so without it the Fiedler eigensolve would run once per interval
+    count instead of once per feature space.
+    """
     from sklearn.cluster import DBSCAN
     from tdamapper.cover import CubicalCover
     from tdamapper.learn import MapperAlgorithm
@@ -225,7 +232,13 @@ def run_mapper_variant(
         clip_start_offsets.append(clip_start_offsets[-1] + len(pts))
     all_pts = np.concatenate(pts_list, axis=0)
 
-    lens_values = compute_lens(lens_spec.name, all_pts, lens_spec.params)
+    cache_key = (feature_space, lens_spec.name, repr(sorted((lens_spec.params or {}).items())))
+    if lens_cache is not None and cache_key in lens_cache:
+        lens_values = lens_cache[cache_key]
+    else:
+        lens_values = compute_lens(lens_spec.name, all_pts, lens_spec.params)
+        if lens_cache is not None:
+            lens_cache[cache_key] = lens_values
     np.save(variant_out_dir / "lens_values.npy", lens_values)
 
     eps_cfg = cfg.dbscan_eps
@@ -316,6 +329,7 @@ def run_mapper_sweep(
     results: list[MapperVariantResult] = []
     preprocessed_cache: dict[str, np.ndarray] = {}
 
+    lens_cache: dict = {}
     for feature_space in cfg.mapper.feature_spaces:
         if feature_space not in preprocessed_cache:
             log.info(f"[Mapper] Preprocessing feature_space={feature_space}")
@@ -357,6 +371,7 @@ def run_mapper_sweep(
                     cfg=cfg.mapper,
                     clip_ids=data.clip_ids,
                     variant_out_dir=variant_dir,
+                    lens_cache=lens_cache,
                 )
                 log.info(
                     f"[Mapper] {variant_id}: nodes={r.n_nodes} clusters={r.n_clusters} "

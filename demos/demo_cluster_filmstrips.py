@@ -33,7 +33,7 @@ from PIL import Image
 import yaml
 import h5py
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from topo_mimic.analysis.feature_analysis.data_loading import (
     load_cluster_dict,
@@ -296,7 +296,7 @@ def main():
     parser.add_argument("--select", type=str, default=None, choices=["match", "longest", "first"])
     args = parser.parse_args()
 
-    default_cfg = Path(__file__).resolve().parents[2] / "configs/demos/demo_cluster_filmstrips.yaml"
+    default_cfg = Path(__file__).resolve().parents[1] / "configs/demos/demo_cluster_filmstrips.yaml"
     cfg = load_config(args.config or (str(default_cfg) if default_cfg.exists() else None))
     if args.method is not None:
         cfg.method = args.method

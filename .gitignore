@@ -2,6 +2,7 @@
 .claude
 scratch/
 tmp_code
+tmp/
 
 # logging, data, ckpts
 wandb/
@@ -9,6 +10,7 @@ videos/
 data/
 checkpoints/
 PCD-Graph-Recon-DM/
+TopoMimic-website/
 stac-mjx/
 track-mjx/
 walker/
@@ -17,17 +19,24 @@ walker/
 outputs/
 outputs_archive/
 paper/tables
+paper/tables_reduced
 paper/appendix_figures
 paper/figures
 paper/
 logs/
 
 # figure-generation external assets (not pushed to GitHub)
-figure_generation/external_data/
+topo_mimic/figure_generation/external_data/
 
 # labeling framework
 .gradio
 
 __pycache__
 
-TopoMimic-website/
+TopoMimic-website/backups/
+
+# local pre-rerun backups (2026-08-04)
+/backups/
+
+# paper PDFs
+bian_NeurReps_2026_camera.pdf

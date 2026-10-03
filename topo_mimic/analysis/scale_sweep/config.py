@@ -43,6 +43,9 @@ class KPMSCfg:
     full_iters: int = 300
     latent_dim: int = 10
     model_type: str = "arhmm"
+    # Feature streams to sweep. Both are reported in the discovery table;
+    # the benchmark KPMS baselines use intention and keypoints alike.
+    modalities: list[str] = field(default_factory=lambda: ["keypoint"])
     selection: KPMSSelectionCfg = field(default_factory=KPMSSelectionCfg)
 
 
@@ -123,9 +126,15 @@ class ScaleSweepConfig:
                 f"data.start_clip ({self.data.start_clip}) must be < data.end_clip ({self.data.end_clip})"
             )
         self.kpms.kappa_grid = [float(k) for k in self.kpms.kappa_grid]
+        # Validate against the registry itself, not a duplicated literal: the two
+        # drifted before, so a registered lens still raised here.
+        from topo_mimic.analysis.scale_sweep.lenses import LENS_REGISTRY
+
         for spec in self.mapper.lens_grid:
-            if spec.name not in {"knn_density", "pca_1d", "eccentricity"}:
-                raise ValueError(f"Unknown lens name: {spec.name!r}")
+            if spec.name not in LENS_REGISTRY:
+                raise ValueError(
+                    f"Unknown lens name: {spec.name!r}; registered: {sorted(LENS_REGISTRY)}"
+                )
         for fs in self.mapper.feature_spaces:
             if fs not in self.mapper.takens_per_feature_space:
                 raise ValueError(
