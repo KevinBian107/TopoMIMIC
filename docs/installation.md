@@ -30,6 +30,19 @@ ls -lh PCD-Graph-Recon-DM/dmpcd/code/phat_morse_src/a.out
 
 To keep the backend elsewhere, set `DMPCD_ROOT=/path/to/PCD-Graph-Recon-DM`.
 
+End-to-end check: reconstruct the skeleton of a noisy circle, which should report one loop.
+
+```bash
+python -c "
+import numpy as np
+from topo_mimic.extraction.skeletonization.skeletonization import extract_skeleton_pcd_dm, extract_all_cycles
+t = np.linspace(0, 2 * np.pi, 300)
+pts = np.c_[np.cos(t), np.sin(t)] + 0.03 * np.random.default_rng(0).normal(size=(300, 2))
+_, G = extract_skeleton_pcd_dm(pts, k=5, pers_delta=0.1)
+print('loops:', len(extract_all_cycles(G)))
+"
+```
+
 ## Rendering
 
 Figures and videos render MuJoCo scenes. On GPU nodes use `MUJOCO_GL=egl`; this needs the GLVND loader `libEGL.so.1` (Ubuntu package `libegl1`) in addition to the NVIDIA driver. On CPU-only machines use `MUJOCO_GL=osmesa` with Mesa's `libOSMesa`.
