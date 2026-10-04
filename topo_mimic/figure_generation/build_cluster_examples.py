@@ -33,7 +33,8 @@ def beh_of(clip, frames, segs):
     return out
 
 
-def build(method, out, n_panels=6, seed=0, ncol=4, W=1900, H=1650):
+def select_cluster_examples(method, n_panels=6, seed=0, per_cluster=2):
+    """Up to `n_panels` uniquely labelled transition clusters, best `per_cluster` members each."""
     mdir = f"outputs/experiment/transitions/{method}"
     cd = load_cluster_dict(mdir, seed)
     labels, _ = load_labels_yaml(mdir, seed)
@@ -74,12 +75,18 @@ def build(method, out, n_panels=6, seed=0, ncol=4, W=1900, H=1650):
         if cands[0][0] < 0:
             continue
         seen.add(lab)
-        ex = [(c, f) for _, c, f in cands[:2]]
-        if len(ex) < 2:
-            ex += [ex[-1]]
-        pairs.append((lab, ex))
+        ex = [(c, f) for _, c, f in cands[:per_cluster]]
+        if len(ex) < per_cluster:
+            ex += [ex[-1]] * (per_cluster - len(ex))
+        pairs.append((lab, ex, cid, len(mem)))
         if len(pairs) >= n_panels:
             break
+    return pairs, behav
+
+
+def build(method, out, n_panels=6, seed=0, ncol=4, W=1900, H=1650):
+    pairs, behav = select_cluster_examples(method, n_panels, seed)
+    pairs = [(lab, ex) for lab, ex, _, _ in pairs]
     picks = [(lab, c, f) for lab, ex in pairs for c, f in ex]
 
     spans = []

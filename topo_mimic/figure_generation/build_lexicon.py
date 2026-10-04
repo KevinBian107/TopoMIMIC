@@ -11,6 +11,7 @@ side of the boundary is scored by the kinematic signature of its own label
 strong second half cannot compensate for a first half that shows nothing.
 """
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 import numpy as np
 import matplotlib; matplotlib.use("Agg")
@@ -63,7 +64,18 @@ def _rank(v):
     return o / (len(v) - 1)
 
 
-def build(out, n_types=None, W=1700, H=1500):
+@dataclass
+class LexiconPick:
+    a: str
+    b: str
+    n: int
+    clip_id: int
+    frames: np.ndarray
+    transition: object
+
+
+def select_lexicon_examples(n_types=None) -> list[LexiconPick]:
+    """One representative instance per directed GT transition, most frequent first."""
     trans = find_all_transitions(CSV)
     by = {}
     for t in trans:
@@ -90,26 +102,34 @@ def build(out, n_types=None, W=1700, H=1500):
                 continue
             sa = _behaviour_score(a, *_kin(q, lo, min(t.from_end, n)))
             sb = _behaviour_score(b, *_kin(q, t.to_start, hi))
-            cands.append((sa, sb, int(t.clip_id), fr))
+            cands.append((sa, sb, int(t.clip_id), fr, t))
         if not cands:
             t = max(items, key=lambda x: x.to_end - x.from_start)
             q = load_qpos(int(t.clip_id), ROLL)
             fr = np.linspace(t.from_start, min(t.to_end, q.shape[0] - 1), NP).astype(int)
-            best = (int(t.clip_id), fr)
+            best = (int(t.clip_id), fr, t)
         else:
             ra, rb = _rank([c[0] for c in cands]), _rank([c[1] for c in cands])
             j = int(np.argmax(np.minimum(ra, rb)))
-            best = (cands[j][2], cands[j][3])
+            best = (cands[j][2], cands[j][3], cands[j][4])
         print(f"  {a:>8} -> {b:<8} n={len(items):<4} clip={best[0]:<4} "
               f"frames={best[1][0]}..{best[1][-1]}")
-        picks.append((f"{a} $\\rightarrow$ {b}  (n={len(items)})", [best]))
+        picks.append(LexiconPick(a, b, len(items), best[0], best[1], best[2]))
+    return picks
 
+
+def shared_cam_dist(picks: list[LexiconPick]) -> float:
     spans = []
-    for _, ex in picks:
-        for c, f in ex:
-            xy = load_qpos(c, ROLL)[f][:, :2]
-            spans.append(float(np.linalg.norm(xy - xy.mean(0), axis=1).max()))
-    CAM = max(0.68, float(np.percentile(spans, 90)) * 2.0 * 2.45)
+    for p in picks:
+        xy = load_qpos(p.clip_id, ROLL)[p.frames][:, :2]
+        spans.append(float(np.linalg.norm(xy - xy.mean(0), axis=1).max()))
+    return max(0.68, float(np.percentile(spans, 90)) * 2.0 * 2.45)
+
+
+def build(out, n_types=None, W=1700, H=1500):
+    sel = select_lexicon_examples(n_types)
+    picks = [(f"{p.a} $\\rightarrow$ {p.b}  (n={p.n})", [(p.clip_id, p.frames)]) for p in sel]
+    CAM = shared_cam_dist(sel)
 
     ncol = 4
     nrow = int(np.ceil(len(picks) / ncol))
