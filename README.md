@@ -18,12 +18,12 @@ Talmo D. Pereira<sup>2</sup>
 Official code for the paper<br>
 NeurIPS 2026 Workshop on Symmetry and Geometry in Neural Representations (NeurReps), Proceedings Track
 
+[![arXiv](https://img.shields.io/badge/arXiv-2611.00688-b31b1b.svg)](https://arxiv.org/abs/2611.00688)
 [![Project Page](https://img.shields.io/badge/Project-Page-2b7bb9)](https://kbian.org/TopoMimic-website/)
 ![Venue](https://img.shields.io/badge/NeurReps%202026-Proceedings-6f42c1)
 [![MIMIC-MJX](https://img.shields.io/badge/built%20on-MIMIC--MJX-orange)](https://mimic-mjx.talmolab.org/)
 [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD--3--Clause-green.svg)](LICENSE)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-<!-- Add a Paper badge (PMLR / arXiv) and link the Venue badge to the workshop site once public. -->
 
 </div>
 
@@ -212,7 +212,10 @@ The full tree and where every output is written are in
                Wang, Yusu and Pereira, Talmo D.},
   booktitle = {Proceedings of the NeurIPS Workshop on Symmetry and Geometry in Neural Representations (NeurReps)},
   series    = {Proceedings of Machine Learning Research},
-  year      = {2026}
+  year      = {2026},
+  eprint    = {2611.00688},
+  archivePrefix = {arXiv},
+  url       = {https://arxiv.org/abs/2611.00688}
 }
 ```
 
